@@ -18,6 +18,15 @@ import Addresses from "./pages/dashboard/Addresses";
 import Membership from "./pages/dashboard/Membership";
 import Points from "./pages/dashboard/Points";
 import AIShopper from "./pages/dashboard/AIShopper";
+import BatchShipping from "./pages/BatchShipping";
+import Preorder from "./pages/Preorder";
+import { AdminLayout } from "./components/admin/AdminLayout";
+import AdminOverview from "./pages/admin/Overview";
+import Procurement from "./pages/admin/Procurement";
+import TrackingExceptionsPage from "./pages/admin/TrackingExceptions";
+import ScraperFailuresPage from "./pages/admin/ScraperFailures";
+import Approvals from "./pages/admin/Approvals";
+import Support from "./pages/admin/Support";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +40,16 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/whatsapp-demo" element={<WhatsAppDemo />} />
           <Route path="/quotation" element={<Quotation />} />
+          <Route path="/batch-shipping" element={<BatchShipping />} />
+          <Route path="/preorder" element={<Preorder />} />
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminOverview />} />
+            <Route path="procurement" element={<Procurement />} />
+            <Route path="tracking" element={<TrackingExceptionsPage />} />
+            <Route path="scraper" element={<ScraperFailuresPage />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="support" element={<Support />} />
+          </Route>
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<Overview />} />
             <Route path="quotations" element={<Quotations />} />
