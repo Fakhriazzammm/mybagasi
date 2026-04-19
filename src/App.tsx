@@ -27,6 +27,24 @@ import TrackingExceptionsPage from "./pages/admin/TrackingExceptions";
 import ScraperFailuresPage from "./pages/admin/ScraperFailures";
 import Approvals from "./pages/admin/Approvals";
 import Support from "./pages/admin/Support";
+import { FinanceLayout } from "./components/finance/FinanceLayout";
+import FinanceOverview from "./pages/finance/Overview";
+import Payments from "./pages/finance/Payments";
+import Pending from "./pages/finance/Pending";
+import Refunds from "./pages/finance/Refunds";
+import PointsLedger from "./pages/finance/Points";
+import AffiliatePayoutPage from "./pages/finance/Affiliate";
+import MembershipRevenuePage from "./pages/finance/Membership";
+import { SuperAdminLayout } from "./components/superadmin/SuperAdminLayout";
+import SuperAdminOverview from "./pages/superadmin/Overview";
+import UsersPage from "./pages/superadmin/Users";
+import Plans from "./pages/superadmin/Plans";
+import Pricing from "./pages/superadmin/Pricing";
+import Fees from "./pages/superadmin/Fees";
+import Shipping from "./pages/superadmin/Shipping";
+import Marketplaces from "./pages/superadmin/Marketplaces";
+import Commission from "./pages/superadmin/Commission";
+import AISettingsPage from "./pages/superadmin/AISettings";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +67,26 @@ const App = () => (
             <Route path="scraper" element={<ScraperFailuresPage />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="support" element={<Support />} />
+          </Route>
+          <Route path="/finance" element={<FinanceLayout />}>
+            <Route index element={<FinanceOverview />} />
+            <Route path="payments" element={<Payments />} />
+            <Route path="pending" element={<Pending />} />
+            <Route path="refunds" element={<Refunds />} />
+            <Route path="points" element={<PointsLedger />} />
+            <Route path="affiliate" element={<AffiliatePayoutPage />} />
+            <Route path="membership" element={<MembershipRevenuePage />} />
+          </Route>
+          <Route path="/super-admin" element={<SuperAdminLayout />}>
+            <Route index element={<SuperAdminOverview />} />
+            <Route path="users" element={<UsersPage />} />
+            <Route path="plans" element={<Plans />} />
+            <Route path="pricing" element={<Pricing />} />
+            <Route path="fees" element={<Fees />} />
+            <Route path="shipping" element={<Shipping />} />
+            <Route path="marketplaces" element={<Marketplaces />} />
+            <Route path="commission" element={<Commission />} />
+            <Route path="ai" element={<AISettingsPage />} />
           </Route>
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<Overview />} />
