@@ -7,6 +7,7 @@ import Index from "./pages/Index.tsx";
 import WhatsAppDemo from "./pages/WhatsAppDemo.tsx";
 import Quotation from "./pages/Quotation.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import Install from "./pages/Install.tsx";
 import { DashboardLayout } from "./components/dashboard/DashboardLayout";
 import Overview from "./pages/dashboard/Overview";
 import Quotations from "./pages/dashboard/Quotations";
@@ -60,6 +61,7 @@ const App = () => (
           <Route path="/quotation" element={<Quotation />} />
           <Route path="/batch-shipping" element={<BatchShipping />} />
           <Route path="/preorder" element={<Preorder />} />
+          <Route path="/install" element={<Install />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
             <Route path="procurement" element={<Procurement />} />
