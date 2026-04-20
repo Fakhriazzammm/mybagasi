@@ -1,10 +1,14 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from scrapers.dispatcher import scrape_url
+from mayar_routes import router as mayar_router
 
-app = FastAPI(title="MyBagasi Scraper", version="1.0.0")
+app = FastAPI(title="MyBagasi Backend", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,6 +16,8 @@ app.add_middleware(
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
+
+app.include_router(mayar_router)
 
 
 class ScrapeRequest(BaseModel):
@@ -30,4 +36,4 @@ async def scrape(req: ScrapeRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "MyBagasi Scraper"}
+    return {"status": "ok", "service": "MyBagasi Backend"}

@@ -19,6 +19,8 @@ import Addresses from "./pages/dashboard/Addresses";
 import Membership from "./pages/dashboard/Membership";
 import Points from "./pages/dashboard/Points";
 import AIShopper from "./pages/dashboard/AIShopper";
+import CheckoutPage from "./pages/CheckoutPage";
+import PaymentStatusPage from "./pages/PaymentStatusPage";
 import BatchShipping from "./pages/BatchShipping";
 import Preorder from "./pages/Preorder";
 import { AdminLayout } from "./components/admin/AdminLayout";
@@ -62,6 +64,8 @@ const App = () => (
           <Route path="/batch-shipping" element={<BatchShipping />} />
           <Route path="/preorder" element={<Preorder />} />
           <Route path="/install" element={<Install />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/payment/status" element={<PaymentStatusPage />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
             <Route path="procurement" element={<Procurement />} />
