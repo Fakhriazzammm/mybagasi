@@ -1,0 +1,107 @@
+import { supabase } from '@/lib/supabase'
+import type { BatchShipment, BatchParticipant, BatchStatus } from '@/types/database.types'
+
+export const batchShippingService = {
+  async list(status?: BatchStatus) {
+    let query = supabase
+      .from('batch_shipments')
+      .select(`
+        *,
+        participants:batch_participants(count)
+      `)
+      .order('closes_at', { ascending: true })
+
+    if (status) query = query.eq('status', status)
+
+    const { data, error } = await query
+    if (error) throw error
+    return data
+  },
+
+  async get(id: string) {
+    const { data, error } = await supabase
+      .from('batch_shipments')
+      .select(`
+        *,
+        participants:batch_participants(
+          id, user_id, items, weight_kg, joined_at,
+          profiles(name)
+        )
+      `)
+      .eq('id', id)
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async join(params: {
+    batch_id: string
+    order_id?: string
+    items: number
+    weight_kg: number
+  }): Promise<BatchParticipant> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const { data, error } = await supabase
+      .from('batch_participants')
+      .insert({
+        batch_id: params.batch_id,
+        user_id: user.id,
+        order_id: params.order_id ?? null,
+        items: params.items,
+        weight_kg: params.weight_kg,
+      })
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async leave(batchId: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const { error } = await supabase
+      .from('batch_participants')
+      .delete()
+      .eq('batch_id', batchId)
+      .eq('user_id', user.id)
+    if (error) throw error
+  },
+
+  async getUserBatches(): Promise<BatchParticipant[]> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+
+    const { data, error } = await supabase
+      .from('batch_participants')
+      .select('*, batch_shipments(*)')
+      .eq('user_id', user.id)
+      .order('joined_at', { ascending: false })
+    if (error) throw error
+    return data
+  },
+
+  // Super admin
+  async create(payload: Omit<BatchShipment, 'id' | 'created_at' | 'updated_at'>): Promise<BatchShipment> {
+    const { data, error } = await supabase
+      .from('batch_shipments')
+      .insert(payload)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async updateStatus(id: string, status: BatchStatus): Promise<BatchShipment> {
+    const { data, error } = await supabase
+      .from('batch_shipments')
+      .update({ status })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+}
