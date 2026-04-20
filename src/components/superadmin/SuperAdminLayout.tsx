@@ -1,7 +1,16 @@
 import { Outlet } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, LayoutDashboard, Users, Crown, Store, Brain } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { SuperAdminSidebar } from "./SuperAdminSidebar";
+import { BottomNav } from "@/components/site/BottomNav";
+
+const superNav = [
+  { to: "/super-admin", label: "Overview", icon: LayoutDashboard, end: true },
+  { to: "/super-admin/users", label: "Users", icon: Users },
+  { to: "/super-admin/plans", label: "Plans", icon: Crown },
+  { to: "/super-admin/marketplaces", label: "Market", icon: Store },
+  { to: "/super-admin/ai", label: "AI", icon: Brain },
+];
 
 export const SuperAdminLayout = () => (
   <SidebarProvider defaultOpen>
@@ -22,9 +31,10 @@ export const SuperAdminLayout = () => (
             </div>
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-8 max-w-[1400px] w-full mx-auto">
+        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 max-w-[1400px] w-full mx-auto">
           <Outlet />
         </main>
+        <BottomNav items={superNav} />
       </div>
     </div>
   </SidebarProvider>

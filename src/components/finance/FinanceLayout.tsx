@@ -1,9 +1,18 @@
 import { Outlet } from "react-router-dom";
-import { Download } from "lucide-react";
+import { Download, LayoutDashboard, Wallet, Undo2, Coins, Crown } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { FinanceSidebar } from "./FinanceSidebar";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { BottomNav } from "@/components/site/BottomNav";
+
+const financeNav = [
+  { to: "/finance", label: "Overview", icon: LayoutDashboard, end: true },
+  { to: "/finance/payments", label: "Payment", icon: Wallet },
+  { to: "/finance/refunds", label: "Refund", icon: Undo2 },
+  { to: "/finance/points", label: "Poin", icon: Coins },
+  { to: "/finance/membership", label: "Member", icon: Crown },
+];
 
 export const FinanceLayout = () => (
   <SidebarProvider defaultOpen>
@@ -24,9 +33,10 @@ export const FinanceLayout = () => (
             </div>
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-8 max-w-[1400px] w-full mx-auto">
+        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 max-w-[1400px] w-full mx-auto">
           <Outlet />
         </main>
+        <BottomNav items={financeNav} />
       </div>
     </div>
   </SidebarProvider>

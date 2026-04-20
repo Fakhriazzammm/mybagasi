@@ -1,9 +1,18 @@
 import { Outlet, Link } from "react-router-dom";
-import { Bell, MessageCircle } from "lucide-react";
+import { Bell, MessageCircle, LayoutDashboard, Package, Heart, Crown, User } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { CustomerSidebar } from "./CustomerSidebar";
 import { Button } from "@/components/ui/button";
 import { customer } from "@/lib/customer-mock";
+import { BottomNav } from "@/components/site/BottomNav";
+
+const customerNav = [
+  { to: "/dashboard", label: "Beranda", icon: LayoutDashboard, end: true },
+  { to: "/dashboard/orders", label: "Pesanan", icon: Package },
+  { to: "/dashboard/wishlist", label: "Wishlist", icon: Heart },
+  { to: "/dashboard/membership", label: "Member", icon: Crown },
+  { to: "/dashboard/addresses", label: "Akun", icon: User },
+];
 
 export const DashboardLayout = () => (
   <SidebarProvider defaultOpen>
@@ -30,9 +39,10 @@ export const DashboardLayout = () => (
             </div>
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-8 max-w-[1400px] w-full mx-auto">
+        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 max-w-[1400px] w-full mx-auto">
           <Outlet />
         </main>
+        <BottomNav items={customerNav} />
       </div>
     </div>
   </SidebarProvider>
