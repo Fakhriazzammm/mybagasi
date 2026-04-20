@@ -1,0 +1,28 @@
+export interface ProductData {
+  title: string;
+  price_jpy: number | null;
+  price_display: string;
+  condition: string | null;
+  images: string[];
+  description: string | null;
+  seller: string | null;
+  marketplace: string;
+  available: boolean;
+  url: string;
+  scraped_at: string;
+}
+
+export async function scrapeProduct(url: string): Promise<ProductData> {
+  const res = await fetch("/api/scrape", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(`Scraper error ${res.status}: ${err.detail ?? res.statusText}`);
+  }
+
+  return res.json() as Promise<ProductData>;
+}
