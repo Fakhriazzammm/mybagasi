@@ -1,28 +1,184 @@
-import { Sparkles, MessageCircle } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Sparkles, Send, RotateCcw } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
+import { sendMessage, type ChatMessage } from "@/lib/ai";
 
-const AIShopper = () => (
-  <>
-    <PageHeader
-      eyebrow="AI Personal Shopper"
-      title="Bingung pilih? Tanya AI."
-      description="Cari produk Jepang berdasarkan budget, brand, ukuran, atau cuma deskripsi acak."
-    />
-    <div className="rounded-3xl bg-gradient-warm border border-border/40 p-12 text-center shadow-soft">
-      <div className="h-16 w-16 mx-auto rounded-2xl bg-primary text-primary-foreground grid place-items-center mb-4 animate-float">
-        <Sparkles className="h-7 w-7" />
+const API_KEY = import.meta.env.VITE_SUMOPOD_API_KEY as string;
+
+type Msg = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  time: string;
+};
+
+const SUGGESTIONS = [
+  "Rekomendasiin sepatu running brand Jepang budget Rp 1 juta",
+  "Berapa estimasi harga kamera film Fujifilm termasuk ongkir?",
+  "Cariin skincare Hada Labo Gokujyun di Rakuten",
+  "Pre-order figurine One Piece dari Amazon JP bisa?",
+];
+
+const now = () =>
+  new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+
+const AIShopper = () => {
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [history, setHistory] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [msgs, loading]);
+
+  const send = async (text: string) => {
+    if (!text.trim() || loading) return;
+
+    const userMsg: Msg = { id: Date.now(), role: "user", content: text, time: now() };
+    setMsgs((m) => [...m, userMsg]);
+    setInput("");
+    setLoading(true);
+
+    const updatedHistory: ChatMessage[] = [...history, { role: "user", content: text }];
+    setHistory(updatedHistory);
+
+    try {
+      const reply = await sendMessage(updatedHistory, API_KEY);
+      setMsgs((m) => [...m, { id: Date.now() + 1, role: "assistant", content: reply, time: now() }]);
+      setHistory((h) => [...h, { role: "assistant", content: reply }]);
+    } catch {
+      setMsgs((m) => [...m, {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: "Maaf, ada gangguan koneksi ke AI. Coba lagi ya 🙏",
+        time: now(),
+      }]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  };
+
+  const reset = () => {
+    setMsgs([]);
+    setHistory([]);
+    setInput("");
+    inputRef.current?.focus();
+  };
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="AI Personal Shopper"
+        title="Bingung pilih? Tanya AI."
+        description="Cari produk Jepang berdasarkan budget, brand, ukuran, atau cuma deskripsi acak."
+      />
+
+      <div className="flex flex-col rounded-3xl border border-border/40 shadow-soft overflow-hidden" style={{ height: "calc(100vh - 260px)", minHeight: 480 }}>
+        {/* Chat area */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-warm">
+          {msgs.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full gap-6 text-center">
+              <div className="h-16 w-16 rounded-2xl bg-primary text-primary-foreground grid place-items-center animate-float">
+                <Sparkles className="h-7 w-7" />
+              </div>
+              <div>
+                <p className="font-display text-lg font-bold mb-1">MyBagasi AI siap membantu</p>
+                <p className="text-sm text-muted-foreground max-w-xs">
+                  Tanya apapun tentang produk Jepang — harga, rekomendasi, estimasi all-in cost.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    className="text-left text-xs px-4 py-3 rounded-xl border border-border/60 bg-background/80 hover:bg-background hover:border-primary/40 transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {msgs.map((m) => (
+            <div key={m.id} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              {m.role === "assistant" && (
+                <div className="h-8 w-8 shrink-0 rounded-xl bg-primary text-primary-foreground grid place-items-center mt-0.5">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+              )}
+              <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                m.role === "user"
+                  ? "bg-primary text-primary-foreground rounded-br-sm"
+                  : "bg-background text-foreground rounded-bl-sm border border-border/40"
+              }`}>
+                <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                <p className={`text-[10px] mt-1.5 ${m.role === "user" ? "text-primary-foreground/60 text-right" : "text-muted-foreground"}`}>
+                  {m.time}
+                </p>
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="flex gap-3 justify-start">
+              <div className="h-8 w-8 shrink-0 rounded-xl bg-primary text-primary-foreground grid place-items-center">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div className="bg-background rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm border border-border/40">
+                <div className="flex gap-1 items-center h-4">
+                  {[0, 150, 300].map((d) => (
+                    <span
+                      key={d}
+                      className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-pulse-soft"
+                      style={{ animationDelay: `${d}ms` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input bar */}
+        <div className="border-t border-border/40 bg-background px-4 py-3 flex items-center gap-3">
+          {msgs.length > 0 && (
+            <button
+              onClick={reset}
+              title="Reset percakapan"
+              className="h-10 w-10 rounded-xl border border-border/60 grid place-items-center text-muted-foreground hover:text-foreground hover:border-border transition-colors shrink-0"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+          )}
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send(input)}
+            placeholder="Tanya tentang produk Jepang..."
+            disabled={loading}
+            className="flex-1 rounded-xl border border-border/60 bg-muted/40 px-4 py-2.5 text-sm outline-none focus:border-primary/50 focus:bg-background transition-colors disabled:opacity-50"
+          />
+          <Button
+            onClick={() => send(input)}
+            disabled={loading || !input.trim()}
+            size="sm"
+            variant="hero"
+            className="h-10 px-4 shrink-0"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
-      <h2 className="font-display text-2xl font-bold mb-2">Coming soon di dashboard</h2>
-      <p className="text-sm text-muted-foreground max-w-md mx-auto mb-6">
-        Sementara, kamu bisa pakai AI shopper kami langsung di simulasi WhatsApp.
-      </p>
-      <Button variant="hero" asChild>
-        <Link to="/whatsapp-demo"><MessageCircle className="h-4 w-4" />Coba di WhatsApp</Link>
-      </Button>
-    </div>
-  </>
-);
+    </>
+  );
+};
 
 export default AIShopper;

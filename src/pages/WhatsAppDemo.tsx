@@ -3,6 +3,9 @@ import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
 import { Send, Check, CheckCheck, Package, CreditCard, Plane, Home, Sparkles } from "lucide-react";
+import { sendMessage, type ChatMessage } from "@/lib/ai";
+
+const API_KEY = import.meta.env.VITE_SUMOPOD_API_KEY as string;
 
 type Msg = {
   id: number;
@@ -102,6 +105,7 @@ const TrackingCard = () => {
 
 const WhatsAppDemo = () => {
   const [msgs, setMsgs] = useState<Msg[]>(initialMsgs);
+  const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -112,37 +116,38 @@ const WhatsAppDemo = () => {
 
   const now = () => new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
-  const send = (text: string) => {
-    if (!text.trim()) return;
+  const send = async (text: string) => {
+    if (!text.trim() || typing) return;
+
     const userMsg: Msg = { id: Date.now(), from: "user", text, time: now() };
     setMsgs((m) => [...m, userMsg]);
     setInput("");
     setTyping(true);
 
-    setTimeout(() => {
+    const updatedHistory: ChatMessage[] = [...history, { role: "user", content: text }];
+    setHistory(updatedHistory);
+
+    try {
+      const reply = await sendMessage(updatedHistory, API_KEY);
+
       setMsgs((m) => [...m, {
-        id: Date.now() + 1, from: "bot",
-        text: "Oke! Saya scrape produknya dulu... 🔍",
+        id: Date.now() + 1,
+        from: "bot",
+        text: reply,
         time: now(),
       }]);
-    }, 800);
 
-    setTimeout(() => {
+      setHistory((h) => [...h, { role: "assistant", content: reply }]);
+    } catch (err) {
       setMsgs((m) => [...m, {
-        id: Date.now() + 2, from: "bot",
-        text: "Ini quotation lengkapnya, sudah include semua biaya:",
-        card: "quotation", time: now(),
+        id: Date.now() + 1,
+        from: "bot",
+        text: "Maaf, ada gangguan koneksi. Coba lagi ya! 🙏",
+        time: now(),
       }]);
+    } finally {
       setTyping(false);
-    }, 2200);
-
-    setTimeout(() => {
-      setMsgs((m) => [...m, { id: Date.now() + 3, from: "bot", card: "payment", time: now() }]);
-    }, 4500);
-
-    setTimeout(() => {
-      setMsgs((m) => [...m, { id: Date.now() + 4, from: "bot", card: "tracking", time: now() }]);
-    }, 6000);
+    }
   };
 
   return (
@@ -207,7 +212,8 @@ const WhatsAppDemo = () => {
                   <button
                     key={q}
                     onClick={() => send(q)}
-                    className="shrink-0 text-xs px-3 py-1.5 rounded-full bg-background/90 border border-border/40 hover:bg-background"
+                    disabled={typing}
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-full bg-background/90 border border-border/40 hover:bg-background disabled:opacity-50"
                   >
                     {q}
                   </button>
@@ -221,11 +227,13 @@ const WhatsAppDemo = () => {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && send(input)}
                   placeholder="Ketik pesan..."
-                  className="flex-1 rounded-full bg-background px-4 py-2.5 text-sm outline-none"
+                  disabled={typing}
+                  className="flex-1 rounded-full bg-background px-4 py-2.5 text-sm outline-none disabled:opacity-50"
                 />
                 <button
                   onClick={() => send(input)}
-                  className="h-10 w-10 rounded-full bg-success grid place-items-center text-success-foreground shadow-soft"
+                  disabled={typing || !input.trim()}
+                  className="h-10 w-10 rounded-full bg-success grid place-items-center text-success-foreground shadow-soft disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
                 </button>
