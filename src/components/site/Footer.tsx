@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
 import { Instagram, MessageCircle, Mail } from "lucide-react";
 import { Logo } from "./Logo";
+import { PublicBottomNav } from "./PublicBottomNav";
 
 export const Footer = () => (
-  <footer className="border-t border-border/60 bg-secondary/30 mt-24">
+  <>
+  <footer className="border-t border-border/60 bg-secondary/30 mt-24 pb-24 md:pb-0">
     <div className="container mx-auto py-14">
       <div className="grid gap-10 md:grid-cols-4">
         <div className="space-y-4">
@@ -47,4 +49,6 @@ export const Footer = () => (
       </div>
     </div>
   </footer>
+  <PublicBottomNav />
+  </>
 );
