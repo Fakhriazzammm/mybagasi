@@ -1,8 +1,17 @@
 import { Outlet } from "react-router-dom";
-import { Bell, Search } from "lucide-react";
+import { Bell, Search, LayoutDashboard, ListChecks, Truck, ClipboardCheck, MessageSquare } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminSidebar } from "./AdminSidebar";
 import { Input } from "@/components/ui/input";
+import { BottomNav } from "@/components/site/BottomNav";
+
+const adminNav = [
+  { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
+  { to: "/admin/procurement", label: "Procure", icon: ListChecks },
+  { to: "/admin/tracking", label: "Tracking", icon: Truck },
+  { to: "/admin/approvals", label: "Approve", icon: ClipboardCheck },
+  { to: "/admin/support", label: "Support", icon: MessageSquare },
+];
 
 export const AdminLayout = () => (
   <SidebarProvider defaultOpen>
@@ -30,9 +39,10 @@ export const AdminLayout = () => (
             </div>
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-8 max-w-[1400px] w-full mx-auto">
+        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 max-w-[1400px] w-full mx-auto">
           <Outlet />
         </main>
+        <BottomNav items={adminNav} />
       </div>
     </div>
   </SidebarProvider>
