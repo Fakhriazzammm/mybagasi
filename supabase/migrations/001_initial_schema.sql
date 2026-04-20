@@ -362,7 +362,7 @@ CREATE TABLE tracking_exceptions (
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   issue TEXT NOT NULL,
-  severity priority_level NOT NULL DEFAULT 'medium',
+  severity priority_level NOT NULL DEFAULT 'normal',
   tracking_number TEXT,
   resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -507,6 +507,55 @@ CREATE INDEX idx_affiliate_payouts_status ON affiliate_payouts(status);
 -- ============================================================
 -- FUNCTIONS
 -- ============================================================
+
+-- Atomically increment preorder quota_taken and return the booking
+-- Raises exception if quota is full, preventing duplicates
+CREATE OR REPLACE FUNCTION book_preorder(
+  p_preorder_id UUID,
+  p_user_id     UUID,
+  p_payment_type TEXT,
+  p_amount_paid  INTEGER,
+  p_amount_remaining INTEGER
+)
+RETURNS preorder_bookings
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_booking preorder_bookings;
+  v_quota_total INTEGER;
+  v_quota_taken INTEGER;
+BEGIN
+  -- Lock the preorder row for update to prevent race conditions
+  SELECT quota_total, quota_taken
+  INTO v_quota_total, v_quota_taken
+  FROM preorders
+  WHERE id = p_preorder_id AND active = TRUE
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Preorder tidak ditemukan atau sudah tidak aktif';
+  END IF;
+
+  IF v_quota_taken >= v_quota_total THEN
+    RAISE EXCEPTION 'Quota sudah penuh';
+  END IF;
+
+  -- Insert booking
+  INSERT INTO preorder_bookings
+    (preorder_id, user_id, payment_type, amount_paid, amount_remaining, status)
+  VALUES
+    (p_preorder_id, p_user_id, p_payment_type, p_amount_paid, p_amount_remaining, 'pending')
+  RETURNING * INTO v_booking;
+
+  -- Increment quota atomically
+  UPDATE preorders
+  SET quota_taken = quota_taken + 1
+  WHERE id = p_preorder_id;
+
+  RETURN v_booking;
+END;
+$$;
 
 -- Auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at()
