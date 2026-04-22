@@ -50,13 +50,19 @@ const AIShopper = () => {
 
     try {
       const reply = await sendMessage(updatedHistory, API_KEY);
-      const paymentUrl = extractUrl(reply) ?? undefined;
+      const paymentUrl = extractUrl(reply.text) ?? undefined;
 
       setMsgs((m) => [
         ...m,
-        { id: Date.now() + 1, role: "assistant", content: reply, time: now(), paymentUrl },
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          content: reply.text,
+          time: now(),
+          paymentUrl,
+        },
       ]);
-      setHistory((h) => [...h, { role: "assistant", content: reply }]);
+      setHistory((h) => [...h, { role: "assistant", content: reply.text }]);
     } catch {
       setMsgs((m) => [
         ...m,
