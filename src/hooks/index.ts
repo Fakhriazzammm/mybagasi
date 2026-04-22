@@ -226,6 +226,23 @@ export function useUpdateAiSetting() {
   })
 }
 
+export function useCreateAiSetting() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { key: string; value: string; description?: string | null }) =>
+      aiSettingsService.create(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-settings'] }),
+  })
+}
+
+export function useDeleteAiSetting() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => aiSettingsService.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-settings'] }),
+  })
+}
+
 export const useSuperAdminStats = () =>
   useQuery({ queryKey: ['superadmin-stats'], queryFn: superAdminStatsService.get })
 
