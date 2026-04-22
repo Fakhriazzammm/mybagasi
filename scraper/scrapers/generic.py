@@ -47,6 +47,8 @@ async def _crawl4ai(url: str) -> ProductData:
         description=content[:600] if content else None,
         marketplace=_domain(url),
         url=url,
+        confidence="medium" if title and images else "low",
+        scrape_reason_code="CRAWL4AI",
     )
 
 
@@ -84,6 +86,8 @@ async def _bs4_fallback(url: str) -> ProductData:
         description=description[:600] or None,
         marketplace=_domain(url),
         url=url,
+        confidence="low",
+        scrape_reason_code="PARSE_EMPTY" if not price_text else "PLAYWRIGHT",
     )
 
 

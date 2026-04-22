@@ -204,12 +204,13 @@ export const affiliateService = {
 
 // ─── AI Settings ──────────────────────────────────────────────
 export const aiSettingsService = {
-  async getAll(): Promise<Record<string, string>> {
+  async getAll(): Promise<AiSetting[]> {
     const { data, error } = await supabase
       .from('ai_settings')
-      .select('key, value')
+      .select('*')
+      .order('key')
     if (error) throw error
-    return Object.fromEntries(data.map(({ key, value }) => [key, value]))
+    return data
   },
 
   async update(key: string, value: string): Promise<AiSetting> {
@@ -223,6 +224,31 @@ export const aiSettingsService = {
       .single()
     if (error) throw error
     return data
+  },
+
+  async create(payload: { key: string; value: string; description?: string | null }): Promise<AiSetting> {
+    const { data: { user } } = await supabase.auth.getUser()
+
+    const { data, error } = await supabase
+      .from('ai_settings')
+      .insert({
+        key: payload.key,
+        value: payload.value,
+        description: payload.description ?? null,
+        updated_by: user?.id ?? null,
+      })
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('ai_settings')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
   },
 }
 

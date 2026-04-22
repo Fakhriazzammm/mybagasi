@@ -1,8 +1,8 @@
 """
 Mercari JP scraper.
 
-Mercari uses Next.js — product data is embedded in <script id="__NEXT_DATA__">.
-We try to parse that first; Playwright is used as a fallback for dynamic content.
+Primary path: Playwright + __NEXT_DATA__ extraction.
+Fallback path: Crawl4AI markdown extraction.
 """
 from __future__ import annotations
 
@@ -12,10 +12,15 @@ from typing import Optional
 
 from playwright.async_api import async_playwright
 
+from .generic import _crawl4ai
 from .models import ProductData, parse_jpy
 
 
 async def scrape_mercari(url: str) -> ProductData:
+    normalized_url = _normalize_mercari_url(url)
+    if "/item/" not in normalized_url:
+        raise ValueError("URL_INVALID: format link Mercari tidak valid")
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -32,15 +37,19 @@ async def scrape_mercari(url: str) -> ProductData:
         )
         page = await context.new_page()
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            await _apply_stealth(page)
+            await page.goto(normalized_url, wait_until="domcontentloaded", timeout=45_000)
+            await page.wait_for_timeout(1200)
 
             # --- Try embedded Next.js JSON first (fastest path) ---
             next_raw: Optional[str] = await page.evaluate(
                 "() => document.getElementById('__NEXT_DATA__')?.textContent"
             )
             if next_raw:
-                product = _parse_next_data(next_raw, url)
+                product = _parse_next_data(next_raw, normalized_url)
                 if product:
+                    product.confidence = "high"
+                    product.scrape_reason_code = "PLAYWRIGHT"
                     return product
 
             # --- Fallback: live DOM selectors ---
@@ -71,17 +80,54 @@ async def scrape_mercari(url: str) -> ProductData:
             except Exception:
                 pass
 
-            return ProductData(
-                title=title.strip(),
-                price_jpy=parse_jpy(price_text),
-                price_display=price_text.strip(),
-                images=images,
-                description=description.strip()[:600],
-                marketplace="mercari",
-                url=url,
-            )
+            if title.strip() or price_text.strip() or images:
+                return ProductData(
+                    title=title.strip(),
+                    price_jpy=parse_jpy(price_text),
+                    price_display=price_text.strip(),
+                    images=images,
+                    description=description.strip()[:600],
+                    marketplace="mercari",
+                    url=normalized_url,
+                    confidence="medium" if title.strip() and images else "low",
+                    scrape_reason_code="PLAYWRIGHT",
+                )
+
+            # Last resort for bot-protected pages.
+            return await _crawl4ai_fallback(normalized_url)
         finally:
             await browser.close()
+
+
+async def _crawl4ai_fallback(url: str) -> ProductData:
+    product = await _crawl4ai(url)
+    product.marketplace = "mercari"
+    product.url = url
+    product.confidence = "medium" if product.price_jpy and product.images else "low"
+    product.scrape_reason_code = "CRAWL4AI"
+    return product
+
+
+def _normalize_mercari_url(url: str) -> str:
+    normalized = url.strip()
+
+    # Handle old/wrong route format often pasted by users.
+    normalized = re.sub(r"mercari\.com/items/", "jp.mercari.com/item/", normalized)
+    normalized = re.sub(r"www\.mercari\.com/item/", "jp.mercari.com/item/", normalized)
+    if "mercari.com/item/" in normalized and "jp.mercari.com/item/" not in normalized:
+        normalized = normalized.replace("mercari.com/item/", "jp.mercari.com/item/")
+
+    return normalized
+
+
+async def _apply_stealth(page) -> None:
+    try:
+        from playwright_stealth import stealth_async  # type: ignore
+
+        await stealth_async(page)
+    except Exception:
+        # Optional dependency: continue without stealth if unavailable.
+        return
 
 
 def _parse_next_data(raw: str, url: str) -> Optional[ProductData]:
