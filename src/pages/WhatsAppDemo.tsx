@@ -40,9 +40,9 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const createSearchAcknowledgement = () => {
   const variants = [
-    "Siap, aku cek link produk kamu dulu ya 👀 Aku pakai tool scraping Crawl4AI + Playwright Stealth. Biasanya butuh sekitar 10–20 detik.",
-    "Noted! Aku lagi ambil detail dari link-nya pakai Crawl4AI + Playwright Stealth ya ⏳ Tunggu sebentar, ya.",
-    "Oke, aku proses link-nya dulu sekarang 🙌 Tool scraping yang kepakai: Crawl4AI + Playwright Stealth. Estimasi sekitar belasan detik.",
+    "Siap, aku cek link produk kamu dulu ya 👀 Biasanya butuh sekitar 10–20 detik.",
+    "Noted! Aku lagi membuka link dan mengambil detail produknya dulu ya ⏳ Tunggu sebentar, ya.",
+    "Oke, aku proses link-nya dulu sekarang 🙌 Estimasi sekitar belasan detik.",
   ];
 
   const followUps = [
