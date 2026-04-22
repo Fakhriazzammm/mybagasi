@@ -7,3 +7,4 @@ playwright>=1.44.0
 crawl4ai>=0.3.0
 pydantic>=2.7.0
 python-dotenv>=1.0.0
+playwright-stealth @ git+https://github.com/AtuboDad/playwright_stealth.git

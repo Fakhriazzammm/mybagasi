@@ -20,6 +20,8 @@ class ProductData(BaseModel):
     scraped_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    confidence: Optional[str] = None
+    scrape_reason_code: Optional[str] = None
 
 
 def parse_jpy(text: str) -> Optional[int]:

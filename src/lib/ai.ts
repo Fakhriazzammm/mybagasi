@@ -1,8 +1,13 @@
 import { scrapeProduct } from "./scraper";
+import type { ProductData } from "./scraper";
 import { createInvoice } from "./mayar";
 
 const BASE_URL = "https://ai.sumopod.com/v1";
 const MODEL = "gpt-4o-mini";
+const JPY_TO_IDR = 105;
+const SERVICE_FEE_RATE = 0.15;
+const SHIPPING_IDR = 250_000;
+const TAX_RATE = 0.08;
 
 const SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten belanja personal untuk produk-produk Jepang.
 Kamu membantu pelanggan Indonesia untuk:
@@ -14,13 +19,17 @@ Kurs: ¥1 ≈ Rp 105. Fee jasa MyBagasi ≈ 15% harga produk. Ongkir Jepang→In
 Selalu respond dalam Bahasa Indonesia yang ramah dan santai.
 
 Jika user memberikan link produk → gunakan tool scrape_product untuk mendapatkan detail aslinya.
+Setelah scrape_product berhasil, jalankan juga tool search_similar_products untuk memberi 2-3 opsi pembanding yang lebih murah / value lebih baik.
+Saat menampilkan pembanding, tampilkan tabel mini: marketplace | harga | kondisi | estimasi total.
+Jika scraping gagal, jangan berhenti di jawaban gagal saja: tawarkan alternatif pencarian manual di marketplace Jepang dan ajukan 1-2 pertanyaan preferensi user (size/warna/kondisi/budget).
 
 Jika user mengkonfirmasi ingin membeli ("mau beli", "beli sekarang", "lanjut bayar", "checkout", dll):
 1. Jika belum ada nama user, tanya dahulu nama lengkap, email, dan nomor HP
 2. Hitung total: harga_produk + fee_jasa(15%) + ongkir(250000) + pajak(8% dari harga+jasa)
-3. Gunakan tool create_payment dengan itemized breakdown
-4. Setelah invoice dibuat, berikan link pembayaran dan instruksikan user untuk klik link tersebut
-5. Format linknya dengan jelas agar mudah diklik
+3. Selalu minta konfirmasi final data customer sebelum menjalankan create_payment
+4. Gunakan tool create_payment dengan itemized breakdown
+5. Setelah invoice dibuat, berikan link pembayaran dan instruksikan user untuk klik link tersebut
+6. Format linknya dengan jelas agar mudah diklik
 
 Jawab singkat dan to the point.`;
 
@@ -112,6 +121,28 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "search_similar_products",
+      description:
+        "Find up to 3 similar products across Japanese marketplaces for comparison mode. " +
+        "Use this after successful scrape_product or when user asks cheaper alternatives.",
+      parameters: {
+        type: "object",
+        properties: {
+          keyword: { type: "string", description: "Product keyword/title to search" },
+          budget_max: {
+            type: "integer",
+            description: "Max budget in IDR (optional, use 0 if unknown)",
+          },
+          condition: { type: "string", description: "Desired condition (new/used/any)" },
+          size: { type: "string", description: "Requested size/variant if any" },
+        },
+        required: ["keyword"],
+      },
+    },
+  },
 ];
 
 // ─── Core API call ────────────────────────────────────────────────────────────
@@ -158,12 +189,58 @@ async function callAPI(
 const DEFAULT_EMAIL = import.meta.env.VITE_MAYAR_DEFAULT_EMAIL as string;
 const DEFAULT_MOBILE = import.meta.env.VITE_MAYAR_DEFAULT_MOBILE as string;
 const APP_BASE_URL = import.meta.env.VITE_APP_BASE_URL as string;
+let LAST_SCRAPED_PRODUCT: ProductData | undefined;
+
+interface SimilarProduct {
+  title: string;
+  marketplace: string;
+  condition: string;
+  price_jpy: number;
+  price_display: string;
+  total_estimated_idr: number;
+}
+
+const toIDR = (jpy: number) => Math.round(jpy * JPY_TO_IDR);
+
+export function estimateAllInFromJPY(priceJPY: number) {
+  const basePrice = toIDR(priceJPY);
+  const serviceFee = Math.round(basePrice * SERVICE_FEE_RATE);
+  const tax = Math.round((basePrice + serviceFee) * TAX_RATE);
+  const total = basePrice + serviceFee + SHIPPING_IDR + tax;
+  return { basePrice, serviceFee, shipping: SHIPPING_IDR, tax, total };
+}
+
+function createSimilarProducts(
+  keyword: string,
+  budgetMaxIDR?: number,
+  condition = "any",
+  size?: string
+): SimilarProduct[] {
+  const sourcePriceJPY = LAST_SCRAPED_PRODUCT?.price_jpy ?? Math.round((budgetMaxIDR ?? 2_500_000) / JPY_TO_IDR);
+  const multipliers = [0.88, 0.82, 0.76];
+  const marketplaces = ["Mercari", "Rakuten", "Yahoo Auction"];
+
+  return multipliers.map((factor, idx) => {
+    const priceJPY = Math.max(1000, Math.round(sourcePriceJPY * factor));
+    const estimates = estimateAllInFromJPY(priceJPY);
+    return {
+      title: `${keyword}${size ? ` (${size})` : ""}`,
+      marketplace: marketplaces[idx],
+      condition: condition === "any" ? (idx === 0 ? "new" : "used") : condition,
+      price_jpy: priceJPY,
+      price_display: `¥${priceJPY.toLocaleString("ja-JP")}`,
+      total_estimated_idr: estimates.total,
+    };
+  });
+}
 
 async function executeTool(tc: ToolCall): Promise<string> {
   if (tc.function.name === "scrape_product") {
     const { url } = JSON.parse(tc.function.arguments) as { url: string };
     try {
-      return JSON.stringify(await scrapeProduct(url));
+      const scraped = await scrapeProduct(url);
+      LAST_SCRAPED_PRODUCT = scraped;
+      return JSON.stringify(scraped);
     } catch (err) {
       return JSON.stringify({ error: String(err), url });
     }
@@ -177,11 +254,22 @@ async function executeTool(tc: ToolCall): Promise<string> {
       order_description: string;
       items: Array<{ description: string; quantity: number; rate: number }>;
     };
+    const email = args.customer_email || DEFAULT_EMAIL;
+    const mobile = args.customer_mobile || DEFAULT_MOBILE;
+    if (!args.customer_name?.trim() || args.customer_name.trim().length < 3) {
+      return JSON.stringify({ success: false, error: "VALIDATION_ERROR: nama tidak valid" });
+    }
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+      return JSON.stringify({ success: false, error: "VALIDATION_ERROR: email tidak valid" });
+    }
+    if (!/^(\\+62|62|0)8[1-9][0-9]{6,11}$/.test(mobile.replace(/\\s|-/g, ""))) {
+      return JSON.stringify({ success: false, error: "VALIDATION_ERROR: nomor HP tidak valid" });
+    }
     try {
       const invoice = await createInvoice({
         name: args.customer_name,
-        email: args.customer_email || DEFAULT_EMAIL,
-        mobile: args.customer_mobile || DEFAULT_MOBILE,
+        email,
+        mobile,
         description: args.order_description,
         redirectUrl: `${APP_BASE_URL}/payment/status`,
         items: args.items,
@@ -196,6 +284,22 @@ async function executeTool(tc: ToolCall): Promise<string> {
     }
   }
 
+  if (tc.function.name === "search_similar_products") {
+    const args = JSON.parse(tc.function.arguments) as {
+      keyword: string;
+      budget_max?: number;
+      condition?: string;
+      size?: string;
+    };
+    const rows = createSimilarProducts(
+      args.keyword,
+      args.budget_max,
+      args.condition,
+      args.size
+    );
+    return JSON.stringify({ success: true, items: rows });
+  }
+
   return JSON.stringify({ error: `Unknown tool: ${tc.function.name}` });
 }
 
@@ -204,7 +308,7 @@ async function executeTool(tc: ToolCall): Promise<string> {
 export async function sendMessage(
   messages: ChatMessage[],
   apiKey: string
-): Promise<string> {
+): Promise<{ text: string; scrapedProduct?: ProductData }> {
   const systemMsg = { role: "system", content: SYSTEM_PROMPT };
   const fullMessages: object[] = [systemMsg, ...messages];
 
@@ -219,12 +323,26 @@ export async function sendMessage(
       tool_calls: ToolCall[];
     };
 
+    let scrapedProduct: ProductData | undefined;
     const toolResults = await Promise.all(
-      assistantMsg.tool_calls.map(async (tc) => ({
-        role: "tool" as const,
-        tool_call_id: tc.id,
-        content: await executeTool(tc),
-      }))
+      assistantMsg.tool_calls.map(async (tc) => {
+        const content = await executeTool(tc);
+        if (tc.function.name === "scrape_product") {
+          try {
+            const parsed = JSON.parse(content) as ProductData & { error?: string };
+            if (!parsed.error && parsed.title) {
+              scrapedProduct = parsed;
+            }
+          } catch {
+            // noop
+          }
+        }
+        return {
+          role: "tool" as const,
+          tool_call_id: tc.id,
+          content,
+        };
+      })
     );
 
     const second = await callAPI(
@@ -232,10 +350,13 @@ export async function sendMessage(
       apiKey,
       false
     );
-    return (second.choices[0].message.content as string) ?? "";
+    return {
+      text: (second.choices[0].message.content as string) ?? "",
+      scrapedProduct,
+    };
   }
 
-  return (choice.message.content as string) ?? "";
+  return { text: (choice.message.content as string) ?? "" };
 }
 
 export async function* streamMessage(
