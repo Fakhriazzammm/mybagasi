@@ -62,6 +62,69 @@ const quickReplies = [
   "Pre-order Pokemon card",
 ];
 
+function parsePipeTable(text: string): {
+  before: string;
+  headers: string[];
+  rows: string[][];
+  after: string;
+} | null {
+  const lines = text.split("\n");
+  const tableStart = lines.findIndex((line) => line.trim().startsWith("|"));
+  if (tableStart < 0 || tableStart + 2 >= lines.length) return null;
+
+  const candidate = lines.slice(tableStart).filter((line) => line.trim().startsWith("|"));
+  if (candidate.length < 3) return null;
+
+  const headers = candidate[0]
+    .split("|")
+    .map((cell) => cell.trim())
+    .filter(Boolean);
+  const rows = candidate
+    .slice(2)
+    .map((line) => line.split("|").map((cell) => cell.trim()).filter(Boolean))
+    .filter((row) => row.length >= headers.length);
+  if (!headers.length || !rows.length) return null;
+
+  const tableLinesCount = candidate.length;
+  const before = lines.slice(0, tableStart).join("\n").trim();
+  const after = lines.slice(tableStart + tableLinesCount).join("\n").trim();
+  return { before, headers, rows, after };
+}
+
+const MessageText = ({ text }: { text: string }) => {
+  const parsed = parsePipeTable(text);
+  if (!parsed) return <p className="whitespace-pre-wrap">{text}</p>;
+
+  return (
+    <div className="space-y-2">
+      {parsed.before && <p className="whitespace-pre-wrap">{parsed.before}</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border border-border/60 rounded-lg overflow-hidden">
+          <thead className="bg-muted/50">
+            <tr>
+              {parsed.headers.map((h) => (
+                <th key={h} className="px-2 py-1 text-left font-semibold border-b border-border/60">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {parsed.rows.map((row, i) => (
+              <tr key={i} className="border-b border-border/30 last:border-b-0">
+                {parsed.headers.map((_, idx) => (
+                  <td key={idx} className="px-2 py-1 align-top">{row[idx] ?? "-"}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {parsed.after && <p className="whitespace-pre-wrap">{parsed.after}</p>}
+    </div>
+  );
+};
+
 const QuotationCard = () => (
   <div className="rounded-2xl bg-background border border-border p-4 mt-2 shadow-soft">
     <div className="flex items-center gap-2 mb-3">
@@ -395,7 +458,7 @@ const WhatsAppDemo = () => {
                     <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
                       m.from === "user" ? "bg-[#dcf8c6] text-foreground rounded-br-sm" : "bg-background text-foreground rounded-bl-sm"
                     }`}>
-                      {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                      {m.text && <MessageText text={m.text} />}
                       {m.card === "quotation" && <QuotationCard />}
                       {m.card === "payment" && <PaymentCard />}
                       {m.card === "tracking" && <TrackingCard />}
