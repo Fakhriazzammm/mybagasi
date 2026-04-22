@@ -25,8 +25,6 @@ const aiSettingNotes: Record<string, string> = {
 };
 
 const aiFeatureDefaults = [
-  { key: "Model utama", value: "gpt-4o-mini", description: "Model AI dari SumoPod." },
-  { key: "AI provider base URL", value: "https://ai.sumopod.com/v1", description: "Endpoint utama API SumoPod." },
   { key: "comparison_mode_enabled", value: "true", description: "Aktifkan comparison mode otomatis 3 opsi termurah." },
   { key: "comparison_option_count", value: "3", description: "Jumlah opsi pembanding yang ditampilkan AI." },
   { key: "auto_scrape_progress_steps", value: "true", description: "Tampilkan status scraping bertahap di chat." },
@@ -136,12 +134,6 @@ export default function AISettingsPage() {
         name: "Comparison Mode",
         ok: byKey.comparison_mode_enabled === "true" && Number(byKey.comparison_option_count || "0") >= 2,
         detail: "Perbandingan otomatis 2-3 opsi termurah aktif.",
-      },
-      {
-        name: "SumoPod Model",
-        ok: (byKey["Model utama"] || "").toLowerCase().includes("gpt-4o-mini") &&
-          (byKey["AI provider base URL"] || "").includes("ai.sumopod.com"),
-        detail: "Model & endpoint mengarah ke SumoPod.",
       },
       {
         name: "Pricing Engine",

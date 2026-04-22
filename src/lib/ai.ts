@@ -2,8 +2,8 @@ import { scrapeProduct } from "./scraper";
 import type { ProductData } from "./scraper";
 import { createInvoice } from "./mayar";
 
-const BASE_URL = (import.meta.env.VITE_SUMOPOD_BASE_URL as string | undefined) ?? "https://ai.sumopod.com/v1";
-const MODEL = (import.meta.env.VITE_SUMOPOD_MODEL as string | undefined) ?? "gpt-4o-mini";
+const BASE_URL = "https://ai.sumopod.com/v1";
+const MODEL = "gpt-4o-mini";
 const JPY_TO_IDR = 105;
 const SERVICE_FEE_RATE = 0.15;
 const SHIPPING_IDR = 250_000;
