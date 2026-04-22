@@ -46,7 +46,10 @@ export interface CreateInvoiceInput {
   items: InvoiceItem[];
 }
 
-const BASE = "/api/mayar";
+const API_BASE = (
+  (import.meta.env.VITE_BACKEND_BASE_URL as string | undefined) ?? "/api"
+).replace(/\/$/, "");
+const BASE = `${API_BASE}/mayar`;
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
