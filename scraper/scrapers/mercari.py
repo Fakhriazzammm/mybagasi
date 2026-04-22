@@ -10,6 +10,8 @@ import json
 import re
 from typing import Optional
 
+import httpx
+from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 from .generic import _crawl4ai
