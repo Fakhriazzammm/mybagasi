@@ -310,8 +310,41 @@ export async function sendMessage(
   messages: ChatMessage[],
   apiKey: string
 ): Promise<{ text: string; scrapedProduct?: ProductData }> {
+  if (!apiKey?.trim()) {
+    throw new Error("AI API key belum diatur. Set VITE_SUMOPOD_API_KEY terlebih dahulu.");
+  }
+
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((msg): msg is Extract<ChatMessage, { role: "user" }> => msg.role === "user");
+  const detectedUrl = latestUserMessage ? extractUrl(latestUserMessage.content) : null;
+
+  let preScrapedProduct: ProductData | undefined;
+  let preScrapeError = "";
+  if (detectedUrl) {
+    try {
+      preScrapedProduct = await scrapeProduct(detectedUrl);
+      LAST_SCRAPED_PRODUCT = preScrapedProduct;
+    } catch (err) {
+      preScrapeError = String(err);
+    }
+  }
+
   const systemMsg = { role: "system", content: SYSTEM_PROMPT };
-  const fullMessages: object[] = [systemMsg, ...messages];
+  const scrapeContextMessage =
+    preScrapedProduct || preScrapeError
+      ? {
+          role: "system" as const,
+          content: preScrapedProduct
+            ? `Konteks tambahan hasil buka link produk (gunakan sebagai sumber fakta utama): ${JSON.stringify(
+                preScrapedProduct
+              )}`
+            : `Percobaan membuka link produk gagal. Detail error: ${preScrapeError}. Tetap bantu user dengan alternatif pencarian.`,
+        }
+      : null;
+  const fullMessages: object[] = scrapeContextMessage
+    ? [systemMsg, scrapeContextMessage, ...messages]
+    : [systemMsg, ...messages];
 
   // First call — with tools
   const first = await callAPI(fullMessages, apiKey, true);
@@ -353,11 +386,14 @@ export async function sendMessage(
     );
     return {
       text: (second.choices[0].message.content as string) ?? "",
-      scrapedProduct,
+      scrapedProduct: scrapedProduct ?? preScrapedProduct,
     };
   }
 
-  return { text: (choice.message.content as string) ?? "" };
+  return {
+    text: (choice.message.content as string) ?? "",
+    scrapedProduct: preScrapedProduct,
+  };
 }
 
 export async function* streamMessage(
