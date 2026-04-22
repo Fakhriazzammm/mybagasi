@@ -10,6 +10,8 @@ export interface ProductData {
   available: boolean;
   url: string;
   scraped_at: string;
+  confidence?: "high" | "medium" | "low";
+  scrape_reason_code?: "PLAYWRIGHT" | "CRAWL4AI" | "BLOCKED" | "URL_INVALID" | "NOT_FOUND" | "PARSE_EMPTY";
 }
 
 const API_BASE = (

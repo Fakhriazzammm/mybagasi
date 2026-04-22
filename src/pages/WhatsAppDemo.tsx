@@ -3,7 +3,8 @@ import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
 import { Send, Check, CheckCheck, Package, CreditCard, Plane, Home, Sparkles } from "lucide-react";
-import { sendMessage, type ChatMessage } from "@/lib/ai";
+import { estimateAllInFromJPY, sendMessage, type ChatMessage } from "@/lib/ai";
+import type { ProductData } from "@/lib/scraper";
 
 const API_KEY = import.meta.env.VITE_SUMOPOD_API_KEY as string;
 
@@ -11,13 +12,48 @@ type Msg = {
   id: number;
   from: "user" | "bot";
   text?: string;
-  card?: "quotation" | "payment" | "tracking";
+  card?: "quotation" | "payment" | "tracking" | "product" | "comparison";
+  product?: ProductData;
+  comparisons?: ComparisonItem[];
   time: string;
+};
+
+type FunnelState = "discovering" | "comparing" | "confirming" | "payment" | "post-payment";
+
+type ComparisonItem = {
+  title: string;
+  marketplace: string;
+  condition: string;
+  price_jpy: number;
+  price_display: string;
+  total_estimated_idr: number;
 };
 
 const initialMsgs: Msg[] = [
   { id: 1, from: "bot", text: "Konnichiwa! 👋 Saya MyBagasi AI. Mau cari barang apa dari Jepang hari ini?", time: "10:00" },
 ];
+
+
+const URL_REGEX = /https?:\/\//i;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const createSearchAcknowledgement = () => {
+  const variants = [
+    "Siap, aku cek link produk kamu dulu ya 👀 Biasanya butuh sekitar 10–20 detik.",
+    "Noted! Aku lagi membuka link dan mengambil detail produknya dulu ya ⏳ Tunggu sebentar, ya.",
+    "Oke, aku proses link-nya dulu sekarang 🙌 Estimasi sekitar belasan detik.",
+  ];
+
+  const followUps = [
+    "Sambil nunggu, kamu maunya kondisi baru saja atau second juga boleh?",
+    "Biar aku carikan opsi terbaik, kamu prefer size/warna tertentu?",
+    "Kalau stok di link habis, aku lanjut cari alternatif termurah juga ya?",
+  ];
+
+  return `${variants[Math.floor(Math.random() * variants.length)]}
+${followUps[Math.floor(Math.random() * followUps.length)]}`;
+};
 
 const quickReplies = [
   "Belikan sepatu Onitsuka Tiger",
@@ -25,6 +61,69 @@ const quickReplies = [
   "Cari skincare Hada Labo",
   "Pre-order Pokemon card",
 ];
+
+function parsePipeTable(text: string): {
+  before: string;
+  headers: string[];
+  rows: string[][];
+  after: string;
+} | null {
+  const lines = text.split("\n");
+  const tableStart = lines.findIndex((line) => line.trim().startsWith("|"));
+  if (tableStart < 0 || tableStart + 2 >= lines.length) return null;
+
+  const candidate = lines.slice(tableStart).filter((line) => line.trim().startsWith("|"));
+  if (candidate.length < 3) return null;
+
+  const headers = candidate[0]
+    .split("|")
+    .map((cell) => cell.trim())
+    .filter(Boolean);
+  const rows = candidate
+    .slice(2)
+    .map((line) => line.split("|").map((cell) => cell.trim()).filter(Boolean))
+    .filter((row) => row.length >= headers.length);
+  if (!headers.length || !rows.length) return null;
+
+  const tableLinesCount = candidate.length;
+  const before = lines.slice(0, tableStart).join("\n").trim();
+  const after = lines.slice(tableStart + tableLinesCount).join("\n").trim();
+  return { before, headers, rows, after };
+}
+
+const MessageText = ({ text }: { text: string }) => {
+  const parsed = parsePipeTable(text);
+  if (!parsed) return <p className="whitespace-pre-wrap">{text}</p>;
+
+  return (
+    <div className="space-y-2">
+      {parsed.before && <p className="whitespace-pre-wrap">{parsed.before}</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border border-border/60 rounded-lg overflow-hidden">
+          <thead className="bg-muted/50">
+            <tr>
+              {parsed.headers.map((h) => (
+                <th key={h} className="px-2 py-1 text-left font-semibold border-b border-border/60">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {parsed.rows.map((row, i) => (
+              <tr key={i} className="border-b border-border/30 last:border-b-0">
+                {parsed.headers.map((_, idx) => (
+                  <td key={idx} className="px-2 py-1 align-top">{row[idx] ?? "-"}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {parsed.after && <p className="whitespace-pre-wrap">{parsed.after}</p>}
+    </div>
+  );
+};
 
 const QuotationCard = () => (
   <div className="rounded-2xl bg-background border border-border p-4 mt-2 shadow-soft">
@@ -103,11 +202,122 @@ const TrackingCard = () => {
   );
 };
 
+const ProductCard = ({
+  product,
+  onAskCheaper,
+}: {
+  product: ProductData;
+  onAskCheaper: (product: ProductData) => void;
+}) => (
+  <div className="rounded-2xl bg-background border border-border p-3 mt-2 shadow-soft space-y-2">
+    {product.images?.[0] && (
+      <img
+        src={product.images[0]}
+        alt={product.title}
+        className="w-full h-40 object-cover rounded-xl border border-border/60"
+      />
+    )}
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{product.marketplace}</p>
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">estimasi</span>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full ${product.available ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"}`}>
+          {product.available ? "stok tersedia" : "sold out"}
+        </span>
+      </div>
+      <p className="font-semibold text-sm line-clamp-2">{product.title || "Produk ditemukan"}</p>
+      <p className="text-sm mt-1">
+        Harga: <span className="font-bold text-primary">{product.price_display || "Tidak ditemukan"}</span>
+      </p>
+      {product.condition && <p className="text-xs text-muted-foreground">Kondisi: {product.condition}</p>}
+      {product.price_jpy && (
+        <div className="text-xs mt-2 space-y-1 border-t border-border/60 pt-2">
+          {(() => {
+            const fees = estimateAllInFromJPY(product.price_jpy);
+            return (
+              <>
+                <div className="flex justify-between"><span>Harga (Rp)</span><span>Rp {fees.basePrice.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between"><span>Fee jasa</span><span>Rp {fees.serviceFee.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between"><span>Ongkir</span><span>Rp {fees.shipping.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between"><span>Pajak</span><span>Rp {fees.tax.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between font-bold text-primary"><span>Total estimasi</span><span>Rp {fees.total.toLocaleString("id-ID")}</span></div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+      {product.scraped_at && (
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Last checked: {new Date(product.scraped_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+        </p>
+      )}
+    </div>
+    <div className="grid grid-cols-2 gap-2 pt-1">
+      <a
+        href={product.url}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center justify-center rounded-lg border border-border px-2 py-2 text-xs font-medium hover:bg-muted"
+      >
+        Lihat detail lengkap
+      </a>
+      <button
+        type="button"
+        onClick={() => onAskCheaper(product)}
+        className="inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground px-2 py-2 text-xs font-medium hover:opacity-90"
+      >
+        Minta alternatif lebih murah
+      </button>
+    </div>
+  </div>
+);
+
+const ComparisonCard = ({
+  comparisons,
+  onPick,
+  onCompareAgain,
+}: {
+  comparisons: ComparisonItem[];
+  onPick: (item: ComparisonItem) => void;
+  onCompareAgain: () => void;
+}) => (
+  <div className="rounded-2xl bg-background border border-border p-3 mt-2 shadow-soft">
+    <p className="text-sm font-semibold mb-2">Perbandingan 3 opsi termurah</p>
+    <div className="space-y-2">
+      {comparisons.map((item, idx) => (
+        <div key={`${item.marketplace}-${idx}`} className="rounded-lg border border-border p-2 text-xs">
+          <div className="grid grid-cols-2 gap-2">
+            <span className="text-muted-foreground">Marketplace</span><span className="font-medium">{item.marketplace}</span>
+            <span className="text-muted-foreground">Harga</span><span className="font-medium">{item.price_display}</span>
+            <span className="text-muted-foreground">Kondisi</span><span className="font-medium">{item.condition}</span>
+            <span className="text-muted-foreground">Estimasi total</span><span className="font-semibold text-primary">Rp {item.total_estimated_idr.toLocaleString("id-ID")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onPick(item)}
+            className="mt-2 w-full rounded-md bg-primary text-primary-foreground py-1 font-medium"
+          >
+            Pilih ini
+          </button>
+        </div>
+      ))}
+    </div>
+    <button
+      type="button"
+      onClick={onCompareAgain}
+      className="mt-2 w-full rounded-md border border-border py-1 text-xs font-medium hover:bg-muted"
+    >
+      Bandingkan lagi
+    </button>
+  </div>
+);
+
 const WhatsAppDemo = () => {
   const [msgs, setMsgs] = useState<Msg[]>(initialMsgs);
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
+  const [funnelState, setFunnelState] = useState<FunnelState>("discovering");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -119,19 +329,69 @@ const WhatsAppDemo = () => {
   const send = async (text: string) => {
     if (!text.trim() || typing) return;
 
-    const userMsg: Msg = { id: Date.now(), from: "user", text, time: now() };
+    const trimmedText = text.trim();
+    if (/checkout|bayar|invoice|pembayaran/i.test(trimmedText)) {
+      setFunnelState("payment");
+    } else if (/tracking|dikirim|sampai/i.test(trimmedText)) {
+      setFunnelState("post-payment");
+    }
+    const userMsg: Msg = { id: Date.now(), from: "user", text: trimmedText, time: now() };
     setMsgs((m) => [...m, userMsg]);
     setInput("");
     setTyping(true);
 
-    const updatedHistory: ChatMessage[] = [...history, { role: "user", content: text }];
+    const updatedHistory: ChatMessage[] = [...history, { role: "user", content: trimmedText }];
     setHistory(updatedHistory);
 
     try {
-      const reply = await sendMessage(updatedHistory, API_KEY);
+      if (URL_REGEX.test(trimmedText)) {
+        setFunnelState("discovering");
+        const steps = [
+          "🔎 Normalisasi link...",
+          "🕸️ Mengambil detail produk...",
+          "🧮 Menyusun estimasi biaya...",
+        ];
+        for (const [idx, step] of steps.entries()) {
+          setMsgs((m) => [...m, {
+            id: Date.now() + idx + 1,
+            from: "bot",
+            text: idx === 0 ? `${createSearchAcknowledgement()}\n${step}` : step,
+            time: now(),
+          }]);
+          await wait(600);
+        }
+      }
+
+      const { text: reply, scrapedProduct } = await sendMessage(updatedHistory, API_KEY);
+      await wait(700);
+
+      if (scrapedProduct) {
+        setFunnelState("comparing");
+        setMsgs((m) => [...m, {
+          id: Date.now() + 2,
+          from: "bot",
+          card: "product",
+          product: scrapedProduct,
+          time: now(),
+        }]);
+
+        const basePrice = scrapedProduct.price_jpy ?? Math.round((scrapedProduct.price_display.match(/\d[\d,]*/) ? Number((scrapedProduct.price_display.match(/\d[\d,]*/) as RegExpMatchArray)[0].replace(/,/g, "")) : 10000));
+        const comparisons: ComparisonItem[] = [
+          { title: scrapedProduct.title, marketplace: "Mercari", condition: scrapedProduct.condition ?? "used", price_jpy: Math.max(1000, Math.round(basePrice * 0.9)), price_display: `¥${Math.max(1000, Math.round(basePrice * 0.9)).toLocaleString("ja-JP")}`, total_estimated_idr: estimateAllInFromJPY(Math.max(1000, Math.round(basePrice * 0.9))).total },
+          { title: scrapedProduct.title, marketplace: "Rakuten", condition: "new", price_jpy: Math.max(1000, Math.round(basePrice * 0.84)), price_display: `¥${Math.max(1000, Math.round(basePrice * 0.84)).toLocaleString("ja-JP")}`, total_estimated_idr: estimateAllInFromJPY(Math.max(1000, Math.round(basePrice * 0.84))).total },
+          { title: scrapedProduct.title, marketplace: "Yahoo Auction", condition: "used", price_jpy: Math.max(1000, Math.round(basePrice * 0.78)), price_display: `¥${Math.max(1000, Math.round(basePrice * 0.78)).toLocaleString("ja-JP")}`, total_estimated_idr: estimateAllInFromJPY(Math.max(1000, Math.round(basePrice * 0.78))).total },
+        ];
+        setMsgs((m) => [...m, {
+          id: Date.now() + 3,
+          from: "bot",
+          card: "comparison",
+          comparisons,
+          time: now(),
+        }]);
+      }
 
       setMsgs((m) => [...m, {
-        id: Date.now() + 1,
+        id: Date.now() + 4,
         from: "bot",
         text: reply,
         time: now(),
@@ -140,7 +400,7 @@ const WhatsAppDemo = () => {
       setHistory((h) => [...h, { role: "assistant", content: reply }]);
     } catch (err) {
       setMsgs((m) => [...m, {
-        id: Date.now() + 1,
+        id: Date.now() + 3,
         from: "bot",
         text: "Maaf, ada gangguan koneksi. Coba lagi ya! 🙏",
         time: now(),
@@ -148,6 +408,22 @@ const WhatsAppDemo = () => {
     } finally {
       setTyping(false);
     }
+  };
+
+  const askCheaperAlternative = (product: ProductData) => {
+    setFunnelState("comparing");
+    const prompt = `Tolong carikan alternatif lebih murah dari produk ini: ${product.title}. Link referensi: ${product.url}. Prioritaskan yang ready stock di marketplace Jepang.`;
+    void send(prompt);
+  };
+
+  const pickComparedItem = (item: ComparisonItem) => {
+    setFunnelState("confirming");
+    void send(`Saya pilih opsi ${item.marketplace} dengan harga ${item.price_display}. Tolong lanjutkan ke tahap konfirmasi checkout.`);
+  };
+
+  const compareAgain = () => {
+    setFunnelState("comparing");
+    void send("Bandingkan lagi 3 opsi termurah dengan kondisi terbaik dan sertakan estimasi total.");
   };
 
   return (
@@ -171,7 +447,7 @@ const WhatsAppDemo = () => {
                 <div className="h-10 w-10 rounded-full bg-background/20 grid place-items-center font-display font-bold">M</div>
                 <div className="flex-1">
                   <p className="font-semibold text-sm">MyBagasi AI</p>
-                  <p className="text-[11px] opacity-90">{typing ? "mengetik..." : "online"}</p>
+                  <p className="text-[11px] opacity-90">{typing ? "mengetik..." : `online • ${funnelState}`}</p>
                 </div>
               </div>
 
@@ -182,10 +458,23 @@ const WhatsAppDemo = () => {
                     <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
                       m.from === "user" ? "bg-[#dcf8c6] text-foreground rounded-br-sm" : "bg-background text-foreground rounded-bl-sm"
                     }`}>
-                      {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                      {m.text && <MessageText text={m.text} />}
                       {m.card === "quotation" && <QuotationCard />}
                       {m.card === "payment" && <PaymentCard />}
                       {m.card === "tracking" && <TrackingCard />}
+                      {m.card === "product" && m.product && (
+                        <ProductCard
+                          product={m.product}
+                          onAskCheaper={askCheaperAlternative}
+                        />
+                      )}
+                      {m.card === "comparison" && m.comparisons && (
+                        <ComparisonCard
+                          comparisons={m.comparisons}
+                          onPick={pickComparedItem}
+                          onCompareAgain={compareAgain}
+                        />
+                      )}
                       <div className="flex justify-end items-center gap-1 mt-1 text-[10px] text-muted-foreground">
                         {m.time}
                         {m.from === "user" && <CheckCheck className="h-3 w-3 text-accent" />}
