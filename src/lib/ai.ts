@@ -221,6 +221,7 @@ function isScrapeUnusable(product: ProductData): boolean {
   const reason = (product.scrape_reason_code || "").toUpperCase();
   const isKnownBadReason = ["BLOCKED", "PARSE_EMPTY", "URL_INVALID", "NOT_FOUND"].includes(reason);
   const title = (product.title || "").trim().toLowerCase();
+  const desc = (product.description || "").toLowerCase();
   const isDomainOnlyTitle = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(title);
   const isKnownBadTitle = [
     "unknown",
@@ -231,13 +232,17 @@ function isScrapeUnusable(product: ProductData): boolean {
     "privacy settings",
     "page not found",
     "not found",
+    "your go-to marketplace for deals on used & secondhand items",
   ].includes(title);
+  const hasHard404Signal =
+    desc.includes("target url returned error 404") ||
+    desc.includes("warning: target url returned error 404");
   const lowSignal =
     (!product.title || isKnownBadTitle || isDomainOnlyTitle) &&
     !product.price_jpy &&
     !product.price_display &&
     (!product.images || product.images.length === 0);
-  return isKnownBadReason || lowSignal;
+  return isKnownBadReason || hasHard404Signal || lowSignal;
 }
 
 function buildScrapeFallbackError(product: ProductData): string {
