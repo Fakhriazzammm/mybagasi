@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { quotationsService } from '@/services/quotations.service'
 import type { QuotationStatus } from '@/types/database.types'
+import { useRealtimeInvalidation } from '@/hooks/useRealtimeInvalidation'
 
 export const QUOTATION_KEYS = {
   all: ['quotations'] as const,
@@ -9,6 +10,13 @@ export const QUOTATION_KEYS = {
 }
 
 export function useQuotations(status?: QuotationStatus) {
+  const queryClient = useQueryClient()
+  useRealtimeInvalidation({
+    channel: 'quotations-live',
+    tables: ['quotations'],
+    queryKeys: [QUOTATION_KEYS.all, QUOTATION_KEYS.list(status)],
+    queryClient,
+  })
   return useQuery({
     queryKey: QUOTATION_KEYS.list(status),
     queryFn: () => quotationsService.list(status),

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { paymentsService, refundsService } from '@/services/payments.service'
 import type { PaymentStatus, RefundStatus } from '@/types/database.types'
+import { useRealtimeInvalidation } from '@/hooks/useRealtimeInvalidation'
 
 export const PAYMENT_KEYS = {
   all: ['payments'] as const,
@@ -9,6 +10,13 @@ export const PAYMENT_KEYS = {
 }
 
 export function usePayments(status?: PaymentStatus) {
+  const queryClient = useQueryClient()
+  useRealtimeInvalidation({
+    channel: 'payments-live',
+    tables: ['payments'],
+    queryKeys: [PAYMENT_KEYS.all, PAYMENT_KEYS.list(status), PAYMENT_KEYS.stats()],
+    queryClient,
+  })
   return useQuery({
     queryKey: PAYMENT_KEYS.list(status),
     queryFn: () => paymentsService.listAll(status),

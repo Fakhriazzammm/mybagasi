@@ -12,12 +12,25 @@ from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/mayar")
 
-_BASE = os.getenv("MAYAR_API_BASE") or os.getenv("VITE_MAYAR_API_BASE") or "https://api.mayar.id/hl/v1"
+_BASE = os.getenv("MAYAR_API_BASE") or os.getenv("VITE_MAYAR_API_BASE")
 _KEY = os.getenv("MAYAR_API_KEY") or os.getenv("VITE_MAYAR_API_KEY") or ""
 _DEFAULT_EMAIL = os.getenv("MAYAR_DEFAULT_EMAIL") or os.getenv("VITE_MAYAR_DEFAULT_EMAIL") or ""
 _DEFAULT_MOBILE = os.getenv("MAYAR_DEFAULT_MOBILE") or os.getenv("VITE_MAYAR_DEFAULT_MOBILE") or ""
-_APP_BASE = os.getenv("APP_BASE_URL") or os.getenv("VITE_APP_BASE_URL") or "https://mybagasi.web.id"
+_APP_BASE = os.getenv("APP_BASE_URL") or os.getenv("VITE_APP_BASE_URL")
 
+
+
+
+def _require_config() -> None:
+    missing = []
+    if not _BASE:
+        missing.append("MAYAR_API_BASE")
+    if not _KEY:
+        missing.append("MAYAR_API_KEY")
+    if not _APP_BASE:
+        missing.append("APP_BASE_URL")
+    if missing:
+        raise HTTPException(status_code=500, detail=f"Missing backend config: {', '.join(missing)}")
 
 def _headers() -> dict[str, str]:
     return {
@@ -39,6 +52,7 @@ def _raise(resp: httpx.Response) -> None:
 
 @router.get("/products")
 async def list_products(page: int = 1, pageSize: int = 10):
+    _require_config()
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
             f"{_BASE}/product",
@@ -51,6 +65,7 @@ async def list_products(page: int = 1, pageSize: int = 10):
 
 @router.get("/products/{product_id}")
 async def get_product(product_id: str):
+    _require_config()
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(f"{_BASE}/product/{product_id}", headers=_headers())
     _raise(resp)
@@ -61,6 +76,7 @@ async def get_product(product_id: str):
 
 @router.post("/invoice/create")
 async def create_invoice(request: Request):
+    _require_config()
     body: dict = await request.json()
 
     # Apply defaults for optional fields
@@ -82,6 +98,7 @@ async def create_invoice(request: Request):
 
 @router.get("/invoice/{invoice_id}")
 async def get_invoice(invoice_id: str):
+    _require_config()
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
             f"{_BASE}/invoice/{invoice_id}", headers=_headers()
@@ -94,6 +111,7 @@ async def get_invoice(invoice_id: str):
 
 @router.post("/customer/create")
 async def create_customer(request: Request):
+    _require_config()
     body = await request.json()
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
@@ -114,6 +132,7 @@ async def webhook_history(
     startAt: str | None = None,
     endAt: str | None = None,
 ):
+    _require_config()
     params: dict = {"page": page, "pageSize": pageSize}
     for k, v in [("status", status), ("type", type), ("startAt", startAt), ("endAt", endAt)]:
         if v:
@@ -129,6 +148,7 @@ async def webhook_history(
 
 @router.post("/webhook/register")
 async def register_webhook(request: Request):
+    _require_config()
     body = await request.json()
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(

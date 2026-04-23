@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ordersService } from '@/services/orders.service'
 import type { OrderStatus } from '@/types/database.types'
+import { useRealtimeInvalidation } from '@/hooks/useRealtimeInvalidation'
 
 export const ORDER_KEYS = {
   all: ['orders'] as const,
@@ -10,6 +11,13 @@ export const ORDER_KEYS = {
 }
 
 export function useOrders(status?: OrderStatus) {
+  const queryClient = useQueryClient()
+  useRealtimeInvalidation({
+    channel: 'orders-live',
+    tables: ['orders', 'order_tracking'],
+    queryKeys: [ORDER_KEYS.all, ORDER_KEYS.list(status), ORDER_KEYS.stats()],
+    queryClient,
+  })
   return useQuery({
     queryKey: ORDER_KEYS.list(status),
     queryFn: () => ordersService.list(status),
