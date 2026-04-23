@@ -276,6 +276,20 @@ function normalizeScrapeErrorMessage(raw: string): string {
   return "Detail produk belum bisa diambil otomatis dari link tersebut.";
 }
 
+function normalizeUrlCandidate(raw: string): string | null {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return null;
+
+  const withoutTrailingPunctuation = trimmed.replace(/[),.;!?]+$/, "");
+  const hasScheme = /^https?:\/\//i.test(withoutTrailingPunctuation);
+  if (hasScheme) return withoutTrailingPunctuation;
+
+  if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#].*)?$/i.test(withoutTrailingPunctuation)) {
+    return `https://${withoutTrailingPunctuation}`;
+  }
+  return null;
+}
+
 export function estimateAllInFromJPY(priceJPY: number) {
   const basePrice = toIDR(priceJPY);
   const serviceFee = Math.round(basePrice * SERVICE_FEE_RATE);
@@ -344,7 +358,10 @@ function mapSearchResultsToSimilar(
 async function executeTool(tc: ToolCall): Promise<string> {
   if (tc.function.name === "scrape_product") {
     const { url } = JSON.parse(tc.function.arguments) as { url: string };
-    const normalizedUrl = (url || "").trim();
+    const normalizedUrl = normalizeUrlCandidate(url);
+    if (!normalizedUrl) {
+      return JSON.stringify({ error: "URL_INVALID", url: url ?? "" });
+    }
     if (
       LAST_SCRAPED_PRODUCT &&
       LAST_SCRAPED_URL &&
@@ -457,12 +474,6 @@ export async function sendMessage(
   messages: ChatMessage[],
   apiKey: string
 ): Promise<{ text: string; scrapedProduct?: ProductData }> {
-  if (!apiKey?.trim()) {
-    throw new Error(
-      "Konfigurasi AI belum lengkap: VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY belum diatur."
-    );
-  }
-
   const latestUserMessage = [...messages]
     .reverse()
     .find(
@@ -485,6 +496,29 @@ export async function sendMessage(
     } catch (err) {
       preScrapeError = normalizeScrapeErrorMessage(String(err));
     }
+  }
+
+  if (!apiKey?.trim()) {
+    if (preScrapedProduct) {
+      return {
+        text:
+          "Detail produk berhasil dibaca dari link. Untuk respons AI yang lebih lengkap (rekomendasi + perbandingan otomatis), " +
+          "isi VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY di frontend.",
+        scrapedProduct: preScrapedProduct,
+      };
+    }
+
+    if (detectedUrl) {
+      return {
+        text:
+          `Link sudah diterima, tapi detail belum bisa diekstrak otomatis. ${preScrapeError || "Coba kirim ulang link produk yang berbeda."} ` +
+          "Jika ingin fitur chat AI penuh, isi VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY di frontend.",
+      };
+    }
+
+    throw new Error(
+      "Konfigurasi AI belum lengkap: VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY belum diatur."
+    );
   }
 
   const systemMsg = { role: "system", content: SYSTEM_PROMPT };
@@ -680,8 +714,13 @@ export async function analyzeProductScreenshot(
   return text;
 }
 
-/** Extract the first HTTP(S) URL found in a string. */
+/** Extract the first URL (with/without scheme) found in a string and normalize it. */
 export function extractUrl(text: string): string | null {
-  const m = text.match(/https?:\/\/[^\s\])\n"']+/);
-  return m ? m[0] : null;
+  const withScheme = text.match(/https?:\/\/[^\s\])\n"']+/i)?.[0];
+  if (withScheme) return normalizeUrlCandidate(withScheme);
+
+  const withoutScheme = text.match(/\b(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s\])\n"']*)?/i)?.[0];
+  if (withoutScheme) return normalizeUrlCandidate(withoutScheme);
+
+  return null;
 }

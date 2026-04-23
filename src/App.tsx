@@ -105,6 +105,7 @@ const App = () => (
             <Route path="membership" element={<Membership />} />
             <Route path="points" element={<Points />} />
             <Route path="ai-shopper" element={<AIShopper />} />
+            <Route path="shopper-ai" element={<AIShopper />} />
           </Route>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
