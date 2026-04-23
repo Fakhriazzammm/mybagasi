@@ -11,6 +11,7 @@ import {
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { sendMessage, extractUrl, type ChatMessage } from "@/lib/ai";
+import type { ProductData } from "@/lib/scraper";
 
 const API_KEY =
   (import.meta.env.VITE_SUMOPOD_API_KEY as string | undefined) ??
@@ -23,6 +24,7 @@ type Msg = {
   content: string;
   time: string;
   paymentUrl?: string;
+  scrapedProduct?: ProductData;
 };
 
 const SUGGESTIONS = [
@@ -91,6 +93,7 @@ const AIShopper = () => {
           content: reply.text,
           time: now(),
           paymentUrl,
+          scrapedProduct: reply.scrapedProduct,
         },
       ]);
       setHistory((h) => [...h, { role: "assistant", content: reply.text }]);
@@ -199,6 +202,35 @@ const AIShopper = () => {
                     <span className="flex-1">Bayar Sekarang</span>
                     <ExternalLink className="h-3.5 w-3.5 opacity-70" />
                   </a>
+                )}
+
+                {m.scrapedProduct && (
+                  <div className="mt-3 rounded-xl border border-border/60 bg-muted/30 p-3 text-xs">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                      Hasil Baca Link (VPS Scraper)
+                    </p>
+                    <p className="font-semibold text-sm leading-snug">
+                      {m.scrapedProduct.title || "Produk ditemukan"}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      Marketplace: {m.scrapedProduct.marketplace}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Harga:{" "}
+                      <span className="font-semibold text-foreground">
+                        {m.scrapedProduct.price_display || "Tidak terdeteksi"}
+                      </span>
+                    </p>
+                    <a
+                      href={m.scrapedProduct.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      Buka link produk
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
                 )}
 
                 <p
