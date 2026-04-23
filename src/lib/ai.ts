@@ -256,6 +256,30 @@ function buildScrapeFallbackError(product: ProductData): string {
   return "Detail produk tidak berhasil diekstrak dari halaman.";
 }
 
+function normalizeScrapeErrorMessage(raw: string): string {
+  const text = (raw || "").toLowerCase();
+  if (
+    text.includes("404") ||
+    text.includes("not found") ||
+    text.includes("url_invalid")
+  ) {
+    return "Link produk tidak valid atau produknya sudah tidak tersedia.";
+  }
+  if (
+    text.includes("403") ||
+    text.includes("429") ||
+    text.includes("forbidden") ||
+    text.includes("captcha") ||
+    text.includes("blocked")
+  ) {
+    return "Halaman produk terproteksi anti-bot sehingga belum bisa dibaca otomatis.";
+  }
+  if (text.includes("timeout") || text.includes("network") || text.includes("failed to fetch")) {
+    return "Koneksi ke halaman produk sedang bermasalah, coba lagi beberapa saat.";
+  }
+  return "Detail produk belum bisa diambil otomatis dari link tersebut.";
+}
+
 export function estimateAllInFromJPY(priceJPY: number) {
   const basePrice = toIDR(priceJPY);
   const serviceFee = Math.round(basePrice * SERVICE_FEE_RATE);
@@ -409,7 +433,7 @@ export async function sendMessage(
         LAST_SCRAPED_URL = detectedUrl.trim();
       }
     } catch (err) {
-      preScrapeError = String(err);
+      preScrapeError = normalizeScrapeErrorMessage(String(err));
     }
   }
 
@@ -422,10 +446,10 @@ export async function sendMessage(
             ? `Konteks tambahan hasil buka link produk (gunakan sebagai sumber fakta utama): ${JSON.stringify(
                 preScrapedProduct
               )}`
-            : `Percobaan membuka link produk gagal. Detail error: ${preScrapeError}. 
+            : `Percobaan membuka link produk belum berhasil. Alasan: ${preScrapeError}.
 Tetap bantu user dengan alternatif pencarian.
 Wajib lakukan ini:
-1) Jelaskan singkat kenapa link belum bisa dibaca
+1) Jelaskan singkat kendala link tanpa menyebut error teknis internal (contoh: 404/server/tools)
 2) Tawarkan pencarian manual lintas marketplace Jepang
 3) Ajukan 1-2 pertanyaan preferensi (budget, kondisi, size/warna, brand)
 4) Jika memungkinkan, gunakan search_similar_products untuk memberi 2-3 opsi pembanding`,
