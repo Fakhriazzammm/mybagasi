@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -70,74 +71,41 @@ def _parse_json_object(text: str) -> dict[str, Any]:
 
 
 async def _capture_screenshot_bytes(url: str) -> Optional[bytes]:
-    profiles = [
-        {
-            "viewport": {"width": 390, "height": 844},
-            "user_agent": (
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
-                "Mobile/15E148 Safari/604.1"
-            ),
-            "extra_http_headers": {"Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8"},
-        },
-        {
-            "viewport": {"width": 1280, "height": 1800},
-            "user_agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "extra_http_headers": {"Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8"},
-        },
-    ]
-
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
         try:
-            for profile in profiles:
-                context = await browser.new_context(**profile)
-                try:
-                    page = await context.new_page()
-                    await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
-                    try:
-                        await page.wait_for_load_state("networkidle", timeout=12_000)
-                    except Exception:
-                        pass
-                    await page.wait_for_timeout(2500)
-                    body_text = (await page.inner_text("body")).strip().lower()
-                    shot = await page.screenshot(full_page=False, type="jpeg", quality=75)
-                    if not _looks_like_skeleton_or_blank(body_text):
-                        return shot
-                except Exception:
-                    continue
-                finally:
-                    await context.close()
-
-            # Final fallback: screenshot text-mirror page that usually bypasses anti-bot.
-            mirror_url = "https://r.jina.ai/http://" + url.replace("https://", "").replace("http://", "")
             context = await browser.new_context(
-                viewport={"width": 1280, "height": 1800},
+                viewport={"width": 390, "height": 844},
                 user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+                    "Mobile/15E148 Safari/604.1"
                 ),
+                extra_http_headers={"Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8"},
             )
             try:
                 page = await context.new_page()
-                await page.goto(mirror_url, wait_until="domcontentloaded", timeout=45_000)
-                await page.wait_for_timeout(1200)
-                return await page.screenshot(full_page=True, type="jpeg", quality=78)
+                await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+                # Fixed short wait instead of slow networkidle
+                await page.wait_for_timeout(1000)
+                body_text = ""
+                try:
+                    body_text = (await page.inner_text("body")).strip().lower()
+                except Exception:
+                    pass
+                shot = await page.screenshot(full_page=False, type="jpeg", quality=70)
+                if not _looks_like_skeleton_or_blank(body_text):
+                    return shot
             except Exception:
-                return None
+                pass
             finally:
                 await context.close()
+            return None
         finally:
             await browser.close()
-    return None
 
 
 def _looks_like_skeleton_or_blank(body_text: str) -> bool:
@@ -161,49 +129,46 @@ async def extract_product_via_screenshot_ai(
     if not api_key:
         return None
 
-    image_bytes = await _capture_screenshot_bytes(url)
-    if not image_bytes:
+    # Parallelize screenshot capture and mirror text fetch
+    results = await asyncio.gather(
+        _capture_screenshot_bytes(url),
+        _fetch_mirror_text(url),
+        return_exceptions=True,
+    )
+    image_bytes = results[0] if not isinstance(results[0], Exception) else None
+    mirror_text = results[1] if not isinstance(results[1], Exception) else ""
+
+    if not image_bytes and not mirror_text:
         return None
 
     image_data_url = (
         "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")
-    )
-    mirror_text = await _fetch_mirror_text(url)
+    ) if image_bytes else None
 
     prompt = (
-        "Analisis screenshot halaman ecommerce/marketplace berikut dan ekstrak data produk. "
-        "Balas WAJIB dalam JSON object valid dengan keys:\n"
-        "is_product_page (boolean), title (string), price_display (string), "
-        "condition (string), seller (string), available (boolean), description (string), "
-        "confidence (\"high\"|\"medium\"|\"low\").\n"
-        "Jika bukan halaman produk, set is_product_page=false."
+        "Analisis halaman ecommerce/marketplace dan ekstrak data produk. "
+        "Balas dalam JSON: is_product_page, title, price_display, condition, "
+        "seller, available, description, confidence (high/medium/low)."
     )
+
+    user_content: list[dict] = [{"type": "text", "text": prompt}]
+    if mirror_text:
+        user_content.append({"type": "text", "text": "Teks halaman:\n" + mirror_text[:4000]})
+    if image_data_url:
+        user_content.append({"type": "image_url", "image_url": {"url": image_data_url}})
 
     body = {
         "model": "gpt-4o-mini",
         "temperature": 0,
-        "max_tokens": 500,
+        "max_tokens": 400,
         "messages": [
-            {"role": "system", "content": "Kamu adalah extractor data produk screenshot."},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "text",
-                        "text": (
-                            "Konteks teks mirror (gunakan sebagai sumber utama jika tersedia):\n"
-                            + (mirror_text[:6000] if mirror_text else "(kosong)")
-                        ),
-                    },
-                    {"type": "image_url", "image_url": {"url": image_data_url}},
-                ],
-            },
+            {"role": "system", "content": "Kamu adalah extractor data produk."},
+            {"role": "user", "content": user_content},
         ],
     }
 
     try:
-        async with httpx.AsyncClient(timeout=45) as client:
+        async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
                 f"{_base_url()}/chat/completions",
                 headers={
@@ -259,7 +224,7 @@ async def extract_product_via_screenshot_ai(
 async def _fetch_mirror_text(url: str) -> str:
     mirror_url = "https://r.jina.ai/http://" + url.replace("https://", "").replace("http://", "")
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             resp = await client.get(mirror_url)
             resp.raise_for_status()
         return (resp.text or "").strip()

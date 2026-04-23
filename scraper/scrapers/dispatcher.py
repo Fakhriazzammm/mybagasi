@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from .models import ProductData
 from .mercari import scrape_mercari
@@ -55,8 +56,14 @@ def _mark_blocked_if_empty(product: ProductData) -> ProductData:
 async def _maybe_screenshot_ai_fallback(url: str, product: ProductData) -> ProductData:
     if not _needs_screenshot_ai(product):
         return product
-    ai_result = await extract_product_via_screenshot_ai(url, product.marketplace)
-    return ai_result or product
+    try:
+        ai_result = await asyncio.wait_for(
+            extract_product_via_screenshot_ai(url, product.marketplace),
+            timeout=25.0,
+        )
+        return ai_result or product
+    except (asyncio.TimeoutError, Exception):
+        return product
 
 
 def _needs_screenshot_ai(product: ProductData) -> bool:
