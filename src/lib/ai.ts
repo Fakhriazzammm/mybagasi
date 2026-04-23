@@ -2,17 +2,14 @@
 import type { ProductData } from "./scraper";
 import { searchProducts } from "./scraper";
 import { createInvoice } from "./mayar";
+import { appConfig } from "@/lib/runtime-config";
 
-const BASE_URL = (
-  (import.meta.env.VITE_OPENAI_BASE_URL as string | undefined) ??
-  (import.meta.env.OPENAI_BASE_URL as string | undefined) ??
-  "https://ai.sumopod.com/v1"
-).replace(/\/$/, "");
-const MODEL = "gpt-4o-mini";
-const JPY_TO_IDR = 105;
-const SERVICE_FEE_RATE = 0.15;
-const SHIPPING_IDR = 250_000;
-const TAX_RATE = 0.08;
+const BASE_URL = appConfig.openAiBaseUrl;
+const MODEL = appConfig.openAiModel;
+const JPY_TO_IDR = appConfig.pricing.jpyToIdr;
+const SERVICE_FEE_RATE = appConfig.pricing.serviceFeeRate;
+const SHIPPING_IDR = appConfig.pricing.shippingIdr;
+const TAX_RATE = appConfig.pricing.taxRate;
 
 const SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten belanja personal untuk produk-produk Jepang.
 Kamu membantu pelanggan Indonesia untuk:
@@ -199,12 +196,9 @@ async function callAPI(
 
 // Tool executor
 
-const DEFAULT_EMAIL = import.meta.env.VITE_MAYAR_DEFAULT_EMAIL as string;
-const DEFAULT_MOBILE = import.meta.env.VITE_MAYAR_DEFAULT_MOBILE as string;
-const APP_BASE_URL = (
-  (import.meta.env.VITE_APP_BASE_URL as string | undefined) ??
-  (typeof window !== "undefined" ? window.location.origin : "")
-).replace(/\/$/, "");
+const DEFAULT_EMAIL = appConfig.defaultMayarEmail;
+const DEFAULT_MOBILE = appConfig.defaultMayarMobile;
+const APP_BASE_URL = appConfig.appBaseUrl;
 let LAST_SCRAPED_PRODUCT: ProductData | undefined;
 let LAST_SCRAPED_URL: string | undefined;
 

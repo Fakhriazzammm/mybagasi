@@ -1,3 +1,5 @@
+import { appConfig } from "@/lib/runtime-config";
+
 export interface ProductData {
   title: string;
   price_jpy: number | null;
@@ -28,13 +30,8 @@ export interface SearchProductsInput {
   limit?: number;
 }
 
-const API_BASE = (
-  (import.meta.env.VITE_BACKEND_BASE_URL as string | undefined) ?? "/api"
-).replace(/\/$/, "");
-const FALLBACK_BACKEND = (
-  (import.meta.env.VITE_FALLBACK_BACKEND_BASE_URL as string | undefined) ??
-  "https://43.129.54.5.nip.io"
-).replace(/\/$/, "");
+const API_BASE = appConfig.backendBaseUrl;
+const FALLBACK_BACKEND = appConfig.fallbackBackendBaseUrl;
 
 export async function scrapeProduct(url: string): Promise<ProductData> {
   const requestInit: RequestInit = {
@@ -47,10 +44,10 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
   try {
     res = await fetch(`${API_BASE}/scrape`, requestInit);
   } catch {
+    if (!FALLBACK_BACKEND) throw new Error("Backend scraper tidak dapat diakses dan fallback tidak dikonfigurasi.");
     res = await fetch(`${FALLBACK_BACKEND}/scrape`, requestInit);
   }
 
-  // Production safety net: if relative /api fails (no proxy), retry to VPS backend.
   if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
     const retry = await fetch(`${FALLBACK_BACKEND}/scrape`, requestInit);
     if (retry.ok) {
@@ -79,6 +76,7 @@ export async function searchProducts(
   try {
     res = await fetch(`${API_BASE}/search`, requestInit);
   } catch {
+    if (!FALLBACK_BACKEND) throw new Error("Backend search tidak dapat diakses dan fallback tidak dikonfigurasi.");
     res = await fetch(`${FALLBACK_BACKEND}/search`, requestInit);
   }
 

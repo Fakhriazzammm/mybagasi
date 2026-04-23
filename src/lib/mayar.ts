@@ -1,4 +1,5 @@
 // Mayar Headless API client — all calls route through /api/mayar/* (Vite proxy → Python backend)
+import { appConfig } from "@/lib/runtime-config";
 
 export interface MayarProduct {
   id: string;
@@ -46,15 +47,10 @@ export interface CreateInvoiceInput {
   items: InvoiceItem[];
 }
 
-const API_BASE = (
-  (import.meta.env.VITE_BACKEND_BASE_URL as string | undefined) ?? "/api"
-).replace(/\/$/, "");
-const FALLBACK_BACKEND = (
-  (import.meta.env.VITE_FALLBACK_BACKEND_BASE_URL as string | undefined) ??
-  "https://43.129.54.5.nip.io"
-).replace(/\/$/, "");
+const API_BASE = appConfig.backendBaseUrl;
+const FALLBACK_BACKEND = appConfig.fallbackBackendBaseUrl;
 const BASE = `${API_BASE}/mayar`;
-const FALLBACK_BASE = `${FALLBACK_BACKEND}/mayar`;
+const FALLBACK_BASE = FALLBACK_BACKEND ? `${FALLBACK_BACKEND}/mayar` : "";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const requestInit: RequestInit = {
@@ -66,10 +62,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${BASE}${path}`, requestInit);
   } catch {
+    if (!FALLBACK_BASE) throw new Error("Backend API tidak dapat diakses dan fallback tidak dikonfigurasi.");
     res = await fetch(`${FALLBACK_BASE}${path}`, requestInit);
   }
 
-  // Production safety net: if /api is unavailable, retry directly to VPS backend.
   if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
     const retry = await fetch(`${FALLBACK_BASE}${path}`, requestInit);
     if (retry.ok) {
