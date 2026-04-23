@@ -28,9 +28,19 @@ TRACKING_PARAMS = re.compile(r"([?&])(utm_[^=&]+|fbclid|gclid|mc_eid|mc_cid)=[^&
 async def scrape_generic(url: str) -> ProductData:
     normalized_url = _normalize_url(url)
     try:
-        return await _crawl4ai(normalized_url)
+        product = await _crawl4ai(normalized_url)
+        if _should_try_mirror(product):
+            mirror = await _jina_mirror_fallback(normalized_url)
+            if mirror:
+                return mirror
+        return product
     except Exception:
-        return await _bs4_fallback(normalized_url)
+        product = await _bs4_fallback(normalized_url)
+        if _should_try_mirror(product):
+            mirror = await _jina_mirror_fallback(normalized_url)
+            if mirror:
+                return mirror
+        return product
 
 
 async def _crawl4ai(url: str) -> ProductData:
@@ -379,3 +389,51 @@ def _not_found_product(url: str, marketplace: str) -> ProductData:
         confidence="low",
         scrape_reason_code="NOT_FOUND",
     )
+
+
+def _should_try_mirror(product: ProductData) -> bool:
+    reason = (product.scrape_reason_code or "").upper()
+    return reason in {"BLOCKED", "NOT_FOUND", "PARSE_EMPTY"}
+
+
+async def _jina_mirror_fallback(url: str) -> Optional[ProductData]:
+    mirror_url = f"https://r.jina.ai/http://{url.replace('https://', '').replace('http://', '')}"
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            resp = await client.get(mirror_url)
+            resp.raise_for_status()
+        text = resp.text or ""
+        if not text.strip():
+            return None
+
+        title_match = re.search(r"^Title:\s*(.+)$", text, re.MULTILINE)
+        title = title_match.group(1).strip() if title_match else ""
+        price = _find_price_from_text(text)
+        img_matches = re.findall(r"!\[[^\]]*\]\((https?://[^)]+)\)", text)
+        images = []
+        seen: set[str] = set()
+        for img in img_matches:
+            if img not in seen:
+                seen.add(img)
+                images.append(img)
+            if len(images) >= 6:
+                break
+
+        if not title and not price and not images:
+            return None
+        if title.lower() in {"privacy settings", "blocked page"} and not price and not images:
+            return None
+
+        return ProductData(
+            title=title or "Unknown Product",
+            price_jpy=parse_jpy(price),
+            price_display=price,
+            images=images,
+            description=text[:600] if text else None,
+            marketplace=_domain(url),
+            url=url,
+            confidence="low",
+            scrape_reason_code="CRAWL4AI",
+        )
+    except Exception:
+        return None

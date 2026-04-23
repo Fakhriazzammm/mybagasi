@@ -74,6 +74,11 @@ async def scrape_mercari(url: str) -> ProductData:
 
                     # 2) DOM fallback
                     title = (await page.locator("h1").first.text_content(timeout=8_000)) or ""
+                    og_title = await page.evaluate(
+                        "() => document.querySelector('meta[property=\"og:title\"]')?.content || ''"
+                    )
+                    doc_title = await page.title()
+                    title = _normalize_dom_title(title, og_title, doc_title)
 
                     price_locator = page.locator(
                         '[data-testid="price"], [class*="price"], [class*="Price"]'
@@ -179,10 +184,31 @@ def _extract_item_id(url: str) -> Optional[str]:
 
 def _is_useful_product(product: ProductData) -> bool:
     title = (product.title or "").strip().lower()
-    has_title = bool(title and title not in {"unknown", "unknown product", "blocked page"})
+    invalid_titles = {
+        "",
+        "unknown",
+        "unknown product",
+        "blocked page",
+        "privacy settings",
+        "access denied",
+    }
+    has_title = bool(title and title not in invalid_titles)
     has_price = bool(product.price_jpy or product.price_display)
     has_media = bool(product.images)
     return has_title or has_price or has_media
+
+
+def _normalize_dom_title(h1_title: str, og_title: str, doc_title: str) -> str:
+    candidates = [h1_title.strip(), og_title.strip(), doc_title.strip()]
+    invalid = {"", "privacy settings", "access denied", "blocked page"}
+    for t in candidates:
+        low = t.lower()
+        if low in invalid:
+            continue
+        cleaned = re.sub(r"\s*\|\s*mercari.*$", "", t, flags=re.IGNORECASE).strip()
+        if cleaned and cleaned.lower() not in invalid:
+            return cleaned
+    return h1_title.strip()
 
 
 def _blocked_product(url: str) -> ProductData:
