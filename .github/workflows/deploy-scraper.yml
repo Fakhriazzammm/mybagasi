@@ -1,0 +1,45 @@
+name: Deploy scraper to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scraper/**"
+      - ".github/workflows/deploy-scraper.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-scraper
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/myjapan-haul
+            echo "--- Before pull ---"
+            git rev-parse --short HEAD
+            git fetch --depth=1 origin main
+            git reset --hard origin/main
+            echo "--- After pull ---"
+            git rev-parse --short HEAD
+            # Reinstall deps only if requirements changed
+            if ! cmp -s scraper/requirements.txt /opt/mybagasi-scraper/.requirements.snapshot 2>/dev/null; then
+              echo "--- requirements.txt changed, reinstalling ---"
+              /opt/mybagasi-scraper/.venv/bin/pip install -r scraper/requirements.txt
+              cp scraper/requirements.txt /opt/mybagasi-scraper/.requirements.snapshot
+            fi
+            sudo systemctl restart mybagasi-scraper.service
+            sleep 3
+            sudo systemctl status mybagasi-scraper.service --no-pager | head -6
+            curl -sf http://127.0.0.1:8000/health && echo " ✓ health OK"
