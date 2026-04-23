@@ -8,6 +8,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .dispatcher import scrape_url
+from .generic import scrape_generic_http
 from .models import ProductData
 
 
@@ -75,6 +76,25 @@ def _usable_product(p: ProductData) -> bool:
     return title not in bad and (p.price_display or p.price_jpy or p.images)
 
 
+async def _scrape_candidate_curl_first(url: str, tokens: list[str]) -> ProductData | None:
+    """Try HTTP-only extraction first (curl-like), then full scraper fallback."""
+    try:
+        light = await asyncio.wait_for(scrape_generic_http(url), timeout=16)
+        if _usable_product(light) and _relevant_to_keyword(light, tokens):
+            return light
+    except Exception:
+        pass
+
+    try:
+        full = await asyncio.wait_for(scrape_url(url), timeout=40)
+        if _usable_product(full):
+            return full
+    except Exception:
+        return None
+
+    return None
+
+
 async def search_products_by_keyword(
     keyword: str,
     condition: str | None = None,
@@ -104,14 +124,14 @@ async def search_products_by_keyword(
     broad_products: list[ProductData] = []
     tokens = _keyword_tokens(keyword)
     for url in candidates:
-        try:
-            p = await asyncio.wait_for(scrape_url(url), timeout=40)
-            if _usable_product(p):
-                broad_products.append(p)
-                if _relevant_to_keyword(p, tokens):
-                    products.append(p)
-        except Exception:
+        p = await _scrape_candidate_curl_first(url=url, tokens=tokens)
+        if not p:
             continue
+
+        broad_products.append(p)
+        if _relevant_to_keyword(p, tokens):
+            products.append(p)
+
         if len(products) >= limit:
             break
 

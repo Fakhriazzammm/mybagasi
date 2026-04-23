@@ -35,12 +35,17 @@ async def scrape_generic(url: str) -> ProductData:
                 return mirror
         return product
     except Exception:
-        product = await _bs4_fallback(normalized_url)
+        product = await scrape_generic_http(normalized_url)
         if _should_try_mirror(product):
             mirror = await _jina_mirror_fallback(normalized_url)
             if mirror:
                 return mirror
         return product
+
+
+async def scrape_generic_http(url: str) -> ProductData:
+    """HTTP-only extractor (curl-like): fast, no browser automation."""
+    return await _bs4_fallback(_normalize_url(url))
 
 
 async def _crawl4ai(url: str) -> ProductData:
