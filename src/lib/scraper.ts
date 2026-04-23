@@ -11,7 +11,14 @@ export interface ProductData {
   url: string;
   scraped_at: string;
   confidence?: "high" | "medium" | "low";
-  scrape_reason_code?: "PLAYWRIGHT" | "CRAWL4AI" | "BLOCKED" | "URL_INVALID" | "NOT_FOUND" | "PARSE_EMPTY";
+  scrape_reason_code?:
+    | "PLAYWRIGHT"
+    | "CRAWL4AI"
+    | "BLOCKED"
+    | "URL_INVALID"
+    | "NOT_FOUND"
+    | "PARSE_EMPTY"
+    | "SCREENSHOT_AI";
 }
 
 const API_BASE = (

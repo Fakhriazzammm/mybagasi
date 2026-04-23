@@ -21,7 +21,7 @@ class ProductData(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     confidence: Optional[str] = None
-    scrape_reason_code: Optional[str] = None
+    scrape_reason_code: Optional[str] = None  # e.g. PLAYWRIGHT|CRAWL4AI|BLOCKED|NOT_FOUND|PARSE_EMPTY|SCREENSHOT_AI
 
 
 def parse_jpy(text: str) -> Optional[int]:
