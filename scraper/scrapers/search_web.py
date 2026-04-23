@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import defaultdict
 from urllib.parse import parse_qs, quote, quote_plus, urlparse
+from typing import Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -30,6 +32,20 @@ MARKETPLACE_SEARCH_URLS = [
     "https://www.amazon.co.jp/s?k={q}",
 ]
 
+# In-memory cache for scraped URLs (simple LRU-like)
+_scrape_cache: dict[str, tuple[float, ProductData]] = {}
+_cache_max_age = 300  # 5 minutes
+_domain_rate_limit: defaultdict[str, float] = defaultdict(float)
+_rate_limit_window = 1.0  # 1 second per domain
+
+# Rotate user agents to avoid detection
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+]
+
 
 def _clean_url(raw: str) -> str:
     if not raw:
@@ -51,6 +67,49 @@ def _extract_target_url(link: str) -> str:
 def _is_ecommerce_url(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return any(host == d or host.endswith(f".{d}") for d in SEARCH_DOMAINS)
+
+
+def _get_cache_key(url: str) -> str:
+    """Generate cache key, normalized URL without tracking params."""
+    cleaned = re.sub(r"([?&])(utm_[^=&]+|fbclid|gclid|mc_eid|mc_cid)=[^&]*", "", url)
+    cleaned = cleaned.replace("?&", "?").rstrip("?&")
+    return cleaned
+
+
+def _get_cached(url: str) -> Optional[ProductData]:
+    """Check cache and return cached product if still valid."""
+    key = _get_cache_key(url)
+    if key in _scrape_cache:
+        timestamp, product = _scrape_cache[key]
+        import time
+        if time.time() - timestamp < _cache_max_age:
+            return product
+        else:
+            del _scrape_cache[key]
+    return None
+
+
+def _set_cached(url: str, product: ProductData) -> None:
+    """Cache a scraped product."""
+    key = _get_cache_key(url)
+    import time
+    _scrape_cache[key] = (time.time(), product)
+    # Simple cache size limit (evict oldest if > 100)
+    if len(_scrape_cache) > 100:
+        oldest_key = min(_scrape_cache.keys(), key=lambda k: _scrape_cache[k][0])
+        del _scrape_cache[oldest_key]
+
+
+async def _wait_rate_limit(url: str) -> None:
+    """Apply rate limiting per domain."""
+    import time
+    domain = (urlparse(url).hostname or "").lower()
+    last_call = _domain_rate_limit.get(domain, 0)
+    now = time.time()
+    elapsed = now - last_call
+    if elapsed < _rate_limit_window:
+        await asyncio.sleep(_rate_limit_window - elapsed)
+    _domain_rate_limit[domain] = time.time()
 
 
 def _usable_product(p: ProductData) -> bool:
@@ -78,19 +137,35 @@ def _usable_product(p: ProductData) -> bool:
 
 async def _scrape_candidate_curl_first(url: str, tokens: list[str]) -> ProductData | None:
     """Try HTTP-only extraction first (curl-like), then full scraper fallback."""
+    # Check cache first
+    cached = _get_cached(url)
+    if cached and _usable_product(cached):
+        return cached
+
+    await _wait_rate_limit(url)
+
+    # Try lightweight HTTP scraper first (faster timeout)
     try:
-        light = await asyncio.wait_for(scrape_generic_http(url), timeout=16)
+        light = await asyncio.wait_for(scrape_generic_http(url), timeout=8)
         if _usable_product(light) and _relevant_to_keyword(light, tokens):
+            _set_cached(url, light)
             return light
+    except asyncio.TimeoutError:
+        pass
     except Exception:
         pass
 
+    # Fallback to full scraper with longer timeout
+    await _wait_rate_limit(url)
     try:
-        full = await asyncio.wait_for(scrape_url(url), timeout=40)
+        full = await asyncio.wait_for(scrape_url(url), timeout=25)
         if _usable_product(full):
+            _set_cached(url, full)
             return full
+    except asyncio.TimeoutError:
+        pass
     except Exception:
-        return None
+        pass
 
     return None
 
@@ -120,17 +195,36 @@ async def search_products_by_keyword(
             deduped.append(c)
     candidates = deduped[:24]
 
+    if not candidates:
+        return []
+
+    tokens = _keyword_tokens(keyword)
+
+    # Parallel scraping with semaphore to limit concurrency
+    semaphore = asyncio.Semaphore(5)  # Max 5 concurrent scrapes
+
+    async def scrape_with_semaphore(url: str) -> ProductData | None:
+        async with semaphore:
+            return await _scrape_candidate_curl_first(url=url, tokens=tokens)
+
+    # Run scrapes in parallel
+    results = await asyncio.gather(
+        *[scrape_with_semaphore(url) for url in candidates],
+        return_exceptions=True,
+    )
+
     products: list[ProductData] = []
     broad_products: list[ProductData] = []
-    tokens = _keyword_tokens(keyword)
-    for url in candidates:
-        p = await _scrape_candidate_curl_first(url=url, tokens=tokens)
-        if not p:
+
+    for result in results:
+        if isinstance(result, Exception):
+            continue
+        if not result:
             continue
 
-        broad_products.append(p)
-        if _relevant_to_keyword(p, tokens):
-            products.append(p)
+        broad_products.append(result)
+        if _relevant_to_keyword(result, tokens):
+            products.append(result)
 
         if len(products) >= limit:
             break
@@ -142,19 +236,40 @@ async def search_products_by_keyword(
 
 async def _collect_candidates_from_duckduckgo(query: str) -> list[str]:
     search_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+    import random
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        )
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,ja;q=0.8",
+        "DNT": "1",
+        "Connection": "keep-alive",
     }
 
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers) as client:
-        resp = await client.get(search_url)
-        resp.raise_for_status()
+        try:
+            resp = await client.get(search_url)
+            resp.raise_for_status()
+        except Exception:
+            return []
+
     soup = BeautifulSoup(resp.text, "lxml")
 
     candidates: list[str] = []
+    # Aggressive path filtering to exclude generic pages
+    bad_paths = {
+        "/",
+        "",
+        "/search",
+        "/s",
+        "/category",
+        "/categories",
+        "/shop",
+        "/stores",
+        "/browse",
+        "/products",
+        "/shop-all",
+    }
+
     for a in soup.select("a.result__a, a[href]"):
         href = (a.get("href") or "").strip()
         target = _extract_target_url(href)
@@ -162,10 +277,20 @@ async def _collect_candidates_from_duckduckgo(query: str) -> list[str]:
             continue
         if not _is_ecommerce_url(target):
             continue
-        # Exclude generic domain homepages when possible
+
+        # Better path filtering
         path = urlparse(target).path or "/"
-        if path in {"/", ""}:
+        if path.lower() in bad_paths:
             continue
+        # Exclude very short paths that are likely home pages
+        if len(path) < 3:
+            continue
+        # Must have product-like segments
+        if not any(segment in path.lower() for segment in ["item", "product", "dp", "auction", "detail", "goods"]):
+            # Still allow if path is long and complex
+            if len(path.split("/")) < 3:
+                continue
+
         if target not in candidates:
             candidates.append(target)
         if len(candidates) >= 12:
@@ -175,22 +300,25 @@ async def _collect_candidates_from_duckduckgo(query: str) -> list[str]:
 
 async def _collect_candidates_from_marketplace_search(query: str) -> list[str]:
     encoded_query = quote(query)
+    import random
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8",
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+        "DNT": "1",
+        "Connection": "keep-alive",
     }
     candidates: list[str] = []
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers) as client:
         for template in MARKETPLACE_SEARCH_URLS:
-            url = template.format(q=encoded_query)
             try:
+                url = template.format(q=encoded_query)
+                await _wait_rate_limit(url)  # Apply rate limiting for search queries too
                 resp = await client.get(url)
                 resp.raise_for_status()
             except Exception:
                 continue
+
             html = resp.text or ""
             found = _extract_ecommerce_links_from_html(html)
             for item_url in found:
@@ -203,16 +331,28 @@ async def _collect_candidates_from_marketplace_search(query: str) -> list[str]:
 
 def _extract_ecommerce_links_from_html(html: str) -> list[str]:
     patterns = [
+        # Mercari JP & US
         r"https://jp\.mercari\.com/item/[A-Za-z0-9]+",
         r"https://www\.mercari\.com/us/item/[A-Za-z0-9]+/?",
-        r"https://item\.rakuten\.co\.jp/[^\s\"'<>]+",
+        # Rakuten
+        r"https://item\.rakuten\.co\.jp/[\w-]+/[\w-]+/?",
+        # Yahoo Auctions
         r"https://auctions\.yahoo\.co\.jp/jp/auction/[A-Za-z0-9]+",
-        r"https://www\.amazon\.co\.jp/[^\s\"'<>]*/dp/[A-Z0-9]{10}",
+        # Amazon (DP pages)
+        r"https://www\.amazon\.co\.jp/[\w-]+/dp/[A-Z0-9]{10}(?:/|\?|$)",
+        r"https://www\.amazon\.co\.jp/dp/[A-Z0-9]{10}(?:/|\?|$)",
+        # Additional patterns for better coverage
+        r"https://jp\.mercari\.com/en/item/[A-Za-z0-9]+",
+        r"https://paypayfleamarket\.yahoo\.co\.jp/item/[A-Za-z0-9]+",
     ]
     links: list[str] = []
     for pattern in patterns:
         for m in re.findall(pattern, html):
-            cleaned = m.rstrip(")'\"")
+            # Clean up trailing quotes or parentheses
+            cleaned = m
+            for ch in [")", "'", '"', "."]:
+                if cleaned.endswith(ch):
+                    cleaned = cleaned[:-1]
             if cleaned not in links:
                 links.append(cleaned)
     return links

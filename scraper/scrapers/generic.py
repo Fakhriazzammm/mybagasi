@@ -91,7 +91,7 @@ async def _crawl4ai(url: str) -> ProductData:
 
 async def _bs4_fallback(url: str) -> ProductData:
     async with httpx.AsyncClient(
-        headers=BROWSER_HEADERS, follow_redirects=True, timeout=20
+        headers=BROWSER_HEADERS, follow_redirects=True, timeout=15
     ) as client:
         try:
             resp = await client.get(url)
@@ -102,6 +102,9 @@ async def _bs4_fallback(url: str) -> ProductData:
             if e.response.status_code in (401, 403, 429):
                 return _blocked_product(url, _domain(url))
             raise
+        except httpx.TimeoutException:
+            # Timeout but return empty product instead of raising
+            return _parse_empty_product(url, _domain(url))
 
     soup = BeautifulSoup(resp.text, "lxml")
     extracted = _extract_product_fields(soup, "", {}, url)
@@ -446,7 +449,7 @@ def _parse_empty_product(url: str, marketplace: str) -> ProductData:
 async def _jina_mirror_fallback(url: str) -> Optional[ProductData]:
     mirror_url = f"https://r.jina.ai/http://{url.replace('https://', '').replace('http://', '')}"
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.get(mirror_url)
             resp.raise_for_status()
         text = resp.text or ""
