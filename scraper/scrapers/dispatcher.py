@@ -9,6 +9,7 @@ from .rakuten import scrape_rakuten
 from .yahoo_auction import scrape_yahoo_auction
 from .generic import scrape_generic
 from .vision_extract import extract_product_via_screenshot_ai
+from .hermes_browser import hermes_browser_scrape
 
 _ROUTES: list[tuple[str, object]] = [
     (r"(jp\.)?mercari\.com", scrape_mercari),
@@ -61,9 +62,33 @@ async def _maybe_screenshot_ai_fallback(url: str, product: ProductData) -> Produ
             extract_product_via_screenshot_ai(url, product.marketplace),
             timeout=25.0,
         )
-        return ai_result or product
+        if ai_result:
+            return ai_result
     except (asyncio.TimeoutError, Exception):
+        pass
+
+    # Final fallback: try Hermes browser
+    return await _maybe_hermes_browser_fallback(url, product)
+
+
+async def _maybe_hermes_browser_fallback(url: str, product: ProductData) -> ProductData:
+    """Try Hermes browser scraping when all other methods produce blocked/empty results."""
+    reason = (product.scrape_reason_code or "").upper()
+    # Only try Hermes browser for truly blocked or empty results
+    if reason not in {"BLOCKED", "PARSE_EMPTY"}:
         return product
+    try:
+        hermes_result = await asyncio.wait_for(
+            hermes_browser_scrape(url, max_wait=90),
+            timeout=95.0,
+        )
+        if hermes_result and hermes_result.title and hermes_result.title not in {
+            "Blocked page", "Unknown Product", "Not found"
+        }:
+            return hermes_result
+    except (asyncio.TimeoutError, Exception):
+        pass
+    return product
 
 
 def _needs_screenshot_ai(product: ProductData) -> bool:
