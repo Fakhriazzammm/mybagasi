@@ -113,7 +113,14 @@ async def _crawl4ai_fallback(url: str) -> ProductData:
 def _normalize_mercari_url(url: str) -> str:
     normalized = url.strip()
 
-    # Handle old/wrong route format often pasted by users.
+    # Canonicalize all Mercari variants (US/JP, item/items) into JP item URL.
+    # Example: https://www.mercari.com/us/item/m27056057470/
+    #      -> https://jp.mercari.com/item/m27056057470
+    item_match = re.search(r"/(?:us/)?items?/([A-Za-z0-9]+)", normalized)
+    if item_match:
+        item_id = item_match.group(1)
+        return f"https://jp.mercari.com/item/{item_id}"
+
     normalized = re.sub(r"mercari\.com/items/", "jp.mercari.com/item/", normalized)
     normalized = re.sub(r"www\.mercari\.com/item/", "jp.mercari.com/item/", normalized)
     if "mercari.com/item/" in normalized and "jp.mercari.com/item/" not in normalized:

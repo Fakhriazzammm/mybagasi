@@ -215,6 +215,28 @@ interface SimilarProduct {
 
 const toIDR = (jpy: number) => Math.round(jpy * JPY_TO_IDR);
 
+function isScrapeUnusable(product: ProductData): boolean {
+  const reason = (product.scrape_reason_code || "").toUpperCase();
+  const isKnownBadReason = ["BLOCKED", "PARSE_EMPTY", "URL_INVALID", "NOT_FOUND"].includes(reason);
+  const lowSignal =
+    (!product.title || ["unknown", "unknown product", "blocked page"].includes(product.title.trim().toLowerCase())) &&
+    !product.price_jpy &&
+    !product.price_display &&
+    (!product.images || product.images.length === 0);
+  return isKnownBadReason || lowSignal;
+}
+
+function buildScrapeFallbackError(product: ProductData): string {
+  const reason = product.scrape_reason_code || "UNKNOWN";
+  if (reason === "BLOCKED") {
+    return "Halaman produk terproteksi anti-bot / CAPTCHA.";
+  }
+  if (reason === "NOT_FOUND" || reason === "URL_INVALID") {
+    return "Link produk tidak valid atau produk sudah tidak tersedia.";
+  }
+  return "Detail produk tidak berhasil diekstrak dari halaman.";
+}
+
 export function estimateAllInFromJPY(priceJPY: number) {
   const basePrice = toIDR(priceJPY);
   const serviceFee = Math.round(basePrice * SERVICE_FEE_RATE);
@@ -350,8 +372,13 @@ export async function sendMessage(
   let preScrapeError = "";
   if (detectedUrl) {
     try {
-      preScrapedProduct = await scrapeProduct(detectedUrl);
-      LAST_SCRAPED_PRODUCT = preScrapedProduct;
+      const scraped = await scrapeProduct(detectedUrl);
+      if (isScrapeUnusable(scraped)) {
+        preScrapeError = buildScrapeFallbackError(scraped);
+      } else {
+        preScrapedProduct = scraped;
+        LAST_SCRAPED_PRODUCT = scraped;
+      }
     } catch (err) {
       preScrapeError = String(err);
     }
@@ -366,7 +393,13 @@ export async function sendMessage(
             ? `Konteks tambahan hasil buka link produk (gunakan sebagai sumber fakta utama): ${JSON.stringify(
                 preScrapedProduct
               )}`
-            : `Percobaan membuka link produk gagal. Detail error: ${preScrapeError}. Tetap bantu user dengan alternatif pencarian.`,
+            : `Percobaan membuka link produk gagal. Detail error: ${preScrapeError}. 
+Tetap bantu user dengan alternatif pencarian.
+Wajib lakukan ini:
+1) Jelaskan singkat kenapa link belum bisa dibaca
+2) Tawarkan pencarian manual lintas marketplace Jepang
+3) Ajukan 1-2 pertanyaan preferensi (budget, kondisi, size/warna, brand)
+4) Jika memungkinkan, gunakan search_similar_products untuk memberi 2-3 opsi pembanding`,
         }
       : null;
   const fullMessages: object[] = scrapeContextMessage
@@ -413,13 +446,21 @@ export async function sendMessage(
     );
     return {
       text: (second.choices[0].message.content as string) ?? "",
-      scrapedProduct: scrapedProduct ?? preScrapedProduct,
+      scrapedProduct:
+        scrapedProduct && !isScrapeUnusable(scrapedProduct)
+          ? scrapedProduct
+          : preScrapedProduct && !isScrapeUnusable(preScrapedProduct)
+            ? preScrapedProduct
+            : undefined,
     };
   }
 
   return {
     text: (choice.message.content as string) ?? "",
-    scrapedProduct: preScrapedProduct,
+    scrapedProduct:
+      preScrapedProduct && !isScrapeUnusable(preScrapedProduct)
+        ? preScrapedProduct
+        : undefined,
   };
 }
 
