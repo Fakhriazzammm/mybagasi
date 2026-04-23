@@ -89,13 +89,17 @@ async def _capture_screenshot_bytes(url: str) -> Optional[bytes]:
             try:
                 page = await context.new_page()
                 await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
-                # Fixed short wait instead of slow networkidle
-                await page.wait_for_timeout(1000)
+                # Mercari is fully client-rendered: at 1s body is still ~50 chars (skeleton).
+                # Poll up to 6s for body to fill in before screenshotting.
                 body_text = ""
-                try:
-                    body_text = (await page.inner_text("body")).strip().lower()
-                except Exception:
-                    pass
+                for _ in range(12):
+                    await page.wait_for_timeout(500)
+                    try:
+                        body_text = (await page.inner_text("body")).strip().lower()
+                    except Exception:
+                        body_text = ""
+                    if not _looks_like_skeleton_or_blank(body_text):
+                        break
                 shot = await page.screenshot(full_page=False, type="jpeg", quality=70)
                 if not _looks_like_skeleton_or_blank(body_text):
                     return shot
