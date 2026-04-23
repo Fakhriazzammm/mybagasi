@@ -4,6 +4,7 @@ import { createInvoice } from "./mayar";
 
 const BASE_URL = (
   (import.meta.env.VITE_OPENAI_BASE_URL as string | undefined) ??
+  (import.meta.env.OPENAI_BASE_URL as string | undefined) ??
   "https://ai.sumopod.com/v1"
 ).replace(/\/$/, "");
 const MODEL = "gpt-4o-mini";
@@ -203,6 +204,7 @@ const APP_BASE_URL = (
   (typeof window !== "undefined" ? window.location.origin : "")
 ).replace(/\/$/, "");
 let LAST_SCRAPED_PRODUCT: ProductData | undefined;
+let LAST_SCRAPED_URL: string | undefined;
 
 interface SimilarProduct {
   title: string;
@@ -274,12 +276,21 @@ function createSimilarProducts(
 async function executeTool(tc: ToolCall): Promise<string> {
   if (tc.function.name === "scrape_product") {
     const { url } = JSON.parse(tc.function.arguments) as { url: string };
+    const normalizedUrl = (url || "").trim();
+    if (
+      LAST_SCRAPED_PRODUCT &&
+      LAST_SCRAPED_URL &&
+      LAST_SCRAPED_URL === normalizedUrl
+    ) {
+      return JSON.stringify(LAST_SCRAPED_PRODUCT);
+    }
     try {
-      const scraped = await scrapeProduct(url);
+      const scraped = await scrapeProduct(normalizedUrl);
       LAST_SCRAPED_PRODUCT = scraped;
+      LAST_SCRAPED_URL = normalizedUrl;
       return JSON.stringify(scraped);
     } catch (err) {
-      return JSON.stringify({ error: String(err), url });
+      return JSON.stringify({ error: String(err), url: normalizedUrl });
     }
   }
 
@@ -378,6 +389,7 @@ export async function sendMessage(
       } else {
         preScrapedProduct = scraped;
         LAST_SCRAPED_PRODUCT = scraped;
+        LAST_SCRAPED_URL = detectedUrl.trim();
       }
     } catch (err) {
       preScrapeError = String(err);

@@ -12,11 +12,11 @@ from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/mayar")
 
-_BASE = os.getenv("MAYAR_API_BASE", "https://api.mayar.id/hl/v1")
-_KEY = os.getenv("MAYAR_API_KEY", "")
-_DEFAULT_EMAIL = os.getenv("MAYAR_DEFAULT_EMAIL", "")
-_DEFAULT_MOBILE = os.getenv("MAYAR_DEFAULT_MOBILE", "")
-_APP_BASE = os.getenv("APP_BASE_URL", "https://mybagasi.web.id")
+_BASE = os.getenv("MAYAR_API_BASE") or os.getenv("VITE_MAYAR_API_BASE") or "https://api.mayar.id/hl/v1"
+_KEY = os.getenv("MAYAR_API_KEY") or os.getenv("VITE_MAYAR_API_KEY") or ""
+_DEFAULT_EMAIL = os.getenv("MAYAR_DEFAULT_EMAIL") or os.getenv("VITE_MAYAR_DEFAULT_EMAIL") or ""
+_DEFAULT_MOBILE = os.getenv("MAYAR_DEFAULT_MOBILE") or os.getenv("VITE_MAYAR_DEFAULT_MOBILE") or ""
+_APP_BASE = os.getenv("APP_BASE_URL") or os.getenv("VITE_APP_BASE_URL") or "https://mybagasi.web.id"
 
 
 def _headers() -> dict[str, str]:
