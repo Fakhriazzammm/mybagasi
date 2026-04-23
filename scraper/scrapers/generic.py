@@ -79,6 +79,8 @@ async def _bs4_fallback(url: str) -> ProductData:
             resp = await client.get(url)
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
+            if e.response.status_code in (404, 410):
+                return _not_found_product(url, _domain(url))
             if e.response.status_code in (401, 403, 429):
                 return _blocked_product(url, _domain(url))
             raise
@@ -361,4 +363,19 @@ def _blocked_product(url: str, marketplace: str) -> ProductData:
         url=url,
         confidence="low",
         scrape_reason_code="BLOCKED",
+    )
+
+
+def _not_found_product(url: str, marketplace: str) -> ProductData:
+    return ProductData(
+        title="Not found",
+        price_jpy=None,
+        price_display="",
+        images=[],
+        description="Produk tidak ditemukan atau link sudah tidak aktif.",
+        marketplace=marketplace,
+        available=False,
+        url=url,
+        confidence="low",
+        scrape_reason_code="NOT_FOUND",
     )

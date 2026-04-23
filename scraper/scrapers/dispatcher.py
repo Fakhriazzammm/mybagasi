@@ -31,11 +31,7 @@ async def scrape_url(url: str) -> ProductData:
 
 
 def _canonicalize_for_fallback(url: str) -> str:
-    # Mercari US URLs often block generic fetches; map to JP item route first.
-    mercari_item = re.search(r"mercari\.com/(?:us/)?items?/([A-Za-z0-9]+)", url)
-    if mercari_item:
-        return f"https://jp.mercari.com/item/{mercari_item.group(1)}"
-    return url
+    return url.strip()
 
 
 def _mark_blocked_if_empty(product: ProductData) -> ProductData:
