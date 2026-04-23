@@ -19,8 +19,6 @@ SEARCH_DOMAINS = [
     "auctions.yahoo.co.jp",
     "paypayfleamarket.yahoo.co.jp",
     "zozo.jp",
-    "ebay.com",
-    "etsy.com",
 ]
 
 MARKETPLACE_SEARCH_URLS = [
@@ -68,6 +66,12 @@ def _usable_product(p: ProductData) -> bool:
         "access denied",
         "your go-to marketplace for deals on used & secondhand items",
     }
+
+    # Keep results realistic for JP marketplace products.
+    # Some listing/index pages can produce concatenated bogus numbers.
+    if p.price_jpy is not None and (p.price_jpy < 100 or p.price_jpy > 10_000_000):
+        return False
+
     return title not in bad and (p.price_display or p.price_jpy or p.images)
 
 

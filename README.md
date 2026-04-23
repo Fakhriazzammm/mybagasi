@@ -49,4 +49,4 @@ Pastikan Realtime aktif di project Supabase dan tabel terkait diikutkan di publi
 - Frontend menggunakan `VITE_BACKEND_BASE_URL` sebagai endpoint utama backend.
 - Jika punya backend cadangan, set `VITE_FALLBACK_BACKEND_BASE_URL` (opsional, tidak lagi hardcoded).
 - Backend Python menggunakan `CORS_ORIGINS` untuk allowlist domain frontend (dipisah koma), sehingga deployment VPS lebih aman daripada `*`.
-- Contoh production `CORS_ORIGINS`: `https://mybagasi.vercel.app,https://43.129.54.5.nip.io,http://localhost:8080,http://127.0.0.1:8080`
+- Contoh production `CORS_ORIGINS`: `https://mybagasi.vercel.app,https://www.mybagasi.vercel.app,https://43.129.54.5.nip.io,http://localhost:8080,http://127.0.0.1:8080`
