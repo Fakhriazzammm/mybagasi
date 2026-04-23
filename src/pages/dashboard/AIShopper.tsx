@@ -12,7 +12,10 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { sendMessage, extractUrl, type ChatMessage } from "@/lib/ai";
 
-const API_KEY = import.meta.env.VITE_SUMOPOD_API_KEY as string;
+const API_KEY =
+  (import.meta.env.VITE_SUMOPOD_API_KEY as string | undefined) ??
+  (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ??
+  "";
 
 type Msg = {
   id: number;
@@ -61,7 +64,7 @@ const AIShopper = () => {
           id: Date.now(),
           role: "assistant",
           content:
-            "Konfigurasi AI belum lengkap. Isi VITE_SUMOPOD_API_KEY di file .env lalu restart aplikasi.",
+            "Konfigurasi AI belum lengkap. Isi VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY di file .env lalu restart aplikasi.",
           time: now(),
         },
       ]);
@@ -263,7 +266,7 @@ const AIShopper = () => {
 
         {!hasApiKey && (
           <div className="border-t border-warning/30 bg-warning/10 px-4 py-2 text-xs text-warning-foreground">
-            VITE_SUMOPOD_API_KEY belum diatur. Tambahkan di `.env`, lalu restart aplikasi.
+            API key AI belum diatur. Tambahkan `VITE_SUMOPOD_API_KEY` atau `VITE_OPENAI_API_KEY` di `.env`, lalu restart aplikasi.
           </div>
         )}
       </div>

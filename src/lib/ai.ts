@@ -2,7 +2,10 @@
 import type { ProductData } from "./scraper";
 import { createInvoice } from "./mayar";
 
-const BASE_URL = "https://ai.sumopod.com/v1";
+const BASE_URL = (
+  (import.meta.env.VITE_OPENAI_BASE_URL as string | undefined) ??
+  "https://ai.sumopod.com/v1"
+).replace(/\/$/, "");
 const MODEL = "gpt-4o-mini";
 const JPY_TO_IDR = 105;
 const SERVICE_FEE_RATE = 0.15;
@@ -332,7 +335,7 @@ export async function sendMessage(
 ): Promise<{ text: string; scrapedProduct?: ProductData }> {
   if (!apiKey?.trim()) {
     throw new Error(
-      "Konfigurasi AI belum lengkap: VITE_SUMOPOD_API_KEY belum diatur."
+      "Konfigurasi AI belum lengkap: VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY belum diatur."
     );
   }
 

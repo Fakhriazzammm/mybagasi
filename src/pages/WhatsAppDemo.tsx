@@ -1,12 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
-import { Send, Check, CheckCheck, Package, CreditCard, Plane, Home, Sparkles } from "lucide-react";
+import {
+  Send,
+  CheckCheck,
+  Package,
+  CreditCard,
+  Plane,
+  Home,
+  Sparkles,
+} from "lucide-react";
 import { estimateAllInFromJPY, sendMessage, type ChatMessage } from "@/lib/ai";
 import type { ProductData } from "@/lib/scraper";
 
-const API_KEY = import.meta.env.VITE_SUMOPOD_API_KEY as string;
+const API_KEY =
+  (import.meta.env.VITE_SUMOPOD_API_KEY as string | undefined) ??
+  (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ??
+  "";
 
 type Msg = {
   id: number;
@@ -30,19 +41,22 @@ type ComparisonItem = {
 };
 
 const initialMsgs: Msg[] = [
-  { id: 1, from: "bot", text: "Konnichiwa! 👋 Saya MyBagasi AI. Mau cari barang apa dari Jepang hari ini?", time: "10:00" },
+  {
+    id: 1,
+    from: "bot",
+    text: "Konnichiwa! Saya MyBagasi AI. Mau cari barang apa dari Jepang hari ini?",
+    time: "10:00",
+  },
 ];
 
-
 const URL_REGEX = /https?:\/\//i;
-
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const createSearchAcknowledgement = () => {
   const variants = [
-    "Siap, aku cek link produk kamu dulu ya 👀 Biasanya butuh sekitar 10–20 detik.",
-    "Noted! Aku lagi membuka link dan mengambil detail produknya dulu ya ⏳ Tunggu sebentar, ya.",
-    "Oke, aku proses link-nya dulu sekarang 🙌 Estimasi sekitar belasan detik.",
+    "Siap, aku cek link produk kamu dulu ya. Biasanya butuh sekitar 10-20 detik.",
+    "Noted! Aku lagi membuka link dan mengambil detail produknya dulu ya. Tunggu sebentar.",
+    "Oke, aku proses link-nya dulu sekarang. Estimasi sekitar belasan detik.",
   ];
 
   const followUps = [
@@ -51,8 +65,7 @@ const createSearchAcknowledgement = () => {
     "Kalau stok di link habis, aku lanjut cari alternatif termurah juga ya?",
   ];
 
-  return `${variants[Math.floor(Math.random() * variants.length)]}
-${followUps[Math.floor(Math.random() * followUps.length)]}`;
+  return `${variants[Math.floor(Math.random() * variants.length)]}\n${followUps[Math.floor(Math.random() * followUps.length)]}`;
 };
 
 const quickReplies = [
@@ -113,7 +126,9 @@ const MessageText = ({ text }: { text: string }) => {
             {parsed.rows.map((row, i) => (
               <tr key={i} className="border-b border-border/30 last:border-b-0">
                 {parsed.headers.map((_, idx) => (
-                  <td key={idx} className="px-2 py-1 align-top">{row[idx] ?? "-"}</td>
+                  <td key={idx} className="px-2 py-1 align-top">
+                    {row[idx] ?? "-"}
+                  </td>
                 ))}
               </tr>
             ))}
@@ -138,14 +153,15 @@ const QuotationCard = () => (
     </div>
     <div className="space-y-1.5 text-xs border-t border-border/60 pt-3">
       {[
-        ["Harga produk", "¥9.800 (Rp 1.029.000)"],
+        ["Harga produk", "JPY 9.800 (Rp 1.029.000)"],
         ["Fee jasa MyBagasi", "Rp 154.000"],
-        ["Ongkir Jepang→Indo", "Rp 285.000"],
+        ["Ongkir Jepang ke Indo", "Rp 285.000"],
         ["Pajak & bea", "Rp 124.000"],
-        ["Diskon Plus", "−Rp 45.000"],
+        ["Diskon Plus", "-Rp 45.000"],
       ].map(([k, v]) => (
         <div key={k} className="flex justify-between text-muted-foreground">
-          <span>{k}</span><span className="text-foreground">{v}</span>
+          <span>{k}</span>
+          <span className="text-foreground">{v}</span>
         </div>
       ))}
       <div className="flex justify-between border-t border-border/60 pt-2 mt-2 font-bold">
@@ -154,8 +170,12 @@ const QuotationCard = () => (
       </div>
     </div>
     <div className="flex gap-2 mt-3">
-      <Button size="sm" variant="hero" className="flex-1">Lanjut Beli</Button>
-      <Button size="sm" variant="outline">Simpan</Button>
+      <Button size="sm" variant="hero" className="flex-1">
+        Lanjut Beli
+      </Button>
+      <Button size="sm" variant="outline">
+        Simpan
+      </Button>
     </div>
   </div>
 );
@@ -167,8 +187,8 @@ const PaymentCard = () => (
         <CreditCard className="h-4 w-4" />
       </div>
       <div>
-        <p className="font-semibold text-sm">Pembayaran berhasil ✓</p>
-        <p className="text-[11px] text-muted-foreground">VA BCA — Rp 1.547.000</p>
+        <p className="font-semibold text-sm">Pembayaran berhasil</p>
+        <p className="text-[11px] text-muted-foreground">VA BCA - Rp 1.547.000</p>
       </div>
     </div>
     <p className="text-xs text-muted-foreground">Order #ORD-8821 masuk antrian procurement.</p>
@@ -177,24 +197,32 @@ const PaymentCard = () => (
 
 const TrackingCard = () => {
   const steps = [
-    { icon: Check, label: "Dibayar", done: true },
+    { icon: CreditCard, label: "Dibayar", done: true },
     { icon: Package, label: "Dibeli di Jepang", done: true },
     { icon: Plane, label: "Dalam pengiriman", done: true, current: true },
     { icon: Home, label: "Sampai rumah", done: false },
   ];
+
   return (
     <div className="rounded-2xl bg-background border border-border p-4 mt-2 shadow-soft">
       <p className="font-semibold text-sm mb-3">Tracking #ORD-8821</p>
       <div className="space-y-3">
         {steps.map((s, i) => (
           <div key={i} className="flex gap-3 items-center">
-            <div className={`h-8 w-8 rounded-full grid place-items-center ${
-              s.current ? "bg-primary text-primary-foreground animate-pulse-soft"
-              : s.done ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
-            }`}>
+            <div
+              className={`h-8 w-8 rounded-full grid place-items-center ${
+                s.current
+                  ? "bg-primary text-primary-foreground animate-pulse-soft"
+                  : s.done
+                    ? "bg-success/15 text-success"
+                    : "bg-muted text-muted-foreground"
+              }`}
+            >
               <s.icon className="h-4 w-4" />
             </div>
-            <span className={`text-xs ${s.done ? "font-semibold" : "text-muted-foreground"}`}>{s.label}</span>
+            <span className={`text-xs ${s.done ? "font-semibold" : "text-muted-foreground"}`}>
+              {s.label}
+            </span>
           </div>
         ))}
       </div>
@@ -220,8 +248,14 @@ const ProductCard = ({
     <div>
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{product.marketplace}</p>
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">estimasi</span>
-        <span className={`text-[10px] px-2 py-0.5 rounded-full ${product.available ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"}`}>
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+          estimasi
+        </span>
+        <span
+          className={`text-[10px] px-2 py-0.5 rounded-full ${
+            product.available ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+          }`}
+        >
           {product.available ? "stok tersedia" : "sold out"}
         </span>
       </div>
@@ -236,11 +270,26 @@ const ProductCard = ({
             const fees = estimateAllInFromJPY(product.price_jpy);
             return (
               <>
-                <div className="flex justify-between"><span>Harga (Rp)</span><span>Rp {fees.basePrice.toLocaleString("id-ID")}</span></div>
-                <div className="flex justify-between"><span>Fee jasa</span><span>Rp {fees.serviceFee.toLocaleString("id-ID")}</span></div>
-                <div className="flex justify-between"><span>Ongkir</span><span>Rp {fees.shipping.toLocaleString("id-ID")}</span></div>
-                <div className="flex justify-between"><span>Pajak</span><span>Rp {fees.tax.toLocaleString("id-ID")}</span></div>
-                <div className="flex justify-between font-bold text-primary"><span>Total estimasi</span><span>Rp {fees.total.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between">
+                  <span>Harga (Rp)</span>
+                  <span>Rp {fees.basePrice.toLocaleString("id-ID")}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Fee jasa</span>
+                  <span>Rp {fees.serviceFee.toLocaleString("id-ID")}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Ongkir</span>
+                  <span>Rp {fees.shipping.toLocaleString("id-ID")}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pajak</span>
+                  <span>Rp {fees.tax.toLocaleString("id-ID")}</span>
+                </div>
+                <div className="flex justify-between font-bold text-primary">
+                  <span>Total estimasi</span>
+                  <span>Rp {fees.total.toLocaleString("id-ID")}</span>
+                </div>
               </>
             );
           })()}
@@ -287,10 +336,14 @@ const ComparisonCard = ({
       {comparisons.map((item, idx) => (
         <div key={`${item.marketplace}-${idx}`} className="rounded-lg border border-border p-2 text-xs">
           <div className="grid grid-cols-2 gap-2">
-            <span className="text-muted-foreground">Marketplace</span><span className="font-medium">{item.marketplace}</span>
-            <span className="text-muted-foreground">Harga</span><span className="font-medium">{item.price_display}</span>
-            <span className="text-muted-foreground">Kondisi</span><span className="font-medium">{item.condition}</span>
-            <span className="text-muted-foreground">Estimasi total</span><span className="font-semibold text-primary">Rp {item.total_estimated_idr.toLocaleString("id-ID")}</span>
+            <span className="text-muted-foreground">Marketplace</span>
+            <span className="font-medium">{item.marketplace}</span>
+            <span className="text-muted-foreground">Harga</span>
+            <span className="font-medium">{item.price_display}</span>
+            <span className="text-muted-foreground">Kondisi</span>
+            <span className="font-medium">{item.condition}</span>
+            <span className="text-muted-foreground">Estimasi total</span>
+            <span className="font-semibold text-primary">Rp {item.total_estimated_idr.toLocaleString("id-ID")}</span>
           </div>
           <button
             type="button"
@@ -319,6 +372,7 @@ const WhatsAppDemo = () => {
   const [typing, setTyping] = useState(false);
   const [funnelState, setFunnelState] = useState<FunnelState>("discovering");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hasApiKey = Boolean(API_KEY?.trim());
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -328,6 +382,18 @@ const WhatsAppDemo = () => {
 
   const send = async (text: string) => {
     if (!text.trim() || typing) return;
+    if (!hasApiKey) {
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now(),
+          from: "bot",
+          text: "Konfigurasi AI belum lengkap. Isi VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY di file .env lalu restart aplikasi.",
+          time: now(),
+        },
+      ]);
+      return;
+    }
 
     const trimmedText = text.trim();
     if (/checkout|bayar|invoice|pembayaran/i.test(trimmedText)) {
@@ -335,6 +401,7 @@ const WhatsAppDemo = () => {
     } else if (/tracking|dikirim|sampai/i.test(trimmedText)) {
       setFunnelState("post-payment");
     }
+
     const userMsg: Msg = { id: Date.now(), from: "user", text: trimmedText, time: now() };
     setMsgs((m) => [...m, userMsg]);
     setInput("");
@@ -347,64 +414,97 @@ const WhatsAppDemo = () => {
       if (URL_REGEX.test(trimmedText)) {
         setFunnelState("discovering");
         const steps = [
-          "🔎 Normalisasi link...",
-          "🕸️ Mengambil detail produk...",
-          "🧮 Menyusun estimasi biaya...",
+          "Normalisasi link...",
+          "Mengambil detail produk...",
+          "Menyusun estimasi biaya...",
         ];
+
         for (const [idx, step] of steps.entries()) {
-          setMsgs((m) => [...m, {
-            id: Date.now() + idx + 1,
-            from: "bot",
-            text: idx === 0 ? `${createSearchAcknowledgement()}\n${step}` : step,
-            time: now(),
-          }]);
+          setMsgs((m) => [
+            ...m,
+            {
+              id: Date.now() + idx + 1,
+              from: "bot",
+              text: idx === 0 ? `${createSearchAcknowledgement()}\n${step}` : step,
+              time: now(),
+            },
+          ]);
           await wait(600);
         }
       }
 
       const { text: reply, scrapedProduct } = await sendMessage(updatedHistory, API_KEY);
+      const safeReply = reply?.trim() || "Saya belum mendapat jawaban dari AI. Coba kirim ulang pesanmu.";
       await wait(700);
 
       if (scrapedProduct) {
         setFunnelState("comparing");
-        setMsgs((m) => [...m, {
-          id: Date.now() + 2,
-          from: "bot",
-          card: "product",
-          product: scrapedProduct,
-          time: now(),
-        }]);
+        setMsgs((m) => [
+          ...m,
+          {
+            id: Date.now() + 2,
+            from: "bot",
+            card: "product",
+            product: scrapedProduct,
+            time: now(),
+          },
+        ]);
 
-        const basePrice = scrapedProduct.price_jpy ?? Math.round((scrapedProduct.price_display.match(/\d[\d,]*/) ? Number((scrapedProduct.price_display.match(/\d[\d,]*/) as RegExpMatchArray)[0].replace(/,/g, "")) : 10000));
+        const match = scrapedProduct.price_display.match(/\d[\d,]*/);
+        const displayJPY = match ? Number(match[0].replace(/,/g, "")) : 10_000;
+        const basePrice = scrapedProduct.price_jpy ?? Math.round(displayJPY);
+        const createComparison = (marketplace: string, multiplier: number, condition: string): ComparisonItem => {
+          const jpy = Math.max(1000, Math.round(basePrice * multiplier));
+          return {
+            title: scrapedProduct.title,
+            marketplace,
+            condition,
+            price_jpy: jpy,
+            price_display: `JPY ${jpy.toLocaleString("ja-JP")}`,
+            total_estimated_idr: estimateAllInFromJPY(jpy).total,
+          };
+        };
+
         const comparisons: ComparisonItem[] = [
-          { title: scrapedProduct.title, marketplace: "Mercari", condition: scrapedProduct.condition ?? "used", price_jpy: Math.max(1000, Math.round(basePrice * 0.9)), price_display: `¥${Math.max(1000, Math.round(basePrice * 0.9)).toLocaleString("ja-JP")}`, total_estimated_idr: estimateAllInFromJPY(Math.max(1000, Math.round(basePrice * 0.9))).total },
-          { title: scrapedProduct.title, marketplace: "Rakuten", condition: "new", price_jpy: Math.max(1000, Math.round(basePrice * 0.84)), price_display: `¥${Math.max(1000, Math.round(basePrice * 0.84)).toLocaleString("ja-JP")}`, total_estimated_idr: estimateAllInFromJPY(Math.max(1000, Math.round(basePrice * 0.84))).total },
-          { title: scrapedProduct.title, marketplace: "Yahoo Auction", condition: "used", price_jpy: Math.max(1000, Math.round(basePrice * 0.78)), price_display: `¥${Math.max(1000, Math.round(basePrice * 0.78)).toLocaleString("ja-JP")}`, total_estimated_idr: estimateAllInFromJPY(Math.max(1000, Math.round(basePrice * 0.78))).total },
+          createComparison("Mercari", 0.9, scrapedProduct.condition ?? "used"),
+          createComparison("Rakuten", 0.84, "new"),
+          createComparison("Yahoo Auction", 0.78, "used"),
         ];
-        setMsgs((m) => [...m, {
-          id: Date.now() + 3,
-          from: "bot",
-          card: "comparison",
-          comparisons,
-          time: now(),
-        }]);
+
+        setMsgs((m) => [
+          ...m,
+          {
+            id: Date.now() + 3,
+            from: "bot",
+            card: "comparison",
+            comparisons,
+            time: now(),
+          },
+        ]);
       }
 
-      setMsgs((m) => [...m, {
-        id: Date.now() + 4,
-        from: "bot",
-        text: reply,
-        time: now(),
-      }]);
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now() + 4,
+          from: "bot",
+          text: safeReply,
+          time: now(),
+        },
+      ]);
 
-      setHistory((h) => [...h, { role: "assistant", content: reply }]);
+      setHistory((h) => [...h, { role: "assistant", content: safeReply }]);
     } catch (err) {
-      setMsgs((m) => [...m, {
-        id: Date.now() + 3,
-        from: "bot",
-        text: "Maaf, ada gangguan koneksi. Coba lagi ya! 🙏",
-        time: now(),
-      }]);
+      const message = err instanceof Error ? err.message : "Terjadi error tak dikenal.";
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now() + 3,
+          from: "bot",
+          text: `AI error: ${message}`,
+          time: now(),
+        },
+      ]);
     } finally {
       setTyping(false);
     }
@@ -435,38 +535,40 @@ const WhatsAppDemo = () => {
           <h1 className="font-display text-3xl md:text-5xl font-bold mt-3 mb-4">
             Begini rasanya belanja via WhatsApp.
           </h1>
-          <p className="text-muted-foreground">Coba klik salah satu pesan cepat di bawah dan lihat alurnya end-to-end.</p>
+          <p className="text-muted-foreground">
+            Coba klik salah satu pesan cepat di bawah dan lihat alurnya end-to-end.
+          </p>
         </div>
 
         <div className="max-w-md mx-auto">
-          {/* Phone frame */}
           <div className="rounded-[2.5rem] bg-foreground p-2.5 shadow-card">
             <div className="rounded-[2rem] overflow-hidden bg-[#e5ddd5] flex flex-col h-[640px]">
-              {/* WA header */}
               <div className="bg-success px-4 py-3 flex items-center gap-3 text-success-foreground">
-                <div className="h-10 w-10 rounded-full bg-background/20 grid place-items-center font-display font-bold">M</div>
+                <div className="h-10 w-10 rounded-full bg-background/20 grid place-items-center font-display font-bold">
+                  M
+                </div>
                 <div className="flex-1">
                   <p className="font-semibold text-sm">MyBagasi AI</p>
-                  <p className="text-[11px] opacity-90">{typing ? "mengetik..." : `online • ${funnelState}`}</p>
+                  <p className="text-[11px] opacity-90">{typing ? "mengetik..." : `online | ${funnelState}`}</p>
                 </div>
               </div>
 
-              {/* Messages */}
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
                 {msgs.map((m) => (
                   <div key={m.id} className={`flex ${m.from === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-                      m.from === "user" ? "bg-[#dcf8c6] text-foreground rounded-br-sm" : "bg-background text-foreground rounded-bl-sm"
-                    }`}>
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                        m.from === "user"
+                          ? "bg-[#dcf8c6] text-foreground rounded-br-sm"
+                          : "bg-background text-foreground rounded-bl-sm"
+                      }`}
+                    >
                       {m.text && <MessageText text={m.text} />}
                       {m.card === "quotation" && <QuotationCard />}
                       {m.card === "payment" && <PaymentCard />}
                       {m.card === "tracking" && <TrackingCard />}
                       {m.card === "product" && m.product && (
-                        <ProductCard
-                          product={m.product}
-                          onAskCheaper={askCheaperAlternative}
-                        />
+                        <ProductCard product={m.product} onAskCheaper={askCheaperAlternative} />
                       )}
                       {m.card === "comparison" && m.comparisons && (
                         <ComparisonCard
@@ -487,7 +589,11 @@ const WhatsAppDemo = () => {
                     <div className="bg-background rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
                       <div className="flex gap-1">
                         {[0, 150, 300].map((d) => (
-                          <span key={d} className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-pulse-soft" style={{ animationDelay: `${d}ms` }} />
+                          <span
+                            key={d}
+                            className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-pulse-soft"
+                            style={{ animationDelay: `${d}ms` }}
+                          />
                         ))}
                       </div>
                     </div>
@@ -495,13 +601,12 @@ const WhatsAppDemo = () => {
                 )}
               </div>
 
-              {/* Quick replies */}
               <div className="px-3 py-2 flex gap-2 overflow-x-auto bg-[#e5ddd5]">
                 {quickReplies.map((q) => (
                   <button
                     key={q}
                     onClick={() => send(q)}
-                    disabled={typing}
+                    disabled={typing || !hasApiKey}
                     className="shrink-0 text-xs px-3 py-1.5 rounded-full bg-background/90 border border-border/40 hover:bg-background disabled:opacity-50"
                   >
                     {q}
@@ -509,24 +614,28 @@ const WhatsAppDemo = () => {
                 ))}
               </div>
 
-              {/* Input */}
               <div className="p-2 bg-[#f0f0f0] flex items-center gap-2">
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && send(input)}
                   placeholder="Ketik pesan..."
-                  disabled={typing}
+                  disabled={typing || !hasApiKey}
                   className="flex-1 rounded-full bg-background px-4 py-2.5 text-sm outline-none disabled:opacity-50"
                 />
                 <button
                   onClick={() => send(input)}
-                  disabled={typing || !input.trim()}
+                  disabled={typing || !input.trim() || !hasApiKey}
                   className="h-10 w-10 rounded-full bg-success grid place-items-center text-success-foreground shadow-soft disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
                 </button>
               </div>
+              {!hasApiKey && (
+                <div className="px-3 py-2 bg-warning/10 border-t border-warning/30 text-[11px] text-warning-foreground">
+                  API key AI belum diatur. Tambahkan `VITE_SUMOPOD_API_KEY` atau `VITE_OPENAI_API_KEY` di `.env`, lalu restart aplikasi.
+                </div>
+              )}
             </div>
           </div>
         </div>
