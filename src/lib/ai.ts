@@ -1,4 +1,4 @@
-import { scrapeProduct } from "./scraper";
+﻿import { scrapeProduct } from "./scraper";
 import type { ProductData } from "./scraper";
 import { createInvoice } from "./mayar";
 
@@ -12,14 +12,14 @@ const TAX_RATE = 0.08;
 const SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten belanja personal untuk produk-produk Jepang.
 Kamu membantu pelanggan Indonesia untuk:
 - Menemukan produk dari marketplace Jepang (Mercari, Rakuten, Amazon JP, Yahoo Auction, ZOZOTOWN, Muji, Map Camera)
-- Memberikan estimasi harga realistis termasuk semua biaya (harga produk, jasa MyBagasi, ongkir Jepang→Indo, pajak & bea)
+- Memberikan estimasi harga realistis termasuk semua biaya (harga produk, jasa MyBagasi, ongkir Jepang ke Indo, pajak & bea)
 - Memproses pembayaran via Mayar payment gateway
 
-Kurs: ¥1 ≈ Rp 105. Fee jasa MyBagasi ≈ 15% harga produk. Ongkir Jepang→Indo ≈ Rp 250.000. Pajak & bea ≈ 8% dari harga+jasa.
+Kurs: JPY 1 ~= Rp 105. Fee jasa MyBagasi ~= 15% harga produk. Ongkir Jepang ke Indo ~= Rp 250.000. Pajak & bea ~= 8% dari harga+jasa.
 Selalu respond dalam Bahasa Indonesia yang ramah dan santai.
 Jangan sebut nama tool internal (mis. scrape_product/create_payment/search_similar_products, Crawl4AI, Playwright). Gunakan bahasa natural seperti: "membuka link", "mengambil detail produk", "membuat link pembayaran".
 
-Jika user memberikan link produk → gunakan tool scrape_product untuk mendapatkan detail aslinya.
+Jika user memberikan link produk, gunakan tool scrape_product untuk mendapatkan detail aslinya.
 Setelah scrape_product berhasil, jalankan juga tool search_similar_products untuk memberi 2-3 opsi pembanding yang lebih murah / value lebih baik.
 Saat menampilkan pembanding, tampilkan tabel mini: marketplace | harga | kondisi | estimasi total.
 Jika scraping gagal, jangan berhenti di jawaban gagal saja: tawarkan alternatif pencarian manual di marketplace Jepang dan ajukan 1-2 pertanyaan preferensi user (size/warna/kondisi/budget).
@@ -34,7 +34,7 @@ Jika user mengkonfirmasi ingin membeli ("mau beli", "beli sekarang", "lanjut bay
 
 Jawab singkat dan to the point.`;
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// Types
 
 export type ChatMessage =
   | { role: "user"; content: string }
@@ -47,7 +47,7 @@ interface ToolCall {
   function: { name: string; arguments: string };
 }
 
-// ─── Tool definitions ─────────────────────────────────────────────────────────
+// Tool definitions
 
 const TOOLS = [
   {
@@ -132,12 +132,18 @@ const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          keyword: { type: "string", description: "Product keyword/title to search" },
+          keyword: {
+            type: "string",
+            description: "Product keyword/title to search",
+          },
           budget_max: {
             type: "integer",
             description: "Max budget in IDR (optional, use 0 if unknown)",
           },
-          condition: { type: "string", description: "Desired condition (new/used/any)" },
+          condition: {
+            type: "string",
+            description: "Desired condition (new/used/any)",
+          },
           size: { type: "string", description: "Requested size/variant if any" },
         },
         required: ["keyword"],
@@ -146,7 +152,7 @@ const TOOLS = [
   },
 ];
 
-// ─── Core API call ────────────────────────────────────────────────────────────
+// Core API call
 
 async function callAPI(
   messages: object[],
@@ -185,11 +191,14 @@ async function callAPI(
   return res.json();
 }
 
-// ─── Tool executor ─────────────────────────────────────────────────────────────
+// Tool executor
 
 const DEFAULT_EMAIL = import.meta.env.VITE_MAYAR_DEFAULT_EMAIL as string;
 const DEFAULT_MOBILE = import.meta.env.VITE_MAYAR_DEFAULT_MOBILE as string;
-const APP_BASE_URL = import.meta.env.VITE_APP_BASE_URL as string;
+const APP_BASE_URL = (
+  (import.meta.env.VITE_APP_BASE_URL as string | undefined) ??
+  (typeof window !== "undefined" ? window.location.origin : "")
+).replace(/\/$/, "");
 let LAST_SCRAPED_PRODUCT: ProductData | undefined;
 
 interface SimilarProduct {
@@ -217,7 +226,9 @@ function createSimilarProducts(
   condition = "any",
   size?: string
 ): SimilarProduct[] {
-  const sourcePriceJPY = LAST_SCRAPED_PRODUCT?.price_jpy ?? Math.round((budgetMaxIDR ?? 2_500_000) / JPY_TO_IDR);
+  const sourcePriceJPY =
+    LAST_SCRAPED_PRODUCT?.price_jpy ??
+    Math.round((budgetMaxIDR ?? 2_500_000) / JPY_TO_IDR);
   const multipliers = [0.88, 0.82, 0.76];
   const marketplaces = ["Mercari", "Rakuten", "Yahoo Auction"];
 
@@ -229,7 +240,7 @@ function createSimilarProducts(
       marketplace: marketplaces[idx],
       condition: condition === "any" ? (idx === 0 ? "new" : "used") : condition,
       price_jpy: priceJPY,
-      price_display: `¥${priceJPY.toLocaleString("ja-JP")}`,
+      price_display: `JPY ${priceJPY.toLocaleString("ja-JP")}`,
       total_estimated_idr: estimates.total,
     };
   });
@@ -255,16 +266,25 @@ async function executeTool(tc: ToolCall): Promise<string> {
       order_description: string;
       items: Array<{ description: string; quantity: number; rate: number }>;
     };
-    const email = args.customer_email || DEFAULT_EMAIL;
-    const mobile = args.customer_mobile || DEFAULT_MOBILE;
+    const email = args.customer_email || DEFAULT_EMAIL || "";
+    const mobile = args.customer_mobile || DEFAULT_MOBILE || "";
     if (!args.customer_name?.trim() || args.customer_name.trim().length < 3) {
-      return JSON.stringify({ success: false, error: "VALIDATION_ERROR: nama tidak valid" });
+      return JSON.stringify({
+        success: false,
+        error: "VALIDATION_ERROR: nama tidak valid",
+      });
     }
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
-      return JSON.stringify({ success: false, error: "VALIDATION_ERROR: email tidak valid" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return JSON.stringify({
+        success: false,
+        error: "VALIDATION_ERROR: email tidak valid",
+      });
     }
-    if (!/^(\\+62|62|0)8[1-9][0-9]{6,11}$/.test(mobile.replace(/\\s|-/g, ""))) {
-      return JSON.stringify({ success: false, error: "VALIDATION_ERROR: nomor HP tidak valid" });
+    if (!/^(\+62|62|0)8[1-9][0-9]{6,11}$/.test(mobile.replace(/\s|-/g, ""))) {
+      return JSON.stringify({
+        success: false,
+        error: "VALIDATION_ERROR: nomor HP tidak valid",
+      });
     }
     try {
       const invoice = await createInvoice({
@@ -304,19 +324,23 @@ async function executeTool(tc: ToolCall): Promise<string> {
   return JSON.stringify({ error: `Unknown tool: ${tc.function.name}` });
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// Public API
 
 export async function sendMessage(
   messages: ChatMessage[],
   apiKey: string
 ): Promise<{ text: string; scrapedProduct?: ProductData }> {
   if (!apiKey?.trim()) {
-    throw new Error("AI API key belum diatur. Set VITE_SUMOPOD_API_KEY terlebih dahulu.");
+    throw new Error(
+      "Konfigurasi AI belum lengkap: VITE_SUMOPOD_API_KEY belum diatur."
+    );
   }
 
   const latestUserMessage = [...messages]
     .reverse()
-    .find((msg): msg is Extract<ChatMessage, { role: "user" }> => msg.role === "user");
+    .find(
+      (msg): msg is Extract<ChatMessage, { role: "user" }> => msg.role === "user"
+    );
   const detectedUrl = latestUserMessage ? extractUrl(latestUserMessage.content) : null;
 
   let preScrapedProduct: ProductData | undefined;
@@ -346,7 +370,7 @@ export async function sendMessage(
     ? [systemMsg, scrapeContextMessage, ...messages]
     : [systemMsg, ...messages];
 
-  // First call — with tools
+  // First call - with tools
   const first = await callAPI(fullMessages, apiKey, true);
   const choice = first.choices[0];
 
@@ -443,7 +467,7 @@ export async function* streamMessage(
   }
 }
 
-// ─── Utility ──────────────────────────────────────────────────────────────────
+// Utility
 
 /** Extract the first HTTP(S) URL found in a string. */
 export function extractUrl(text: string): string | null {

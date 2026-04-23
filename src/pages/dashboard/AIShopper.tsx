@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, Send, RotateCcw, CreditCard, ExternalLink, ShoppingCart } from "lucide-react";
+import {
+  Sparkles,
+  Send,
+  RotateCcw,
+  CreditCard,
+  ExternalLink,
+  ShoppingCart,
+} from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { sendMessage, extractUrl, type ChatMessage } from "@/lib/ai";
@@ -23,7 +30,10 @@ const SUGGESTIONS = [
 ];
 
 const now = () =>
-  new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  new Date().toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 const AIShopper = () => {
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -32,13 +42,31 @@ const AIShopper = () => {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasApiKey = Boolean(API_KEY?.trim());
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [msgs, loading]);
 
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
+
+    if (!hasApiKey) {
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now(),
+          role: "assistant",
+          content:
+            "Konfigurasi AI belum lengkap. Isi VITE_SUMOPOD_API_KEY di file .env lalu restart aplikasi.",
+          time: now(),
+        },
+      ]);
+      return;
+    }
 
     const userMsg: Msg = { id: Date.now(), role: "user", content: text, time: now() };
     setMsgs((m) => [...m, userMsg]);
@@ -63,13 +91,14 @@ const AIShopper = () => {
         },
       ]);
       setHistory((h) => [...h, { role: "assistant", content: reply.text }]);
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Terjadi error tak dikenal.";
       setMsgs((m) => [
         ...m,
         {
           id: Date.now() + 1,
           role: "assistant",
-          content: "Maaf, ada gangguan koneksi. Coba lagi ya 🙏",
+          content: `AI error: ${message}`,
           time: now(),
         },
       ]);
@@ -98,17 +127,21 @@ const AIShopper = () => {
         className="flex flex-col rounded-3xl border border-border/40 shadow-soft overflow-hidden"
         style={{ height: "calc(100vh - 260px)", minHeight: 480 }}
       >
-        {/* Chat area */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-warm">
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-warm"
+        >
           {msgs.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-6 text-center">
               <div className="h-16 w-16 rounded-2xl bg-primary text-primary-foreground grid place-items-center animate-float">
                 <Sparkles className="h-7 w-7" />
               </div>
               <div>
-                <p className="font-display text-lg font-bold mb-1">MyBagasi AI siap membantu</p>
+                <p className="font-display text-lg font-bold mb-1">
+                  MyBagasi AI siap membantu
+                </p>
                 <p className="text-sm text-muted-foreground max-w-xs">
-                  Tanya apapun tentang produk Jepang — harga, rekomendasi, estimasi biaya all-in,
+                  Tanya apapun tentang produk Jepang - harga, rekomendasi, estimasi biaya all-in,
                   bahkan bisa langsung bayar lewat AI.
                 </p>
               </div>
@@ -123,7 +156,6 @@ const AIShopper = () => {
                   </button>
                 ))}
               </div>
-              {/* Quick checkout link */}
               <Link
                 to="/checkout"
                 className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -153,7 +185,6 @@ const AIShopper = () => {
               >
                 <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
 
-                {/* Payment URL button — shown when AI returns a Mayar link */}
                 {m.paymentUrl && (
                   <a
                     href={m.paymentUrl}
@@ -200,7 +231,6 @@ const AIShopper = () => {
           )}
         </div>
 
-        {/* Input bar */}
         <div className="border-t border-border/40 bg-background px-4 py-3 flex items-center gap-3">
           {msgs.length > 0 && (
             <button
@@ -217,12 +247,12 @@ const AIShopper = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send(input)}
             placeholder="Tanya tentang produk Jepang atau paste link produk..."
-            disabled={loading}
+            disabled={loading || !hasApiKey}
             className="flex-1 rounded-xl border border-border/60 bg-muted/40 px-4 py-2.5 text-sm outline-none focus:border-primary/50 focus:bg-background transition-colors disabled:opacity-50"
           />
           <Button
             onClick={() => send(input)}
-            disabled={loading || !input.trim()}
+            disabled={loading || !input.trim() || !hasApiKey}
             size="sm"
             variant="hero"
             className="h-10 px-4 shrink-0"
@@ -230,6 +260,12 @@ const AIShopper = () => {
             <Send className="h-4 w-4" />
           </Button>
         </div>
+
+        {!hasApiKey && (
+          <div className="border-t border-warning/30 bg-warning/10 px-4 py-2 text-xs text-warning-foreground">
+            VITE_SUMOPOD_API_KEY belum diatur. Tambahkan di `.env`, lalu restart aplikasi.
+          </div>
+        )}
       </div>
     </>
   );
