@@ -10,8 +10,14 @@ import {
   Plane,
   Home,
   Sparkles,
+  Image as ImageIcon,
 } from "lucide-react";
-import { estimateAllInFromJPY, sendMessage, type ChatMessage } from "@/lib/ai";
+import {
+  analyzeProductScreenshot,
+  estimateAllInFromJPY,
+  sendMessage,
+  type ChatMessage,
+} from "@/lib/ai";
 import type { ProductData } from "@/lib/scraper";
 
 const API_KEY =
@@ -372,6 +378,7 @@ const WhatsAppDemo = () => {
   const [typing, setTyping] = useState(false);
   const [funnelState, setFunnelState] = useState<FunnelState>("discovering");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
   const hasApiKey = Boolean(API_KEY?.trim());
 
   useEffect(() => {
@@ -526,6 +533,79 @@ const WhatsAppDemo = () => {
     void send("Bandingkan lagi 3 opsi termurah dengan kondisi terbaik dan sertakan estimasi total.");
   };
 
+  const handleScreenshotUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!hasApiKey) {
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now(),
+          from: "bot",
+          text: "Konfigurasi AI belum lengkap. Isi VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY di file .env lalu restart aplikasi.",
+          time: now(),
+        },
+      ]);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now(),
+          from: "bot",
+          text: "File harus berupa gambar screenshot (jpg/png/webp).",
+          time: now(),
+        },
+      ]);
+      return;
+    }
+
+    setMsgs((m) => [
+      ...m,
+      {
+        id: Date.now(),
+        from: "user",
+        text: `Saya kirim screenshot produk: ${file.name}`,
+        time: now(),
+      },
+    ]);
+
+    setTyping(true);
+    try {
+      const extracted = await analyzeProductScreenshot(file, API_KEY);
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now() + 1,
+          from: "bot",
+          text: `Hasil ekstrak screenshot:\n${extracted}\n\nSaya lanjutkan analisis produk dari data ini ya.`,
+          time: now(),
+        },
+      ]);
+      setTyping(false);
+      await send(
+        `Gunakan hasil ekstrak screenshot produk ini sebagai konteks utama, lalu lanjutkan analisis dan estimasi biaya:\n${extracted}`
+      );
+    } catch (err) {
+      setTyping(false);
+      const message = err instanceof Error ? err.message : "Gagal menganalisis screenshot.";
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now() + 2,
+          from: "bot",
+          text: `Analisis screenshot gagal: ${message}`,
+          time: now(),
+        },
+      ]);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -615,6 +695,22 @@ const WhatsAppDemo = () => {
               </div>
 
               <div className="p-2 bg-[#f0f0f0] flex items-center gap-2">
+                <input
+                  ref={screenshotInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleScreenshotUpload}
+                />
+                <button
+                  type="button"
+                  onClick={() => screenshotInputRef.current?.click()}
+                  disabled={typing || !hasApiKey}
+                  className="h-10 w-10 rounded-full bg-background border border-border grid place-items-center text-muted-foreground disabled:opacity-50"
+                  title="Upload screenshot produk"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </button>
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}

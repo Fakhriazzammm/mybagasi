@@ -566,6 +566,70 @@ export async function* streamMessage(
 
 // Utility
 
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Gagal membaca file screenshot."));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function analyzeProductScreenshot(
+  file: File,
+  apiKey: string
+): Promise<string> {
+  if (!apiKey?.trim()) {
+    throw new Error(
+      "Konfigurasi AI belum lengkap: VITE_SUMOPOD_API_KEY atau VITE_OPENAI_API_KEY belum diatur."
+    );
+  }
+
+  const dataUrl = await fileToDataUrl(file);
+  const res = await fetch(`${BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.2,
+      max_tokens: 600,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Kamu mengekstrak detail produk dari screenshot marketplace/ecommerce. " +
+            "Balas singkat dalam Bahasa Indonesia dengan format:\n" +
+            "- Nama produk\n- Harga\n- Kondisi\n- Marketplace\n- URL (jika terlihat)\n- Ringkasan penting",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Ekstrak detail produk dari screenshot ini." },
+            { type: "image_url", image_url: { url: dataUrl } },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => res.statusText);
+    throw new Error(`AI screenshot error ${res.status}: ${err}`);
+  }
+
+  const json = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = json.choices?.[0]?.message?.content?.trim();
+  if (!text) {
+    throw new Error("AI tidak mengembalikan hasil analisis screenshot.");
+  }
+  return text;
+}
+
 /** Extract the first HTTP(S) URL found in a string. */
 export function extractUrl(text: string): string | null {
   const m = text.match(/https?:\/\/[^\s\])\n"']+/);
