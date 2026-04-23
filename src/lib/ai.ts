@@ -1,5 +1,6 @@
 ﻿import { scrapeProduct } from "./scraper";
 import type { ProductData } from "./scraper";
+import { searchProducts } from "./scraper";
 import { createInvoice } from "./mayar";
 
 const BASE_URL = (
@@ -26,6 +27,7 @@ Jangan sebut nama tool internal (mis. scrape_product/create_payment/search_simil
 Jika user memberikan link produk, gunakan tool scrape_product untuk mendapatkan detail aslinya.
 Setelah scrape_product berhasil, jalankan juga tool search_similar_products untuk memberi 2-3 opsi pembanding yang lebih murah / value lebih baik.
 Saat menampilkan pembanding, tampilkan tabel mini: marketplace | harga | kondisi | estimasi total.
+Jika user meminta cari produk dari kata kunci saja (tanpa link), WAJIB gunakan tool search_similar_products dulu untuk browsing marketplace dan mengambil kandidat nyata.
 Jika scraping gagal, jangan berhenti di jawaban gagal saja: tawarkan alternatif pencarian manual di marketplace Jepang dan ajukan 1-2 pertanyaan preferensi user (size/warna/kondisi/budget).
 
 Jika user mengkonfirmasi ingin membeli ("mau beli", "beli sekarang", "lanjut bayar", "checkout", dll):
@@ -131,8 +133,8 @@ const TOOLS = [
     function: {
       name: "search_similar_products",
       description:
-        "Find up to 3 similar products across Japanese marketplaces for comparison mode. " +
-        "Use this after successful scrape_product or when user asks cheaper alternatives.",
+        "Browse and scrape up to 6 real product candidates across ecommerce/marketplace websites using keyword search. " +
+        "Use this after successful scrape_product, when user asks cheaper alternatives, or when user asks to find product without sharing link.",
       parameters: {
         type: "object",
         properties: {
@@ -314,6 +316,37 @@ function createSimilarProducts(
   });
 }
 
+function mapSearchResultsToSimilar(
+  products: ProductData[],
+  fallbackKeyword: string,
+  requestedCondition = "any"
+): SimilarProduct[] {
+  const mapped = products
+    .map((p) => {
+      let jpy = p.price_jpy ?? 0;
+      if (!jpy && p.price_display) {
+        const n = Number(
+          (p.price_display.match(/\d[\d,.]*/) || ["0"])[0].replace(/[,.]/g, "")
+        );
+        if (Number.isFinite(n) && n > 0) jpy = n;
+      }
+      if (!jpy || jpy < 100) return null;
+      return {
+        title: p.title || fallbackKeyword,
+        marketplace: p.marketplace || "marketplace",
+        condition:
+          p.condition ||
+          (requestedCondition === "any" ? "unknown" : requestedCondition),
+        price_jpy: jpy,
+        price_display: p.price_display || `JPY ${jpy.toLocaleString("ja-JP")}`,
+        total_estimated_idr: estimateAllInFromJPY(jpy).total,
+      } as SimilarProduct;
+    })
+    .filter((x): x is SimilarProduct => Boolean(x));
+
+  return mapped.slice(0, 6);
+}
+
 async function executeTool(tc: ToolCall): Promise<string> {
   if (tc.function.name === "scrape_product") {
     const { url } = JSON.parse(tc.function.arguments) as { url: string };
@@ -389,13 +422,36 @@ async function executeTool(tc: ToolCall): Promise<string> {
       condition?: string;
       size?: string;
     };
-    const rows = createSimilarProducts(
+    try {
+      const searched = await searchProducts({
+        keyword: args.keyword,
+        condition: args.condition,
+        size: args.size,
+        limit: 6,
+      });
+      const rows = mapSearchResultsToSimilar(
+        searched,
+        args.keyword,
+        args.condition
+      );
+      if (rows.length > 0) {
+        return JSON.stringify({ success: true, items: rows, source: "live_search" });
+      }
+    } catch {
+      // noop - fallback below
+    }
+
+    const fallbackRows = createSimilarProducts(
       args.keyword,
       args.budget_max,
       args.condition,
       args.size
     );
-    return JSON.stringify({ success: true, items: rows });
+    return JSON.stringify({
+      success: true,
+      items: fallbackRows,
+      source: "fallback_estimate",
+    });
   }
 
   return JSON.stringify({ error: `Unknown tool: ${tc.function.name}` });

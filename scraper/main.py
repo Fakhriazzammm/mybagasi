@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from scrapers.dispatcher import scrape_url
 from scrapers.models import ProductData
+from scrapers.search_web import search_products_by_keyword
 from mayar_routes import router as mayar_router
 
 app = FastAPI(title="MyBagasi Backend", version="1.0.0")
@@ -24,6 +25,13 @@ app.include_router(mayar_router)
 
 class ScrapeRequest(BaseModel):
     url: str
+
+
+class SearchRequest(BaseModel):
+    keyword: str
+    condition: str | None = None
+    size: str | None = None
+    limit: int = 6
 
 
 @app.post("/scrape")
@@ -73,6 +81,21 @@ async def scrape(req: ScrapeRequest):
             confidence="low",
             scrape_reason_code="PARSE_EMPTY",
         )
+
+
+@app.post("/search")
+async def search(req: SearchRequest):
+    keyword = (req.keyword or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="keyword is required")
+    limit = req.limit if 1 <= req.limit <= 12 else 6
+    products = await search_products_by_keyword(
+        keyword=keyword,
+        condition=req.condition,
+        size=req.size,
+        limit=limit,
+    )
+    return {"success": True, "items": products}
 
 
 @app.get("/health")
