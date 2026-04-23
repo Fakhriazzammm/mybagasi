@@ -15,7 +15,7 @@ from typing import Optional
 
 from playwright.async_api import async_playwright
 
-from .generic import _crawl4ai
+from .generic import _crawl4ai, scrape_generic
 from .models import ProductData, parse_jpy
 
 
@@ -134,6 +134,16 @@ async def scrape_mercari(url: str) -> ProductData:
             if saw_not_found and not saw_blocked:
                 return _not_found_product(candidates[0])
             if saw_blocked:
+                # Last chance fallback: generic scraper can use text-mirror extraction.
+                # This helps when direct Playwright access is blocked by anti-bot.
+                try:
+                    generic_result = await scrape_generic(candidates[0])
+                    generic_result.marketplace = "mercari"
+                    generic_result.url = candidates[0]
+                    if _is_useful_product(generic_result):
+                        return generic_result
+                except Exception:
+                    pass
                 return _blocked_product(candidates[0])
             if last_error:
                 raise last_error
