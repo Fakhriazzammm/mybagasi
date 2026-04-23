@@ -30,3 +30,9 @@ dist-ssr
 *.sln
 *.sw?
 supabase/.temp/
+
+# Python / scraper artifacts
+scraper/.venv/
+**/__pycache__/
+*.pyc
+.backups/
