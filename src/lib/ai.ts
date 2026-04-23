@@ -25,6 +25,13 @@ Jika user memberikan link produk, gunakan tool scrape_product untuk mendapatkan 
 Setelah scrape_product berhasil, jalankan juga tool search_similar_products untuk memberi 2-3 opsi pembanding yang lebih murah / value lebih baik.
 Saat menampilkan pembanding, tampilkan tabel mini: marketplace | harga | kondisi | estimasi total.
 Jika user meminta cari produk dari kata kunci saja (tanpa link), WAJIB gunakan tool search_similar_products dulu untuk browsing marketplace dan mengambil kandidat nyata.
+
+PENTING - JANGAN PERNAH membuat data produk palsu atau menebak harga:
+- Jika search_similar_products mengembalikan items kosong, JANGAN buat produk tiruan.
+- Katakan jujur bahwa pencarian belum menemukan hasil, lalu tawarkan alternatif manual.
+- Sarankan user untuk share link produk langsung dari marketplace agar bisa dibaca dengan akurat.
+- Berikan link langsung ke marketplace: jp.mercari.com/search, search.rakuten.co.jp, auctions.yahoo.co.jp
+
 Jika scraping gagal, jangan berhenti di jawaban gagal saja: tawarkan alternatif pencarian manual di marketplace Jepang dan ajukan 1-2 pertanyaan preferensi user (size/warna/kondisi/budget).
 
 Jika user mengkonfirmasi ingin membeli ("mau beli", "beli sekarang", "lanjut bayar", "checkout", dll):
@@ -298,31 +305,8 @@ export function estimateAllInFromJPY(priceJPY: number) {
   return { basePrice, serviceFee, shipping: SHIPPING_IDR, tax, total };
 }
 
-function createSimilarProducts(
-  keyword: string,
-  budgetMaxIDR?: number,
-  condition = "any",
-  size?: string
-): SimilarProduct[] {
-  const sourcePriceJPY =
-    LAST_SCRAPED_PRODUCT?.price_jpy ??
-    Math.round((budgetMaxIDR ?? 2_500_000) / JPY_TO_IDR);
-  const multipliers = [0.88, 0.82, 0.76];
-  const marketplaces = ["Mercari", "Rakuten", "Yahoo Auction"];
-
-  return multipliers.map((factor, idx) => {
-    const priceJPY = Math.max(1000, Math.round(sourcePriceJPY * factor));
-    const estimates = estimateAllInFromJPY(priceJPY);
-    return {
-      title: `${keyword}${size ? ` (${size})` : ""}`,
-      marketplace: marketplaces[idx],
-      condition: condition === "any" ? (idx === 0 ? "new" : "used") : condition,
-      price_jpy: priceJPY,
-      price_display: `JPY ${priceJPY.toLocaleString("ja-JP")}`,
-      total_estimated_idr: estimates.total,
-    };
-  });
-}
+// REMOVED: createSimilarProducts() — was generating fake/template product data.
+// Better to return empty results than fabricated products.
 
 function mapSearchResultsToSimilar(
   products: ProductData[],
@@ -449,19 +433,17 @@ async function executeTool(tc: ToolCall): Promise<string> {
         return JSON.stringify({ success: true, items: rows, source: "live_search" });
       }
     } catch {
-      // noop - fallback below
+      // Search failed — do NOT generate fake products
     }
 
-    const fallbackRows = createSimilarProducts(
-      args.keyword,
-      args.budget_max,
-      args.condition,
-      args.size
-    );
+    // Return honest "no results" instead of fabricated template data
     return JSON.stringify({
-      success: true,
-      items: fallbackRows,
-      source: "fallback_estimate",
+      success: false,
+      items: [],
+      source: "none",
+      message:
+        "Pencarian di marketplace Jepang belum menghasilkan produk yang cocok. " +
+        "Coba kata kunci yang lebih spesifik, atau share langsung link produk yang diinginkan.",
     });
   }
 

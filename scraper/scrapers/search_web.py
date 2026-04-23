@@ -34,9 +34,9 @@ MARKETPLACE_SEARCH_URLS = [
 
 # In-memory cache for scraped URLs (simple LRU-like)
 _scrape_cache: dict[str, tuple[float, ProductData]] = {}
-_cache_max_age = 300  # 5 minutes
+_cache_max_age = 180  # 3 minutes (shorter cache = fresher results)
 _domain_rate_limit: defaultdict[str, float] = defaultdict(float)
-_rate_limit_window = 1.0  # 1 second per domain
+_rate_limit_window = 0.5  # 0.5 second per domain (faster)
 
 # Rotate user agents to avoid detection
 _USER_AGENTS = [
@@ -146,7 +146,7 @@ async def _scrape_candidate_curl_first(url: str, tokens: list[str]) -> ProductDa
 
     # Try lightweight HTTP scraper first (faster timeout)
     try:
-        light = await asyncio.wait_for(scrape_generic_http(url), timeout=8)
+        light = await asyncio.wait_for(scrape_generic_http(url), timeout=6)
         if _usable_product(light) and _relevant_to_keyword(light, tokens):
             _set_cached(url, light)
             return light
@@ -158,7 +158,7 @@ async def _scrape_candidate_curl_first(url: str, tokens: list[str]) -> ProductDa
     # Fallback to full scraper with longer timeout
     await _wait_rate_limit(url)
     try:
-        full = await asyncio.wait_for(scrape_url(url), timeout=25)
+        full = await asyncio.wait_for(scrape_url(url), timeout=15)
         if _usable_product(full):
             _set_cached(url, full)
             return full
@@ -184,8 +184,10 @@ async def search_products_by_keyword(
     q += " japan marketplace"
 
     candidates: list[str] = []
+    # Prioritize direct marketplace search (DuckDuckGo blocked by CAPTCHA)
     candidates.extend(await _collect_candidates_from_marketplace_search(q))
-    candidates.extend(await _collect_candidates_from_duckduckgo(q))
+    # DuckDuckGo is currently blocked by CAPTCHA on this IP - skip for now
+    # candidates.extend(await _collect_candidates_from_duckduckgo(q))
     # de-duplicate while preserving order
     deduped: list[str] = []
     seen: set[str] = set()
@@ -193,7 +195,7 @@ async def search_products_by_keyword(
         if c not in seen:
             seen.add(c)
             deduped.append(c)
-    candidates = deduped[:24]
+    candidates = deduped[:8]  # Reduced from 12 to avoid timeout
 
     if not candidates:
         return []
@@ -201,7 +203,7 @@ async def search_products_by_keyword(
     tokens = _keyword_tokens(keyword)
 
     # Parallel scraping with semaphore to limit concurrency
-    semaphore = asyncio.Semaphore(5)  # Max 5 concurrent scrapes
+    semaphore = asyncio.Semaphore(4)  # 4 concurrent scrapes
 
     async def scrape_with_semaphore(url: str) -> ProductData | None:
         async with semaphore:
@@ -309,22 +311,32 @@ async def _collect_candidates_from_marketplace_search(query: str) -> list[str]:
         "Connection": "keep-alive",
     }
     candidates: list[str] = []
-    async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers=headers) as client:
         for template in MARKETPLACE_SEARCH_URLS:
             try:
                 url = template.format(q=encoded_query)
                 await _wait_rate_limit(url)  # Apply rate limiting for search queries too
                 resp = await client.get(url)
-                resp.raise_for_status()
-            except Exception:
+                # Yahoo Auction returns 404 but still has valid content with product links
+                # So we don't raise_for_status for it
+                if "auctions.yahoo.co.jp" not in url:
+                    resp.raise_for_status()
+                elif resp.status_code >= 500:
+                    continue  # Only skip on 5xx errors for Yahoo Auction
+            except Exception as e:
+                # Silently continue on error (marketplace might be down or blocking)
                 continue
 
             html = resp.text or ""
             found = _extract_ecommerce_links_from_html(html)
+            # Debug logging (can be removed in production)
+            if found:
+                import sys
+                print(f"[DEBUG] Found {len(found)} candidates from {url[:50]}...", file=sys.stderr)
             for item_url in found:
                 if item_url not in candidates:
                     candidates.append(item_url)
-                if len(candidates) >= 16:
+                if len(candidates) >= 8:  # Reduced from 12
                     return candidates
     return candidates
 
@@ -334,15 +346,18 @@ def _extract_ecommerce_links_from_html(html: str) -> list[str]:
         # Mercari JP & US
         r"https://jp\.mercari\.com/item/[A-Za-z0-9]+",
         r"https://www\.mercari\.com/us/item/[A-Za-z0-9]+/?",
-        # Rakuten
+        r"https://jp\.mercari\.com/en/item/[A-Za-z0-9]+",
+        # Rakuten (both formats)
         r"https://item\.rakuten\.co\.jp/[\w-]+/[\w-]+/?",
-        # Yahoo Auctions
+        r"https://product\.rakuten\.co\.jp/product/[\w-]+/",
+        # Yahoo Auctions (both /jp/auction/ and /catalog/detail/ formats)
         r"https://auctions\.yahoo\.co\.jp/jp/auction/[A-Za-z0-9]+",
+        r"https://auctions\.yahoo\.co\.jp/catalog/detail/[A-Za-z0-9]+",
+        r"https://page\.auctions\.yahoo\.co\.jp/jp/auction/[A-Za-z0-9]+",
         # Amazon (DP pages)
         r"https://www\.amazon\.co\.jp/[\w-]+/dp/[A-Z0-9]{10}(?:/|\?|$)",
         r"https://www\.amazon\.co\.jp/dp/[A-Z0-9]{10}(?:/|\?|$)",
-        # Additional patterns for better coverage
-        r"https://jp\.mercari\.com/en/item/[A-Za-z0-9]+",
+        # PayPay Fleamarket
         r"https://paypayfleamarket\.yahoo\.co\.jp/item/[A-Za-z0-9]+",
     ]
     links: list[str] = []
@@ -350,9 +365,13 @@ def _extract_ecommerce_links_from_html(html: str) -> list[str]:
         for m in re.findall(pattern, html):
             # Clean up trailing quotes or parentheses
             cleaned = m
-            for ch in [")", "'", '"', "."]:
+            for ch in [")", "'", '"', ".", "<", ">"]:
                 if cleaned.endswith(ch):
                     cleaned = cleaned[:-1]
+            # Strip query params for Yahoo Auction (they have many tracking params)
+            if "auctions.yahoo.co.jp" in cleaned:
+                cleaned = re.sub(r"\?.*", "", cleaned)
+                cleaned = cleaned.rstrip("/")
             if cleaned not in links:
                 links.append(cleaned)
     return links
