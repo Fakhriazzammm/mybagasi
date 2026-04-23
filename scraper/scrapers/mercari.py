@@ -156,6 +156,15 @@ async def _crawl4ai_fallback(url: str) -> ProductData:
     product = await _crawl4ai(url)
     product.marketplace = "mercari"
     product.url = url
+    desc = (product.description or "").lower()
+    title = (product.title or "").lower()
+    if "target url returned error 404" in desc or "target url returned error 404" in title:
+        return _not_found_product(url)
+    if (
+        "your go-to marketplace for deals on used" in title
+        and not (product.price_jpy or product.price_display)
+    ):
+        return _not_found_product(url)
     product.confidence = "medium" if product.price_jpy and product.images else "low"
     product.scrape_reason_code = product.scrape_reason_code or "CRAWL4AI"
     return product
@@ -201,6 +210,7 @@ def _is_useful_product(product: ProductData) -> bool:
         "blocked page",
         "privacy settings",
         "access denied",
+        "your go-to marketplace for deals on used & secondhand items",
     }
     has_title = bool(title and title not in invalid_titles)
     has_price = bool(product.price_jpy or product.price_display)
