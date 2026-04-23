@@ -17,13 +17,32 @@ export interface ProductData {
 const API_BASE = (
   (import.meta.env.VITE_BACKEND_BASE_URL as string | undefined) ?? "/api"
 ).replace(/\/$/, "");
+const FALLBACK_BACKEND = (
+  (import.meta.env.VITE_FALLBACK_BACKEND_BASE_URL as string | undefined) ??
+  "https://43.129.54.5.nip.io"
+).replace(/\/$/, "");
 
 export async function scrapeProduct(url: string): Promise<ProductData> {
-  const res = await fetch(`${API_BASE}/scrape`, {
+  const requestInit: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
-  });
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/scrape`, requestInit);
+  } catch {
+    res = await fetch(`${FALLBACK_BACKEND}/scrape`, requestInit);
+  }
+
+  // Production safety net: if relative /api fails (no proxy), retry to VPS backend.
+  if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
+    const retry = await fetch(`${FALLBACK_BACKEND}/scrape`, requestInit);
+    if (retry.ok) {
+      return retry.json() as Promise<ProductData>;
+    }
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));

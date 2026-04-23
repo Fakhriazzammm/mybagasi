@@ -49,13 +49,34 @@ export interface CreateInvoiceInput {
 const API_BASE = (
   (import.meta.env.VITE_BACKEND_BASE_URL as string | undefined) ?? "/api"
 ).replace(/\/$/, "");
+const FALLBACK_BACKEND = (
+  (import.meta.env.VITE_FALLBACK_BACKEND_BASE_URL as string | undefined) ??
+  "https://43.129.54.5.nip.io"
+).replace(/\/$/, "");
 const BASE = `${API_BASE}/mayar`;
+const FALLBACK_BASE = `${FALLBACK_BACKEND}/mayar`;
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const requestInit: RequestInit = {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, requestInit);
+  } catch {
+    res = await fetch(`${FALLBACK_BASE}${path}`, requestInit);
+  }
+
+  // Production safety net: if /api is unavailable, retry directly to VPS backend.
+  if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
+    const retry = await fetch(`${FALLBACK_BASE}${path}`, requestInit);
+    if (retry.ok) {
+      return retry.json() as Promise<T>;
+    }
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(
