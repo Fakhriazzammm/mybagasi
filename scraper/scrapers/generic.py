@@ -56,8 +56,11 @@ async def _crawl4ai(url: str) -> ProductData:
 
     soup = BeautifulSoup(html, "lxml") if html else BeautifulSoup("", "lxml")
     extracted = _extract_product_fields(soup, content, meta, url)
-    if _is_blocked_page(extracted["title"], extracted["description"], content):
+    resolved_title = extracted["title"] or meta.get("title") or _heading(content) or "Unknown Product"
+    if _is_blocked_page(resolved_title, extracted["description"], content):
         return _blocked_product(url, _domain(url))
+    if _is_low_signal_result(resolved_title, extracted["price_display"], extracted["images"]):
+        return _parse_empty_product(url, _domain(url))
 
     images = extracted["images"] or [
         img["src"]
@@ -66,7 +69,7 @@ async def _crawl4ai(url: str) -> ProductData:
     ][:6]
 
     return ProductData(
-        title=extracted["title"] or meta.get("title") or _heading(content) or "Unknown Product",
+        title=resolved_title,
         price_jpy=parse_jpy(extracted["price_display"] or ""),
         price_display=extracted["price_display"] or "",
         condition=extracted["condition"],
@@ -97,11 +100,14 @@ async def _bs4_fallback(url: str) -> ProductData:
 
     soup = BeautifulSoup(resp.text, "lxml")
     extracted = _extract_product_fields(soup, "", {}, url)
-    if _is_blocked_page(extracted["title"], extracted["description"], soup.get_text(" ", strip=True)):
+    resolved_title = extracted["title"] or "Unknown Product"
+    if _is_blocked_page(resolved_title, extracted["description"], soup.get_text(" ", strip=True)):
         return _blocked_product(url, _domain(url))
+    if _is_low_signal_result(resolved_title, extracted["price_display"], extracted["images"]):
+        return _parse_empty_product(url, _domain(url))
 
     return ProductData(
-        title=extracted["title"] or "Unknown Product",
+        title=resolved_title,
         price_jpy=parse_jpy(extracted["price_display"] or ""),
         price_display=extracted["price_display"] or "",
         condition=extracted["condition"],
@@ -353,11 +359,17 @@ def _is_blocked_page(title: str, description: Optional[str], text: str) -> bool:
         "just a moment",
         "are you human",
         "captcha",
+        "captcha interception",
         "cloudflare",
         "request blocked",
         "forbidden",
         "bot detection",
         "verify you are human",
+        "unusual traffic",
+        "slide to verify",
+        "年齢認証",
+        "18歳未満",
+        "18歳以上ですか",
     ]
     return any(s in content for s in signals)
 
@@ -396,6 +408,36 @@ def _should_try_mirror(product: ProductData) -> bool:
     return reason in {"BLOCKED", "NOT_FOUND", "PARSE_EMPTY"}
 
 
+def _is_low_signal_result(title: str, price_display: str, images: list[str]) -> bool:
+    t = (title or "").strip().lower()
+    domain_like = bool(re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", t))
+    bad_titles = {
+        "",
+        "unknown",
+        "unknown product",
+        "not found",
+        "page not found",
+        "captcha interception",
+        "privacy settings",
+        "access denied",
+    }
+    return (t in bad_titles or domain_like) and not (price_display or images)
+
+
+def _parse_empty_product(url: str, marketplace: str) -> ProductData:
+    return ProductData(
+        title="Unknown Product",
+        price_jpy=None,
+        price_display="",
+        images=[],
+        description="Detail produk belum bisa diekstrak dari halaman.",
+        marketplace=marketplace,
+        url=url,
+        confidence="low",
+        scrape_reason_code="PARSE_EMPTY",
+    )
+
+
 async def _jina_mirror_fallback(url: str) -> Optional[ProductData]:
     mirror_url = f"https://r.jina.ai/http://{url.replace('https://', '').replace('http://', '')}"
     try:
@@ -421,7 +463,21 @@ async def _jina_mirror_fallback(url: str) -> Optional[ProductData]:
 
         if not title and not price and not images:
             return None
-        if title.lower() in {"privacy settings", "blocked page"} and not price and not images:
+        normalized_title = (title or "").strip().lower()
+        domain_like = bool(re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", normalized_title))
+        bad_titles = {
+            "privacy settings",
+            "blocked page",
+            "captcha interception",
+            "access denied",
+            "page not found",
+            "not found",
+        }
+        if (
+            (normalized_title in bad_titles or domain_like or normalized_title.startswith("url source:"))
+            and not price
+            and len(images) < 2
+        ):
             return None
 
         return ProductData(

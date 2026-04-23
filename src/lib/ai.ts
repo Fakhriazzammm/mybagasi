@@ -220,8 +220,20 @@ const toIDR = (jpy: number) => Math.round(jpy * JPY_TO_IDR);
 function isScrapeUnusable(product: ProductData): boolean {
   const reason = (product.scrape_reason_code || "").toUpperCase();
   const isKnownBadReason = ["BLOCKED", "PARSE_EMPTY", "URL_INVALID", "NOT_FOUND"].includes(reason);
+  const title = (product.title || "").trim().toLowerCase();
+  const isDomainOnlyTitle = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(title);
+  const isKnownBadTitle = [
+    "unknown",
+    "unknown product",
+    "blocked page",
+    "captcha interception",
+    "access denied",
+    "privacy settings",
+    "page not found",
+    "not found",
+  ].includes(title);
   const lowSignal =
-    (!product.title || ["unknown", "unknown product", "blocked page"].includes(product.title.trim().toLowerCase())) &&
+    (!product.title || isKnownBadTitle || isDomainOnlyTitle) &&
     !product.price_jpy &&
     !product.price_display &&
     (!product.images || product.images.length === 0);
