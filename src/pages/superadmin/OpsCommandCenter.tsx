@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { procurementQueue, trackingExceptions, scraperFailures, quoteApprovals, fmtRp } from "@/lib/admin-mock";
-import { ArrowRight, AlertTriangle, Activity, Timer } from "lucide-react";
+import { ArrowRight, AlertTriangle, Activity, Timer, BellRing, RefreshCcw } from "lucide-react";
 
 const slaTone = (level: "green" | "yellow" | "red") => {
   if (level === "green") return "bg-success/15 text-success";
@@ -71,6 +72,15 @@ const queueCards = [
 ];
 
 export default function OpsCommandCenter() {
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLastRefreshedAt(new Date());
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const criticalQueues = queueCards.filter((item) => item.sla.level === "red").length;
 
   return (
@@ -79,8 +89,21 @@ export default function OpsCommandCenter() {
         eyebrow="Super Admin"
         title="Ops Command Center"
         description="Satu panel gabungan untuk procurement, tracking exception, scraper reliability, dan approval queue."
-        action={<Button variant="hero" size="sm" asChild><Link to="/admin">Buka Admin Ops</Link></Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Badge className={criticalQueues > 0 ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success"}>
+              <BellRing className="h-3.5 w-3.5 mr-1" />
+              {criticalQueues > 0 ? `${criticalQueues} alert kritis` : "Tidak ada alert kritis"}
+            </Badge>
+            <Button variant="hero" size="sm" asChild><Link to="/admin">Buka Admin Ops</Link></Button>
+          </div>
+        }
       />
+
+      <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+        <RefreshCcw className="h-3.5 w-3.5" />
+        Auto-refresh setiap 30 detik · terakhir update {lastRefreshedAt.toLocaleTimeString("id-ID")}
+      </div>
 
       <div className="grid md:grid-cols-4 gap-4 mb-6">
         <Card className="border-border/60 md:col-span-2">

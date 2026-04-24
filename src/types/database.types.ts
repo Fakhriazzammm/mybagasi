@@ -97,9 +97,29 @@ export interface Quotation {
   membership_discount: number
   points_used: number
   total: number
+  confidence_score: number | null
+  confidence_label: string | null
+  price_history: Record<string, unknown>
+  assistant_summary: Record<string, unknown>
   status: QuotationStatus
   created_at: string
   expires_at: string
+}
+
+export interface QuotationAiAudit {
+  id: string
+  quotation_id: string
+  user_id: string
+  input_url: string | null
+  input_query: string | null
+  input_budget: string | null
+  confidence_score: number
+  confidence_label: string
+  confidence_reasons: unknown[]
+  price_history: Record<string, unknown>
+  similar_count: number
+  estimation_payload: Record<string, unknown>
+  created_at: string
 }
 
 export interface Order {

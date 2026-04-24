@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Sparkles, Bell, Bookmark, ShoppingBag, Loader2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { generateSmartQuotation, type SmartQuotationResult } from "@/lib/quotation-assistant";
+import { useCreateSmartQuotation } from "@/hooks/useQuotations";
 
 const schema = z
   .object({
@@ -33,6 +34,8 @@ const confidenceTone = (label: SmartQuotationResult["confidenceLabel"]) => {
 const Quotation = () => {
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<SmartQuotationResult | null>(null);
+  const [savedQuotationId, setSavedQuotationId] = useState<string | null>(null);
+  const createSmartQuotation = useCreateSmartQuotation();
 
   const {
     register,
@@ -46,12 +49,72 @@ const Quotation = () => {
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     setQuote(null);
+    setSavedQuotationId(null);
+
     try {
       const result = await generateSmartQuotation(data);
       setQuote(result);
-      toast.success("Smart quotation siap", {
-        description: `Confidence ${result.confidenceScore}% (${result.confidenceLabel})`,
-      });
+
+      const total =
+        result.productJpy * result.rate +
+        result.fee +
+        result.shipping +
+        result.tax -
+        result.membershipDiscount -
+        result.pointsUsed;
+
+      try {
+        const saved = await createSmartQuotation.mutateAsync({
+          quotationPayload: {
+            product: result.product,
+            url: result.sourceUrl,
+            source: result.marketplace,
+            price_jpy: result.productJpy,
+            exchange_rate: result.rate,
+            service_fee: result.fee,
+            shipping_cost: result.shipping,
+            tax_customs: result.tax,
+            membership_discount: result.membershipDiscount,
+            points_used: result.pointsUsed,
+            total,
+            confidence_score: result.confidenceScore,
+            confidence_label: result.confidenceLabel,
+            price_history: result.priceHistory as Record<string, unknown>,
+            assistant_summary: {
+              similarCount: result.similarCount,
+              reasons: result.confidenceReasons,
+            },
+          },
+          auditPayload: {
+            input_url: data.url || undefined,
+            input_query: data.query || undefined,
+            input_budget: data.budget || undefined,
+            confidence_score: result.confidenceScore,
+            confidence_label: result.confidenceLabel,
+            confidence_reasons: result.confidenceReasons,
+            price_history: result.priceHistory as Record<string, unknown>,
+            similar_count: result.similarCount,
+            estimation_payload: result as unknown as Record<string, unknown>,
+          },
+        });
+
+        setSavedQuotationId(saved.quotation.id);
+        toast.success("Smart quotation tersimpan", {
+          description: `Confidence ${result.confidenceScore}% (${result.confidenceLabel})`,
+        });
+      } catch (saveError) {
+        const isAuthError =
+          saveError instanceof Error &&
+          (saveError.message.toLowerCase().includes("not authenticated") ||
+            saveError.message.toLowerCase().includes("jwt") ||
+            saveError.message.toLowerCase().includes("row-level"));
+
+        toast.warning(
+          isAuthError
+            ? "Quotation dihitung, tapi belum tersimpan (perlu login)."
+            : "Quotation dihitung, tetapi audit confidence belum tersimpan.",
+        );
+      }
     } catch (error) {
       toast.error("Gagal membuat quotation", {
         description: error instanceof Error ? error.message : "Terjadi kesalahan tak terduga.",
@@ -139,6 +202,11 @@ const Quotation = () => {
                         <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold ${confidenceTone(quote.confidenceLabel)}`}>
                           Confidence {quote.confidenceScore}% ({quote.confidenceLabel})
                         </span>
+                        {savedQuotationId && (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-success/15 text-success font-semibold">
+                            Saved #{savedQuotationId.slice(0, 8)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -155,7 +223,7 @@ const Quotation = () => {
 
                   <div className="space-y-2 text-sm">
                     {[
-                      ["Harga produk", `${fmtJpy(quote.productJpy)} · ${fmt(quote.productJpy * quote.rate)}`],
+                      ["Harga produk", `${fmtJpy(quote.productJpy)} | ${fmt(quote.productJpy * quote.rate)}`],
                       ["Kurs JPY -> IDR", `Rp ${quote.rate.toLocaleString("id-ID")}`],
                       ["Fee jasa", fmt(quote.fee)],
                       ["Ongkir Jepang -> Indonesia", fmt(quote.shipping)],

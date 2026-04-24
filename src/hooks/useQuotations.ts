@@ -37,3 +37,17 @@ export function useCreateQuotation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: QUOTATION_KEYS.all }),
   })
 }
+
+export function useCreateSmartQuotation() {
+  const queryClient = useQueryClient()
+  type CreateSmartArgs = {
+    quotationPayload: Parameters<typeof quotationsService.createWithAudit>[0]
+    auditPayload: Parameters<typeof quotationsService.createWithAudit>[1]
+  }
+
+  return useMutation({
+    mutationFn: ({ quotationPayload, auditPayload }: CreateSmartArgs) =>
+      quotationsService.createWithAudit(quotationPayload, auditPayload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: QUOTATION_KEYS.all }),
+  })
+}
