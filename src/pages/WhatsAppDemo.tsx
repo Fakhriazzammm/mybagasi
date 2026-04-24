@@ -1,4 +1,5 @@
 ﻿import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
@@ -599,12 +600,14 @@ const ProductCard = ({
   alternativesAvailable,
   onViewDetail,
   onAskCheaper,
+  onBuyNow,
 }: {
   product: ProductData;
   detailsAvailable: boolean;
   alternativesAvailable: boolean;
   onViewDetail: () => void;
   onAskCheaper: () => void;
+  onBuyNow: () => void;
 }) => (
   <div className="rounded-2xl bg-background border border-border p-3 mt-2 shadow-soft space-y-2">
     {product.images?.[0] && (
@@ -670,26 +673,37 @@ const ProductCard = ({
         </p>
       )}
     </div>
-    <div className="grid grid-cols-2 gap-2 pt-1">
+    <div className="space-y-2 pt-1">
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onViewDetail}
+          className="inline-flex items-center justify-center gap-1 rounded-lg border border-border px-2 py-2 text-xs font-medium hover:bg-muted transition-colors"
+          title={detailsAvailable ? "Tampilkan detail produk" : "Detail belum tersedia"}
+        >
+          Lihat detail lengkap
+        </button>
+        <button
+          type="button"
+          onClick={onAskCheaper}
+          className="inline-flex items-center justify-center rounded-lg border border-border px-2 py-2 text-xs font-medium hover:bg-muted transition-colors"
+          title={
+            alternativesAvailable
+              ? "Tampilkan opsi pembanding"
+              : "Carikan alternatif lebih murah"
+          }
+        >
+          Minta alternatif lebih murah
+        </button>
+      </div>
       <button
         type="button"
-        onClick={onViewDetail}
-        className="inline-flex items-center justify-center gap-1 rounded-lg border border-border px-2 py-2 text-xs font-medium hover:bg-muted transition-colors"
-        title={detailsAvailable ? "Tampilkan detail produk" : "Detail belum tersedia"}
+        onClick={onBuyNow}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-2 py-2 text-xs font-semibold hover:opacity-90 transition-opacity"
+        title="Bayar sekarang via Mayar"
       >
-        Lihat detail lengkap
-      </button>
-      <button
-        type="button"
-        onClick={onAskCheaper}
-        className="inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground px-2 py-2 text-xs font-medium hover:opacity-90 transition-opacity"
-        title={
-          alternativesAvailable
-            ? "Tampilkan opsi pembanding"
-            : "Carikan alternatif lebih murah"
-        }
-      >
-        Minta alternatif lebih murah
+        <CreditCard className="h-3.5 w-3.5" />
+        Bayar sekarang via Mayar
       </button>
     </div>
   </div>
@@ -727,10 +741,12 @@ const AlternativesBubble = ({ data }: { data: AlternativesData }) => {
 const ComparisonCard = ({
   comparisons,
   onPick,
+  onBuyPick,
   onCompareAgain,
 }: {
   comparisons: ComparisonItem[];
   onPick: (item: ComparisonItem) => void;
+  onBuyPick: (item: ComparisonItem) => void;
   onCompareAgain: () => void;
 }) => (
   <div className="rounded-2xl bg-background border border-border p-3 mt-2 shadow-soft">
@@ -748,13 +764,24 @@ const ComparisonCard = ({
             <span className="text-muted-foreground">Estimasi total</span>
             <span className="font-semibold text-primary">Rp {item.total_estimated_idr.toLocaleString("id-ID")}</span>
           </div>
-          <button
-            type="button"
-            onClick={() => onPick(item)}
-            className="mt-2 w-full rounded-md bg-primary text-primary-foreground py-1 font-medium"
-          >
-            Pilih ini
-          </button>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => onPick(item)}
+              className="rounded-md border border-border py-1 font-medium hover:bg-muted"
+            >
+              Pilih ini
+            </button>
+            <button
+              type="button"
+              onClick={() => onBuyPick(item)}
+              className="inline-flex items-center justify-center gap-1 rounded-md bg-primary text-primary-foreground py-1 font-semibold hover:opacity-90 transition-opacity"
+              title="Bayar opsi ini via Mayar"
+            >
+              <CreditCard className="h-3 w-3" />
+              Bayar
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -769,6 +796,7 @@ const ComparisonCard = ({
 );
 
 const WhatsAppDemo = () => {
+  const navigate = useNavigate();
   const [msgs, setMsgs] = useState<Msg[]>(initialMsgs);
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -956,6 +984,52 @@ const WhatsAppDemo = () => {
     void send("Bandingkan lagi 3 opsi termurah dengan kondisi terbaik dan sertakan estimasi total.");
   };
 
+  const goToCheckout = ({
+    title,
+    priceIDR,
+    url,
+  }: {
+    title: string;
+    priceIDR: number;
+    url?: string;
+  }) => {
+    setFunnelState("payment");
+    const params = new URLSearchParams({
+      product: title || "Produk dari Jepang",
+      price: String(Math.max(0, Math.round(priceIDR))),
+    });
+    if (url) params.set("url", url);
+    setMsgs((m) => [
+      ...m,
+      {
+        id: Date.now(),
+        from: "bot",
+        text: `Siap! Saya arahkan ke halaman pembayaran Mayar untuk *${title}* dengan estimasi harga produk Rp ${priceIDR.toLocaleString("id-ID")}. Total final (termasuk jasa, ongkir, pajak) akan dihitung ulang di halaman checkout sebelum redirect ke Mayar.`,
+        time: now(),
+      },
+    ]);
+    navigate(`/checkout?${params.toString()}`);
+  };
+
+  const buyProduct = (product: ProductData) => {
+    const fees = product.price_jpy
+      ? estimateAllInFromJPY(product.price_jpy)
+      : null;
+    goToCheckout({
+      title: product.title || "Produk dari Jepang",
+      priceIDR: fees?.basePrice ?? 0,
+      url: product.url,
+    });
+  };
+
+  const buyComparisonItem = (item: ComparisonItem) => {
+    const fees = item.price_jpy ? estimateAllInFromJPY(item.price_jpy) : null;
+    goToCheckout({
+      title: `${item.title} (${item.marketplace})`,
+      priceIDR: fees?.basePrice ?? 0,
+    });
+  };
+
   const handleScreenshotUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -1079,6 +1153,7 @@ const WhatsAppDemo = () => {
                           )}
                           onViewDetail={() => viewProductDetail(m)}
                           onAskCheaper={() => askCheaperAlternative(m)}
+                          onBuyNow={() => m.product && buyProduct(m.product)}
                         />
                       )}
                       {m.card === "product-detail" && m.details && (
@@ -1091,6 +1166,7 @@ const WhatsAppDemo = () => {
                         <ComparisonCard
                           comparisons={m.comparisons}
                           onPick={pickComparedItem}
+                          onBuyPick={buyComparisonItem}
                           onCompareAgain={compareAgain}
                         />
                       )}
