@@ -40,27 +40,40 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
     body: JSON.stringify({ url }),
   };
 
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/scrape`, requestInit);
-  } catch {
-    if (!FALLBACK_BACKEND) throw new Error("Backend scraper tidak dapat diakses dan fallback tidak dikonfigurasi.");
-    res = await fetch(`${FALLBACK_BACKEND}/scrape`, requestInit);
-  }
+  // Primary path: /browse-scrape (Crawl4AI + Sumopod AI fallback)
+  // Backward compatibility: fallback to /scrape if /browse-scrape is unavailable.
+  const endpoints = ["/browse-scrape", "/scrape"];
 
-  if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
-    const retry = await fetch(`${FALLBACK_BACKEND}/scrape`, requestInit);
-    if (retry.ok) {
-      return retry.json() as Promise<ProductData>;
+  for (const endpoint of endpoints) {
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}${endpoint}`, requestInit);
+    } catch {
+      if (!FALLBACK_BACKEND) continue;
+      res = await fetch(`${FALLBACK_BACKEND}${endpoint}`, requestInit);
     }
-  }
 
-  if (!res.ok) {
+    if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
+      const retry = await fetch(`${FALLBACK_BACKEND}${endpoint}`, requestInit);
+      if (retry.ok) {
+        return retry.json() as Promise<ProductData>;
+      }
+    }
+
+    if (res.ok) {
+      return res.json() as Promise<ProductData>;
+    }
+
+    // If endpoint does not exist, try next endpoint in chain.
+    if (res.status === 404) {
+      continue;
+    }
+
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(`Scraper error ${res.status}: ${err.detail ?? res.statusText}`);
   }
 
-  return res.json() as Promise<ProductData>;
+  throw new Error("Backend scraper tidak dapat diakses dan fallback tidak dikonfigurasi.");
 }
 
 export async function searchProducts(
