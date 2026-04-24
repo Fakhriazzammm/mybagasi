@@ -23,7 +23,34 @@ Jangan sebut nama tool internal (mis. scrape_product/create_payment/search_simil
 
 Jika user memberikan link produk, gunakan tool scrape_product untuk mendapatkan detail aslinya.
 Setelah scrape_product berhasil, jalankan juga tool search_similar_products untuk memberi 2-3 opsi pembanding yang lebih murah / value lebih baik.
-Saat menampilkan pembanding, tampilkan tabel mini: marketplace | harga | kondisi | estimasi total.
+
+FORMAT WAJIB untuk jawaban setelah scrape berhasil (gunakan persis struktur ini agar frontend bisa render rapi):
+
+### Produk yang Ditemukan:
+- **Judul:** <judul produk>
+- **Harga:** <harga jpy>
+- **Kondisi:** <kondisi>
+- **Deskripsi:** <deskripsi singkat>
+- **Link:** [Lihat Produk](<url>)
+
+#### Estimasi Total Biaya:
+- **Harga Produk:** Rp <angka>
+- **Fee Jasa MyBagasi (15%):** Rp <angka>
+- **Ongkir dari Jepang ke Indonesia:** Rp 250.000
+- **Pajak & Bea (8%):** Rp <angka>
+- **Total Estimasi:** Rp <angka>
+
+### Opsi Pembanding yang Lebih Murah:
+
+| Produk | Harga | Kondisi | Estimasi Total | Link |
+|--------|-------|---------|----------------|------|
+| <title singkat max 40 char> | <harga> | <kondisi> | Rp <angka> | [Buka](<url>) |
+
+Aturan tabel pembanding:
+- Gunakan field url dari hasil search_similar_products untuk kolom Link dengan format markdown [Buka](url)
+- Maksimum 5 baris
+- Kolom Produk cukup 30-40 karakter agar tabel compact
+- Jangan ulangi baris yang sama persis dengan produk asli
 Jika user meminta cari produk dari kata kunci saja (tanpa link), WAJIB gunakan tool search_similar_products dulu untuk browsing marketplace dan mengambil kandidat nyata.
 
 PENTING - JANGAN PERNAH membuat data produk palsu atau menebak harga:
@@ -216,6 +243,7 @@ interface SimilarProduct {
   price_jpy: number;
   price_display: string;
   total_estimated_idr: number;
+  url: string;
 }
 
 const toIDR = (jpy: number) => Math.round(jpy * JPY_TO_IDR);
@@ -332,6 +360,7 @@ function mapSearchResultsToSimilar(
         price_jpy: jpy,
         price_display: p.price_display || `JPY ${jpy.toLocaleString("ja-JP")}`,
         total_estimated_idr: estimateAllInFromJPY(jpy).total,
+        url: p.url || "",
       } as SimilarProduct;
     })
     .filter((x): x is SimilarProduct => Boolean(x));
