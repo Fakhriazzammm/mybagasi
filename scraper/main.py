@@ -15,7 +15,8 @@ import httpx
 from scrapers.dispatcher import scrape_url
 from scrapers.models import ProductData
 from scrapers.search_web import search_products_by_keyword
-from scrapers.hermes_browser import hermes_browser_scrape, create_hermes_job, poll_hermes_result
+from scrapers.vision_extract import extract_product_via_screenshot_ai
+from scrapers.hermes_browser import create_hermes_job
 from mayar_routes import router as mayar_router
 
 app = FastAPI(title="MyBagasi Backend", version="1.0.0")
@@ -244,69 +245,56 @@ async def scrape_process(req: ScrapeProcessRequest):
     return {"success": True}
 
 
-# ── POST /browse-scrape  (Hermes browser bridge) ────────────────────
+# ── POST /browse-scrape  (Crawl4AI + Sumopod AI fallback) ───────────
 class BrowseScrapeRequest(BaseModel):
     url: str
-    max_wait: int = 90  # seconds to wait for Hermes result
+    max_wait: int = 90  # kept for backward compatibility (unused)
 
 
 @app.post("/browse-scrape")
 async def browse_scrape(req: BrowseScrapeRequest):
     """
-    Hybrid browse scrape.
-
-    Strategy:
-      1) Try direct backend scraper first (fast path).
-      2) Only if the result is low-signal/blocked, use Hermes browser worker.
+    Browse scrape using combination requested by user:
+      1) Crawl4AI / site scrapers via scrape_url()
+      2) Sumopod AI screenshot extraction as final fallback
     """
     url = req.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
 
-    # Fast path: direct scraper first. For many Mercari links this already works.
+    marketplace = _domain(url)
+
+    # Step 1: direct scrape path (includes site-specific + Crawl4AI chain)
     try:
         direct = await scrape_url(url)
-        reason = (direct.scrape_reason_code or "").upper()
-        has_signal = bool(direct.price_jpy or direct.price_display or direct.images)
-        if reason not in {"BLOCKED", "PARSE_EMPTY", "NOT_FOUND"} and has_signal:
-            return direct
-    except Exception:
-        # Ignore and continue to Hermes worker fallback
-        pass
-
-    # Fallback path: Hermes browser worker
-    try:
-        result = await hermes_browser_scrape(url, max_wait=req.max_wait)
     except Exception as e:
-        marketplace = _domain(url)
-        return ProductData(
+        direct = ProductData(
             title="Browse Scrape Error",
             price_jpy=None,
             price_display="",
             images=[],
-            description=f"Hermes browser scrape failed: {str(e)}",
+            description=f"Direct scrape failed: {str(e)}",
             marketplace=marketplace,
             url=url,
             confidence="low",
-            scrape_reason_code="HERMES_BROWSER_ERROR",
+            scrape_reason_code="PARSE_EMPTY",
         )
 
-    if result:
-        return result
+    reason = (direct.scrape_reason_code or "").upper()
+    has_signal = bool(direct.price_jpy or direct.price_display or direct.images)
+    if reason not in {"BLOCKED", "PARSE_EMPTY", "NOT_FOUND"} and has_signal:
+        return direct
 
-    # Timed out or no result
-    marketplace = _domain(url)
-    return ProductData(
-        title="Browse Scrape Timeout",
-        price_jpy=None,
-        price_display="",
-        images=[],
-        description="Hermes browser scrape timed out — worker may not be running.",
-        marketplace=marketplace,
-        url=url,
-        confidence="low",
-        scrape_reason_code="HERMES_BROWSER_TIMEOUT",
-    )
+    # Step 2: Sumopod AI screenshot fallback
+    try:
+        ai_result = await extract_product_via_screenshot_ai(url, marketplace)
+        if ai_result:
+            return ai_result
+    except Exception:
+        pass
+
+    # Final: return best direct attempt
+    return direct
 
 
 # ── POST /browse-scrape-async  (non-blocking) ──────────────────────

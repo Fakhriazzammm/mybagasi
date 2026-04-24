@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from .models import ProductData
 from .mercari import scrape_mercari
@@ -17,6 +18,11 @@ _ROUTES: list[tuple[str, object]] = [
     (r"rakuten\.co\.jp", scrape_rakuten),
     (r"auctions\.yahoo\.co\.jp", scrape_yahoo_auction),
 ]
+
+# Default OFF: we now prioritize Crawl4AI + Sumopod AI fallback.
+ENABLE_HERMES_BROWSER_FALLBACK = os.getenv("ENABLE_HERMES_BROWSER_FALLBACK", "false").lower() in {
+    "1", "true", "yes", "on"
+}
 
 
 async def scrape_url(url: str) -> ProductData:
@@ -67,8 +73,10 @@ async def _maybe_screenshot_ai_fallback(url: str, product: ProductData) -> Produ
     except (asyncio.TimeoutError, Exception):
         pass
 
-    # Final fallback: try Hermes browser
-    return await _maybe_hermes_browser_fallback(url, product)
+    # Optional final fallback: Hermes browser (disabled by default)
+    if ENABLE_HERMES_BROWSER_FALLBACK:
+        return await _maybe_hermes_browser_fallback(url, product)
+    return product
 
 
 async def _maybe_hermes_browser_fallback(url: str, product: ProductData) -> ProductData:
