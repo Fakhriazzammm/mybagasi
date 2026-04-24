@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
   Home,
   Sparkles,
   Image as ImageIcon,
+  ExternalLink,
 } from "lucide-react";
 import {
   analyzeProductScreenshot,
@@ -25,13 +26,34 @@ const API_KEY =
   (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ??
   "";
 
+type DetailEntry = { k: string; v: string };
+
+type AlternativeRow = {
+  headers: string[];
+  cells: string[];
+};
+
+type AlternativesData = {
+  rows: AlternativeRow[];
+  outro: string;
+};
+
 type Msg = {
   id: number;
   from: "user" | "bot";
   text?: string;
-  card?: "quotation" | "payment" | "tracking" | "product" | "comparison";
+  card?:
+    | "quotation"
+    | "payment"
+    | "tracking"
+    | "product"
+    | "comparison"
+    | "product-detail"
+    | "alternatives";
   product?: ProductData;
   comparisons?: ComparisonItem[];
+  details?: DetailEntry[];
+  alternatives?: AlternativesData;
   time: string;
 };
 
@@ -91,60 +113,395 @@ function parsePipeTable(text: string): {
   const tableStart = lines.findIndex((line) => line.trim().startsWith("|"));
   if (tableStart < 0 || tableStart + 2 >= lines.length) return null;
 
-  const candidate = lines.slice(tableStart).filter((line) => line.trim().startsWith("|"));
+  // Collect contiguous pipe-prefixed lines from tableStart
+  let end = tableStart;
+  while (end < lines.length && lines[end].trim().startsWith("|")) end += 1;
+  const candidate = lines.slice(tableStart, end);
   if (candidate.length < 3) return null;
 
-  const headers = candidate[0]
-    .split("|")
-    .map((cell) => cell.trim())
-    .filter(Boolean);
+  const splitRow = (line: string) => {
+    const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    return trimmed.split("|").map((cell) => cell.trim());
+  };
+
+  const headers = splitRow(candidate[0]).filter(Boolean);
   const rows = candidate
     .slice(2)
-    .map((line) => line.split("|").map((cell) => cell.trim()).filter(Boolean))
-    .filter((row) => row.length >= headers.length);
+    .map(splitRow)
+    .filter((row) => row.some((cell) => cell.length > 0))
+    .map((row) => {
+      // pad/truncate to headers length
+      const out = row.slice(0, headers.length);
+      while (out.length < headers.length) out.push("");
+      return out;
+    });
   if (!headers.length || !rows.length) return null;
 
-  const tableLinesCount = candidate.length;
   const before = lines.slice(0, tableStart).join("\n").trim();
-  const after = lines.slice(tableStart + tableLinesCount).join("\n").trim();
+  const after = lines.slice(end).join("\n").trim();
   return { before, headers, rows, after };
 }
 
-const MessageText = ({ text }: { text: string }) => {
-  const parsed = parsePipeTable(text);
-  if (!parsed) return <p className="whitespace-pre-wrap">{text}</p>;
+const MD_LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+
+function renderInline(text: string): ReactNode {
+  if (!text) return null;
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+
+  // Helper to render bold segments inside a plain-text span
+  const pushPlain = (segment: string) => {
+    if (!segment) return;
+    const parts = segment.split(/(\*\*[^*]+\*\*)/g);
+    for (const part of parts) {
+      if (/^\*\*[^*]+\*\*$/.test(part)) {
+        nodes.push(
+          <strong key={`b-${key++}`} className="font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      } else if (part) {
+        nodes.push(<Fragment key={`t-${key++}`}>{part}</Fragment>);
+      }
+    }
+  };
+
+  const regex = new RegExp(MD_LINK.source, "g");
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    pushPlain(text.slice(lastIndex, match.index));
+    nodes.push(
+      <a
+        key={`l-${key++}`}
+        href={match[2]}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline underline-offset-2 hover:opacity-80 break-all"
+      >
+        {match[1]}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  pushPlain(text.slice(lastIndex));
+  return nodes;
+}
+
+type Block =
+  | { type: "heading"; level: number; text: string }
+  | { type: "kv-list"; items: DetailEntry[] }
+  | { type: "bullets"; items: string[] }
+  | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "paragraph"; text: string };
+
+function parseBlocks(text: string): Block[] {
+  const blocks: Block[] = [];
+  const lines = text.split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      i += 1;
+      continue;
+    }
+
+    // Heading
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      blocks.push({
+        type: "heading",
+        level: headingMatch[1].length,
+        text: headingMatch[2].replace(/:$/, "").trim(),
+      });
+      i += 1;
+      continue;
+    }
+
+    // Table: consecutive lines starting with '|'
+    if (trimmed.startsWith("|")) {
+      const chunk: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        chunk.push(lines[i]);
+        i += 1;
+      }
+      const parsed = parsePipeTable(chunk.join("\n"));
+      if (parsed) {
+        blocks.push({ type: "table", headers: parsed.headers, rows: parsed.rows });
+        continue;
+      }
+      // fallback: treat as paragraph
+      blocks.push({ type: "paragraph", text: chunk.join("\n") });
+      continue;
+    }
+
+    // Bullet list: consecutive '-' or '*' lines
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+        i += 1;
+      }
+      // If every item is "**key:** value", render as KV list
+      const kvItems = items
+        .map((item) => {
+          const m = item.match(/^\*\*([^*]+?):\*\*\s*(.*)$/);
+          return m ? { k: m[1].trim(), v: m[2].trim() } : null;
+        })
+        .filter((x): x is DetailEntry => Boolean(x));
+      if (kvItems.length === items.length && kvItems.length > 0) {
+        blocks.push({ type: "kv-list", items: kvItems });
+      } else {
+        blocks.push({ type: "bullets", items });
+      }
+      continue;
+    }
+
+    // Paragraph: collect until blank line / heading / bullet / table
+    const paraLines: string[] = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^#{1,6}\s+/.test(lines[i].trim()) &&
+      !lines[i].trim().startsWith("|") &&
+      !/^[-*]\s+/.test(lines[i].trim())
+    ) {
+      paraLines.push(lines[i].trim());
+      i += 1;
+    }
+    if (paraLines.length) {
+      blocks.push({ type: "paragraph", text: paraLines.join(" ") });
+    }
+  }
+  return blocks;
+}
+
+const DetailTable = ({ items }: { items: DetailEntry[] }) => (
+  <div className="overflow-hidden rounded-lg border border-border/60">
+    <table className="w-full text-xs">
+      <tbody>
+        {items.map((it, idx) => (
+          <tr key={idx} className="border-b border-border/40 last:border-b-0 odd:bg-muted/30">
+            <td className="px-2 py-1.5 font-medium text-muted-foreground align-top w-[38%] whitespace-nowrap">
+              {it.k}
+            </td>
+            <td className="px-2 py-1.5 align-top break-words">{renderInline(it.v)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+const AlternativesList = ({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: string[][];
+}) => {
+  const findIdx = (names: string[]) =>
+    headers.findIndex((h) => names.some((n) => h.toLowerCase().includes(n)));
+  const titleIdx = findIdx(["produk", "title", "nama", "marketplace"]);
+  const priceIdx = findIdx(["harga", "price"]);
+  const condIdx = findIdx(["kondisi", "condition"]);
+  const totalIdx = findIdx(["total", "estimasi"]);
+  const linkIdx = findIdx(["link", "url", "buka"]);
+
+  const extractLink = (cell: string): { label: string; href: string | null } => {
+    const m = cell.match(MD_LINK);
+    if (m && m[0]) {
+      const single = /\[([^\]]+)\]\(([^)\s]+)\)/.exec(m[0]);
+      if (single) return { label: single[1], href: single[2] };
+    }
+    if (/^https?:\/\//i.test(cell.trim())) {
+      return { label: cell.trim().replace(/^https?:\/\//i, ""), href: cell.trim() };
+    }
+    return { label: cell, href: null };
+  };
 
   return (
     <div className="space-y-2">
-      {parsed.before && <p className="whitespace-pre-wrap">{parsed.before}</p>}
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs border border-border/60 rounded-lg overflow-hidden">
-          <thead className="bg-muted/50">
-            <tr>
-              {parsed.headers.map((h) => (
-                <th key={h} className="px-2 py-1 text-left font-semibold border-b border-border/60">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {parsed.rows.map((row, i) => (
-              <tr key={i} className="border-b border-border/30 last:border-b-0">
-                {parsed.headers.map((_, idx) => (
-                  <td key={idx} className="px-2 py-1 align-top">
-                    {row[idx] ?? "-"}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {parsed.after && <p className="whitespace-pre-wrap">{parsed.after}</p>}
+      {rows.map((row, idx) => {
+        const title =
+          titleIdx >= 0 ? row[titleIdx] : row[0] ?? "Opsi";
+        const price = priceIdx >= 0 ? row[priceIdx] : "";
+        const cond = condIdx >= 0 ? row[condIdx] : "";
+        const total = totalIdx >= 0 ? row[totalIdx] : "";
+        const linkCell = linkIdx >= 0 ? row[linkIdx] : "";
+        const link = linkCell ? extractLink(linkCell) : { label: "", href: null };
+        const titleParsed = extractLink(title);
+
+        return (
+          <div
+            key={idx}
+            className="rounded-lg border border-border/60 bg-muted/20 p-2 text-xs space-y-1"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-medium leading-tight line-clamp-2 flex-1">
+                {titleParsed.href ? (
+                  <a
+                    href={titleParsed.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-foreground hover:text-primary"
+                  >
+                    {titleParsed.label}
+                  </a>
+                ) : (
+                  titleParsed.label
+                )}
+              </p>
+              {price && (
+                <span className="shrink-0 text-[11px] font-semibold text-primary">
+                  {price}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+              {cond && (
+                <span>
+                  Kondisi: <span className="text-foreground">{cond}</span>
+                </span>
+              )}
+              {total && (
+                <span>
+                  Total: <span className="text-foreground font-medium">{total}</span>
+                </span>
+              )}
+            </div>
+            {link.href && (
+              <a
+                href={link.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Buka produk
+              </a>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
+
+const Heading = ({ level, text }: { level: number; text: string }) => {
+  const cls =
+    level <= 2
+      ? "text-sm font-semibold"
+      : level === 3
+        ? "text-[13px] font-semibold"
+        : "text-xs font-semibold text-muted-foreground uppercase tracking-wide";
+  return <p className={cls}>{text}</p>;
+};
+
+const MessageText = ({ text }: { text: string }) => {
+  const blocks = parseBlocks(text);
+  if (blocks.length === 0) {
+    return <p className="whitespace-pre-wrap">{text}</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, idx) => {
+        if (block.type === "heading") {
+          return <Heading key={idx} level={block.level} text={block.text} />;
+        }
+        if (block.type === "paragraph") {
+          return (
+            <p key={idx} className="whitespace-pre-wrap leading-snug">
+              {renderInline(block.text)}
+            </p>
+          );
+        }
+        if (block.type === "bullets") {
+          return (
+            <ul key={idx} className="list-disc pl-4 space-y-0.5 leading-snug">
+              {block.items.map((item, i) => (
+                <li key={i}>{renderInline(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        if (block.type === "kv-list") {
+          return <DetailTable key={idx} items={block.items} />;
+        }
+        if (block.type === "table") {
+          return <AlternativesList key={idx} headers={block.headers} rows={block.rows} />;
+        }
+        return null;
+      })}
+    </div>
+  );
+};
+
+// ---- AI reply section splitter ----
+
+const DETAIL_HEADER = /(?:^|\n)#{2,4}\s*(?:produk\s+yang\s+ditemukan|product\s+detail|detail\s+produk)[^\n]*/i;
+const ESTIMATE_HEADER = /(?:^|\n)#{2,4}\s*(?:estimasi\s+total\s+biaya|estimasi\s+biaya|total\s+biaya)[^\n]*/i;
+const ALTERNATIVES_HEADER = /(?:^|\n)#{2,4}\s*(?:opsi\s+pembanding|alternatif(?:\s+lebih\s+murah)?|pembanding)[^\n]*/i;
+
+function splitAIResponse(text: string): {
+  intro: string;
+  detail: string;
+  alternatives: string;
+} {
+  if (!text) return { intro: "", detail: "", alternatives: "" };
+
+  const altMatch = ALTERNATIVES_HEADER.exec(text);
+  const detailMatch = DETAIL_HEADER.exec(text);
+  const estimateMatch = ESTIMATE_HEADER.exec(text);
+
+  let intro = "";
+  let detail = "";
+  let alternatives = "";
+
+  const detailStart =
+    detailMatch?.index ?? estimateMatch?.index ?? -1;
+  const altStart = altMatch?.index ?? -1;
+
+  if (detailStart >= 0 && altStart >= 0) {
+    intro = text.slice(0, detailStart).trim();
+    detail = text.slice(detailStart, altStart).trim();
+    alternatives = text.slice(altStart).trim();
+  } else if (detailStart >= 0) {
+    intro = text.slice(0, detailStart).trim();
+    detail = text.slice(detailStart).trim();
+  } else if (altStart >= 0) {
+    intro = text.slice(0, altStart).trim();
+    alternatives = text.slice(altStart).trim();
+  } else {
+    intro = text.trim();
+  }
+
+  return { intro, detail, alternatives };
+}
+
+function extractDetailEntries(detailText: string): DetailEntry[] {
+  const items: DetailEntry[] = [];
+  const lines = detailText.split("\n");
+  for (const line of lines) {
+    const m = line.trim().match(/^[-*]\s*\*\*([^*]+?):\*\*\s*(.*)$/);
+    if (m) {
+      items.push({ k: m[1].trim(), v: m[2].trim() });
+    }
+  }
+  return items;
+}
+
+function extractAlternatives(altText: string): AlternativesData | null {
+  const parsed = parsePipeTable(altText);
+  if (!parsed) return null;
+  const rows: AlternativeRow[] = parsed.rows.map((cells) => ({
+    headers: parsed.headers,
+    cells,
+  }));
+  return { rows, outro: parsed.after };
+}
 
 const QuotationCard = () => (
   <div className="rounded-2xl bg-background border border-border p-4 mt-2 shadow-soft">
@@ -238,10 +595,16 @@ const TrackingCard = () => {
 
 const ProductCard = ({
   product,
+  detailsAvailable,
+  alternativesAvailable,
+  onViewDetail,
   onAskCheaper,
 }: {
   product: ProductData;
-  onAskCheaper: (product: ProductData) => void;
+  detailsAvailable: boolean;
+  alternativesAvailable: boolean;
+  onViewDetail: () => void;
+  onAskCheaper: () => void;
 }) => (
   <div className="rounded-2xl bg-background border border-border p-3 mt-2 shadow-soft space-y-2">
     {product.images?.[0] && (
@@ -308,24 +671,58 @@ const ProductCard = ({
       )}
     </div>
     <div className="grid grid-cols-2 gap-2 pt-1">
-      <a
-        href={product.url}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center justify-center rounded-lg border border-border px-2 py-2 text-xs font-medium hover:bg-muted"
-      >
-        Lihat detail lengkap
-      </a>
       <button
         type="button"
-        onClick={() => onAskCheaper(product)}
-        className="inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground px-2 py-2 text-xs font-medium hover:opacity-90"
+        onClick={onViewDetail}
+        className="inline-flex items-center justify-center gap-1 rounded-lg border border-border px-2 py-2 text-xs font-medium hover:bg-muted transition-colors"
+        title={detailsAvailable ? "Tampilkan detail produk" : "Detail belum tersedia"}
+      >
+        Lihat detail lengkap
+      </button>
+      <button
+        type="button"
+        onClick={onAskCheaper}
+        className="inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground px-2 py-2 text-xs font-medium hover:opacity-90 transition-opacity"
+        title={
+          alternativesAvailable
+            ? "Tampilkan opsi pembanding"
+            : "Carikan alternatif lebih murah"
+        }
       >
         Minta alternatif lebih murah
       </button>
     </div>
   </div>
 );
+
+const ProductDetailBubble = ({ items }: { items: DetailEntry[] }) => (
+  <div className="space-y-2 mt-1">
+    <p className="text-sm font-semibold">Detail produk</p>
+    <DetailTable items={items} />
+  </div>
+);
+
+const AlternativesBubble = ({ data }: { data: AlternativesData }) => {
+  const headers = data.rows[0]?.headers ?? [];
+  const rows = data.rows.map((r) => r.cells);
+  return (
+    <div className="space-y-2 mt-1">
+      <p className="text-sm font-semibold">Opsi pembanding lebih murah</p>
+      {rows.length > 0 ? (
+        <AlternativesList headers={headers} rows={rows} />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Belum ada opsi pembanding yang bisa ditampilkan.
+        </p>
+      )}
+      {data.outro && (
+        <p className="text-[11px] text-muted-foreground leading-snug whitespace-pre-wrap">
+          {renderInline(data.outro)}
+        </p>
+      )}
+    </div>
+  );
+};
 
 const ComparisonCard = ({
   comparisons,
@@ -446,30 +843,51 @@ const WhatsAppDemo = () => {
 
       if (scrapedProduct) {
         setFunnelState("comparing");
-        setMsgs((m) => [
-          ...m,
-          {
+        const { intro, detail, alternatives } = splitAIResponse(safeReply);
+        const detailEntries = detail ? extractDetailEntries(detail) : [];
+        const alternativesData = alternatives ? extractAlternatives(alternatives) : null;
+
+        setMsgs((m) => {
+          const next: Msg[] = [...m];
+          if (intro) {
+            next.push({
+              id: Date.now() + 1,
+              from: "bot",
+              text: intro,
+              time: now(),
+            });
+          }
+          next.push({
             id: Date.now() + 2,
             from: "bot",
             card: "product",
             product: scrapedProduct,
+            details: detailEntries.length ? detailEntries : undefined,
+            alternatives: alternativesData ?? undefined,
+            time: now(),
+          });
+          const hasExtras = detailEntries.length > 0 || (alternativesData && alternativesData.rows.length > 0);
+          if (hasExtras) {
+            next.push({
+              id: Date.now() + 3,
+              from: "bot",
+              text: "Klik *Lihat detail lengkap* untuk rincian produk, atau *Minta alternatif lebih murah* untuk membandingkan opsi lain.",
+              time: now(),
+            });
+          }
+          return next;
+        });
+      } else {
+        setMsgs((m) => [
+          ...m,
+          {
+            id: Date.now() + 4,
+            from: "bot",
+            text: safeReply,
             time: now(),
           },
         ]);
-
-        // Perbandingan produk akan dihasilkan oleh AI/tool search nyata,
-        // bukan fabricated multiplier di frontend.
       }
-
-      setMsgs((m) => [
-        ...m,
-        {
-          id: Date.now() + 4,
-          from: "bot",
-          text: safeReply,
-          time: now(),
-        },
-      ]);
 
       setHistory((h) => [...h, { role: "assistant", content: safeReply }]);
     } catch (err) {
@@ -488,10 +906,44 @@ const WhatsAppDemo = () => {
     }
   };
 
-  const askCheaperAlternative = (product: ProductData) => {
+  const viewProductDetail = (msg: Msg) => {
+    if (!msg.details || msg.details.length === 0) {
+      if (msg.product?.url) {
+        window.open(msg.product.url, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+    setMsgs((m) => [
+      ...m,
+      {
+        id: Date.now(),
+        from: "bot",
+        card: "product-detail",
+        details: msg.details,
+        time: now(),
+      },
+    ]);
+  };
+
+  const askCheaperAlternative = (msg: Msg) => {
     setFunnelState("comparing");
-    const prompt = `Tolong carikan alternatif lebih murah dari produk ini: ${product.title}. Link referensi: ${product.url}. Prioritaskan yang ready stock di marketplace Jepang.`;
-    void send(prompt);
+    if (msg.alternatives && msg.alternatives.rows.length > 0) {
+      setMsgs((m) => [
+        ...m,
+        {
+          id: Date.now(),
+          from: "bot",
+          card: "alternatives",
+          alternatives: msg.alternatives,
+          time: now(),
+        },
+      ]);
+      return;
+    }
+    if (msg.product) {
+      const prompt = `Tolong carikan alternatif lebih murah dari produk ini: ${msg.product.title}. Link referensi: ${msg.product.url}. Prioritaskan yang ready stock di marketplace Jepang.`;
+      void send(prompt);
+    }
   };
 
   const pickComparedItem = (item: ComparisonItem) => {
@@ -619,7 +1071,21 @@ const WhatsAppDemo = () => {
                       {m.card === "payment" && <PaymentCard />}
                       {m.card === "tracking" && <TrackingCard />}
                       {m.card === "product" && m.product && (
-                        <ProductCard product={m.product} onAskCheaper={askCheaperAlternative} />
+                        <ProductCard
+                          product={m.product}
+                          detailsAvailable={Boolean(m.details && m.details.length > 0)}
+                          alternativesAvailable={Boolean(
+                            m.alternatives && m.alternatives.rows.length > 0
+                          )}
+                          onViewDetail={() => viewProductDetail(m)}
+                          onAskCheaper={() => askCheaperAlternative(m)}
+                        />
+                      )}
+                      {m.card === "product-detail" && m.details && (
+                        <ProductDetailBubble items={m.details} />
+                      )}
+                      {m.card === "alternatives" && m.alternatives && (
+                        <AlternativesBubble data={m.alternatives} />
                       )}
                       {m.card === "comparison" && m.comparisons && (
                         <ComparisonCard
