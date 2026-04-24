@@ -457,37 +457,8 @@ const WhatsAppDemo = () => {
           },
         ]);
 
-        const match = scrapedProduct.price_display.match(/\d[\d,]*/);
-        const displayJPY = match ? Number(match[0].replace(/,/g, "")) : 10_000;
-        const basePrice = scrapedProduct.price_jpy ?? Math.round(displayJPY);
-        const createComparison = (marketplace: string, multiplier: number, condition: string): ComparisonItem => {
-          const jpy = Math.max(1000, Math.round(basePrice * multiplier));
-          return {
-            title: scrapedProduct.title,
-            marketplace,
-            condition,
-            price_jpy: jpy,
-            price_display: `JPY ${jpy.toLocaleString("ja-JP")}`,
-            total_estimated_idr: estimateAllInFromJPY(jpy).total,
-          };
-        };
-
-        const comparisons: ComparisonItem[] = [
-          createComparison("Mercari", 0.9, scrapedProduct.condition ?? "used"),
-          createComparison("Rakuten", 0.84, "new"),
-          createComparison("Yahoo Auction", 0.78, "used"),
-        ];
-
-        setMsgs((m) => [
-          ...m,
-          {
-            id: Date.now() + 3,
-            from: "bot",
-            card: "comparison",
-            comparisons,
-            time: now(),
-          },
-        ]);
+        // Perbandingan produk akan dihasilkan oleh AI/tool search nyata,
+        // bukan fabricated multiplier di frontend.
       }
 
       setMsgs((m) => [
