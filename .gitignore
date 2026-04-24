@@ -36,3 +36,5 @@ scraper/.venv/
 **/__pycache__/
 *.pyc
 .backups/
+.claude/worktrees/ecstatic-bassi-5a4a80/
+.claude/worktrees/gallant-brahmagupta-a241be/

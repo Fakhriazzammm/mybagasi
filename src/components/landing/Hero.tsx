@@ -18,7 +18,7 @@ export const Hero = () => (
         <h1 className="font-display text-4xl md:text-6xl font-bold leading-[1.05]">
           Belanja barang Jepang
           <br />
-          <span className="bg-gradient-coral bg-clip-text text-transparent">
+          <span className="text-primary">
             cukup chat WhatsApp.
           </span>
         </h1>
