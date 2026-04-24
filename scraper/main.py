@@ -253,20 +253,28 @@ class BrowseScrapeRequest(BaseModel):
 @app.post("/browse-scrape")
 async def browse_scrape(req: BrowseScrapeRequest):
     """
-    Direct Hermes browser scrape.
+    Hybrid browse scrape.
 
-    Creates a Supabase job with status 'pending_hermes', then polls
-    until the Hermes worker completes it (or timeout).
-
-    The Hermes cron job should be configured to:
-      1. Poll Supabase for scrape_jobs WHERE status = 'pending_hermes'
-      2. Browse each URL with browser tools
-      3. Extract product data and POST to /scrape-process
+    Strategy:
+      1) Try direct backend scraper first (fast path).
+      2) Only if the result is low-signal/blocked, use Hermes browser worker.
     """
     url = req.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
 
+    # Fast path: direct scraper first. For many Mercari links this already works.
+    try:
+        direct = await scrape_url(url)
+        reason = (direct.scrape_reason_code or "").upper()
+        has_signal = bool(direct.price_jpy or direct.price_display or direct.images)
+        if reason not in {"BLOCKED", "PARSE_EMPTY", "NOT_FOUND"} and has_signal:
+            return direct
+    except Exception:
+        # Ignore and continue to Hermes worker fallback
+        pass
+
+    # Fallback path: Hermes browser worker
     try:
         result = await hermes_browser_scrape(url, max_wait=req.max_wait)
     except Exception as e:

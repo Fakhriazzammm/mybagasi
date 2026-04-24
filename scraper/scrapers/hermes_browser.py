@@ -93,6 +93,27 @@ async def create_hermes_job(url: str, job_type: str = "hermes_browser") -> str:
     return job_id
 
 
+async def _mark_job_failed(job_id: str, error: str) -> None:
+    """Best-effort mark job as failed so rows don't stay pending forever."""
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "status": "failed",
+        "error": error,
+        "completed_at": now,
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/scrape_jobs",
+                headers=_sb_headers(),
+                params={"id": f"eq.{job_id}"},
+                json=payload,
+                timeout=10,
+            )
+    except Exception as e:
+        logger.warning(f"Failed to mark Hermes job {job_id} as failed: {e}")
+
+
 async def poll_hermes_result(job_id: str, max_wait: int = MAX_POLL_SECONDS) -> Optional[dict]:
     """Poll Supabase until job is completed/failed or timeout."""
     elapsed = 0
@@ -124,6 +145,10 @@ async def poll_hermes_result(job_id: str, max_wait: int = MAX_POLL_SECONDS) -> O
                 return None
 
     logger.warning(f"Hermes job {job_id} timed out after {max_wait}s")
+    await _mark_job_failed(
+        job_id,
+        f"Timed out waiting for Hermes worker after {max_wait}s",
+    )
     return None
 
 
