@@ -16,7 +16,6 @@ from scrapers.dispatcher import scrape_url
 from scrapers.models import ProductData
 from scrapers.search_web import search_products_by_keyword
 from scrapers.vision_extract import extract_product_via_screenshot_ai
-from scrapers.hermes_browser import create_hermes_job
 from mayar_routes import router as mayar_router
 
 app = FastAPI(title="MyBagasi Backend", version="1.0.0")
@@ -297,28 +296,3 @@ async def browse_scrape(req: BrowseScrapeRequest):
     return direct
 
 
-# ── POST /browse-scrape-async  (non-blocking) ──────────────────────
-class BrowseScrapeAsyncRequest(BaseModel):
-    url: str
-
-
-@app.post("/browse-scrape-async")
-async def browse_scrape_async(req: BrowseScrapeAsyncRequest):
-    """
-    Non-blocking version of /browse-scrape.
-    Creates a 'pending_hermes' job and returns the job_id immediately.
-    Use /scrape-status/{job_id} to poll for the result.
-    """
-    url = req.url.strip()
-    if not url:
-        raise HTTPException(status_code=400, detail="url is required")
-
-    try:
-        job_id = await create_hermes_job(url)
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to create Hermes browser job: {e}",
-        )
-
-    return {"job_id": job_id, "status": "pending_hermes"}
