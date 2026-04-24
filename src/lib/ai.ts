@@ -1,6 +1,6 @@
-﻿import { scrapeProduct } from "./scraper";
+﻿import { searchProducts } from "./scraper";
 import type { ProductData } from "./scraper";
-import { searchProducts } from "./scraper";
+import { scrapeProductWithFallback } from "./scrape-jobs";
 import { createInvoice } from "./mayar";
 import { appConfig } from "@/lib/runtime-config";
 
@@ -220,7 +220,7 @@ interface SimilarProduct {
 
 const toIDR = (jpy: number) => Math.round(jpy * JPY_TO_IDR);
 
-function isScrapeUnusable(product: ProductData): boolean {
+export function isScrapeUnusable(product: ProductData): boolean {
   const reason = (product.scrape_reason_code || "").toUpperCase();
   const isKnownBadReason = ["BLOCKED", "PARSE_EMPTY", "URL_INVALID", "NOT_FOUND"].includes(reason);
   const title = (product.title || "").trim().toLowerCase();
@@ -354,10 +354,17 @@ async function executeTool(tc: ToolCall): Promise<string> {
       return JSON.stringify(LAST_SCRAPED_PRODUCT);
     }
     try {
-      const scraped = await scrapeProduct(normalizedUrl);
-      LAST_SCRAPED_PRODUCT = scraped;
-      LAST_SCRAPED_URL = normalizedUrl;
-      return JSON.stringify(scraped);
+      const fallback = await scrapeProductWithFallback(normalizedUrl);
+      if (fallback.product) {
+        LAST_SCRAPED_PRODUCT = fallback.product;
+        LAST_SCRAPED_URL = normalizedUrl;
+        return JSON.stringify(fallback.product);
+      }
+      return JSON.stringify({
+        error: fallback.error || "SCRAPE_FAILED",
+        url: normalizedUrl,
+        source: fallback.source,
+      });
     } catch (err) {
       return JSON.stringify({ error: String(err), url: normalizedUrl });
     }
@@ -467,13 +474,18 @@ export async function sendMessage(
   let preScrapeError = "";
   if (detectedUrl) {
     try {
-      const scraped = await scrapeProduct(detectedUrl);
-      if (isScrapeUnusable(scraped)) {
-        preScrapeError = buildScrapeFallbackError(scraped);
+      const fallback = await scrapeProductWithFallback(detectedUrl);
+      if (fallback.product) {
+        const scraped = fallback.product;
+        if (isScrapeUnusable(scraped)) {
+          preScrapeError = buildScrapeFallbackError(scraped);
+        } else {
+          preScrapedProduct = scraped;
+          LAST_SCRAPED_PRODUCT = scraped;
+          LAST_SCRAPED_URL = detectedUrl.trim();
+        }
       } else {
-        preScrapedProduct = scraped;
-        LAST_SCRAPED_PRODUCT = scraped;
-        LAST_SCRAPED_URL = detectedUrl.trim();
+        preScrapeError = normalizeScrapeErrorMessage(fallback.error || "SCRAPE_FAILED");
       }
     } catch (err) {
       preScrapeError = normalizeScrapeErrorMessage(String(err));
