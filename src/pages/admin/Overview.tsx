@@ -7,8 +7,17 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { adminStats, fmtRp, procurementQueue, trackingExceptions, scraperFailures, quoteApprovals } from "@/lib/admin-mock";
+import type { LucideIcon } from "lucide-react";
 
-const Stat = ({ icon: Icon, label, value, delta, tone = "primary" }: any) => (
+type StatProps = {
+  icon: LucideIcon;
+  label: string;
+  value: string | number;
+  delta?: string;
+  tone?: "primary" | "warn";
+};
+
+const Stat = ({ icon: Icon, label, value, delta, tone = "primary" }: StatProps) => (
   <Card className="border-border/60">
     <CardContent className="p-5">
       <div className="flex items-start justify-between">

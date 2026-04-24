@@ -7,6 +7,7 @@ import { Logo } from "./Logo";
 const links = [
   { to: "/", label: "Beranda" },
   { to: "/quotation", label: "Cek Harga" },
+  { to: "/biaya-transparan", label: "Biaya Transparan" },
   { to: "/batch-shipping", label: "Batch" },
   { to: "/preorder", label: "Pre-order" },
   { to: "/whatsapp-demo", label: "Demo WA" },

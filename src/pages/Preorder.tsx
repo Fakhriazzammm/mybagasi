@@ -153,7 +153,7 @@ export default function Preorder() {
 
               <div>
                 <p className="text-sm font-semibold mb-2">Pilih opsi pembayaran</p>
-                <RadioGroup value={paymentType} onValueChange={(v: any) => setPaymentType(v)} className="grid gap-2">
+                <RadioGroup value={paymentType} onValueChange={(v: "dp" | "full") => setPaymentType(v)} className="grid gap-2">
                   <Label className={`flex items-start gap-3 p-3 rounded-2xl border-2 cursor-pointer transition-colors ${paymentType === "dp" ? "border-primary bg-primary-soft/40" : "border-border"}`}>
                     <RadioGroupItem value="dp" className="mt-0.5" />
                     <div className="flex-1">

@@ -16,6 +16,10 @@ export function useRealtimeInvalidation({
   queryClient,
 }: UseRealtimeInvalidationInput) {
   useEffect(() => {
+    if (tables.length === 0 || queryKeys.length === 0) {
+      return;
+    }
+
     const realtimeChannel = supabase.channel(channel)
 
     tables.forEach((table) => {

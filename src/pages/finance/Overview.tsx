@@ -6,8 +6,18 @@ import { TrendingUp, Wallet, Clock, Undo2, Coins, Crown, Users, Download } from 
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { financeStats, fmtRp, payments, refunds, membershipRevenue } from "@/lib/finance-mock";
 import { toast } from "sonner";
+import type { LucideIcon } from "lucide-react";
 
-const Stat = ({ icon: Icon, label, value, delta, href, tone = "primary" }: any) => (
+type StatProps = {
+  icon: LucideIcon;
+  label: string;
+  value: string | number;
+  delta?: string;
+  href?: string;
+  tone?: "primary" | "warn" | "accent";
+};
+
+const Stat = ({ icon: Icon, label, value, delta, href, tone = "primary" }: StatProps) => (
   <Card className="border-border/60">
     <CardContent className="p-5">
       <div className="flex items-start justify-between">

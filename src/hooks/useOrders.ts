@@ -32,6 +32,14 @@ export function useAllOrders(status?: OrderStatus) {
 }
 
 export function useOrder(id: string) {
+  const queryClient = useQueryClient()
+  useRealtimeInvalidation({
+    channel: `order-detail-live-${id}`,
+    tables: id ? ['orders', 'order_tracking'] : [],
+    queryKeys: id ? [ORDER_KEYS.detail(id)] : [],
+    queryClient,
+  })
+
   return useQuery({
     queryKey: ORDER_KEYS.detail(id),
     queryFn: () => ordersService.get(id),

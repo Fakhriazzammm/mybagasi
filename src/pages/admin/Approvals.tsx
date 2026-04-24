@@ -5,6 +5,22 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { quoteApprovals, fmtRp } from "@/lib/admin-mock";
 import { Check, X, Eye } from "lucide-react";
 
+const confidenceFromQuote = (total: number, reason: string): number => {
+  let score = 85;
+  if (total >= 7_000_000) score -= 25;
+  else if (total >= 4_000_000) score -= 12;
+  if (reason.toLowerCase().includes("langka")) score -= 12;
+  if (reason.toLowerCase().includes("multi-source")) score -= 8;
+  if (reason.toLowerCase().includes("new buyer")) score -= 10;
+  return Math.max(45, Math.min(95, score));
+};
+
+const confidenceTone = (score: number) => {
+  if (score >= 80) return "bg-success/15 text-success";
+  if (score >= 65) return "bg-warning/15 text-warning";
+  return "bg-destructive/15 text-destructive";
+};
+
 export default function Approvals() {
   return (
     <>
@@ -15,7 +31,9 @@ export default function Approvals() {
       />
 
       <div className="grid md:grid-cols-2 gap-4">
-        {quoteApprovals.map((q) => (
+        {quoteApprovals.map((q) => {
+          const confidenceScore = confidenceFromQuote(q.total, q.reason);
+          return (
           <Card key={q.id} className="border-border/60">
             <CardContent className="p-5">
               <div className="flex items-start justify-between gap-3 mb-3">
@@ -23,6 +41,9 @@ export default function Approvals() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs">{q.id}</span>
                     <Badge variant="outline" className="text-[10px]">{q.submitted}</Badge>
+                    <Badge className={`text-[10px] ${confidenceTone(confidenceScore)}`}>
+                      Confidence {confidenceScore}%
+                    </Badge>
                   </div>
                   <h3 className="font-semibold mt-1.5">{q.product}</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{q.customer}</p>
@@ -43,7 +64,8 @@ export default function Approvals() {
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </>
   );

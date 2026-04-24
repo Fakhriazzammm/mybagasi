@@ -21,6 +21,7 @@ import Points from "./pages/dashboard/Points";
 import AIShopper from "./pages/dashboard/AIShopper";
 import CheckoutPage from "./pages/CheckoutPage";
 import PaymentStatusPage from "./pages/PaymentStatusPage";
+import TransparentPricing from "./pages/TransparentPricing";
 import BatchShipping from "./pages/BatchShipping";
 import Preorder from "./pages/Preorder";
 import { AdminLayout } from "./components/admin/AdminLayout";
@@ -48,6 +49,7 @@ import Shipping from "./pages/superadmin/Shipping";
 import Marketplaces from "./pages/superadmin/Marketplaces";
 import Commission from "./pages/superadmin/Commission";
 import AISettingsPage from "./pages/superadmin/AISettings";
+import OpsCommandCenter from "./pages/superadmin/OpsCommandCenter";
 
 const queryClient = new QueryClient();
 
@@ -65,6 +67,7 @@ const App = () => (
           <Route path="/preorder" element={<Preorder />} />
           <Route path="/install" element={<Install />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/biaya-transparan" element={<TransparentPricing />} />
           <Route path="/payment/status" element={<PaymentStatusPage />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
@@ -85,6 +88,7 @@ const App = () => (
           </Route>
           <Route path="/super-admin" element={<SuperAdminLayout />}>
             <Route index element={<SuperAdminOverview />} />
+            <Route path="ops-center" element={<OpsCommandCenter />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="plans" element={<Plans />} />
             <Route path="pricing" element={<Pricing />} />

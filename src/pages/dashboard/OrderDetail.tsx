@@ -1,14 +1,73 @@
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Package, Copy, MessageCircle, ExternalLink } from "lucide-react";
+import { ArrowLeft, Copy, MessageCircle, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
-import { orders, trackingTimeline, addresses, fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/customer-mock";
+import { OrderTimeline } from "@/components/dashboard/OrderTimeline";
+import { useOrder } from "@/hooks";
+import { orders as mockOrders, trackingTimeline as mockTimeline, addresses, fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/customer-mock";
+import type { OrderStatus, OrderTracking } from "@/types/database.types";
 import { toast } from "sonner";
+
+const isUuid = (value?: string) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+
+const asMockTracking = (): OrderTracking[] => {
+  const now = Date.now();
+  return mockTimeline.map((item, index) => ({
+    id: `mock-${index}`,
+    order_id: "mock-order",
+    status: item.status,
+    note: item.note ?? null,
+    is_done: item.done,
+    is_current: Boolean(item.current),
+    occurred_at: new Date(now - (mockTimeline.length - index) * 60 * 60 * 1000).toISOString(),
+    created_at: new Date(now - (mockTimeline.length - index) * 60 * 60 * 1000).toISOString(),
+  }));
+};
 
 const OrderDetail = () => {
   const { id } = useParams();
-  const order = orders.find((o) => o.id === id) ?? orders[0];
+  const liveMode = isUuid(id);
+  const { data: orderData, isLoading } = useOrder(liveMode && id ? id : "");
+
+  const fallbackOrder = mockOrders.find((o) => o.id === id) ?? mockOrders[0];
+
+  const order = orderData
+    ? {
+        id: orderData.id,
+        product: orderData.product,
+        total: orderData.total,
+        status: orderData.status as OrderStatus,
+        createdAt: new Date(orderData.created_at).toLocaleDateString("id-ID"),
+        eta: orderData.eta ? new Date(orderData.eta).toLocaleDateString("id-ID") : "-",
+        tracking: orderData.tracking_number || "-",
+      }
+    : fallbackOrder;
+
+  const trackingEntries = orderData?.tracking ?? asMockTracking();
   const address = addresses[0];
+
+  const copyTracking = async () => {
+    if (!order.tracking || order.tracking === "-") return;
+    await navigator.clipboard.writeText(order.tracking);
+    toast.success("Tracking number tersalin");
+  };
+
+  const pricingRows = orderData
+    ? [
+        ["Harga produk", fmtRp(Math.round((orderData.price_jpy ?? 0) * (orderData.exchange_rate ?? 0)))],
+        ["Fee jasa", fmtRp(orderData.service_fee)],
+        ["Ongkir Jepang -> Indonesia", fmtRp(orderData.shipping_cost)],
+        ["Pajak dan bea", fmtRp(orderData.tax_customs)],
+        ["Diskon membership", `-${fmtRp(orderData.membership_discount)}`],
+        ["Poin dipakai", `-${fmtRp(orderData.points_used)}`],
+      ]
+    : [
+        ["Harga produk", fmtRp(1_029_000)],
+        ["Fee jasa", fmtRp(154_000)],
+        ["Ongkir Jepang -> Indonesia", fmtRp(285_000)],
+        ["Pajak dan bea", fmtRp(124_000)],
+        ["Diskon membership", `-${fmtRp(45_000)}`],
+      ];
 
   return (
     <>
@@ -19,72 +78,47 @@ const OrderDetail = () => {
       <PageHeader
         eyebrow={order.id}
         title={order.product}
-        description={`Dipesan ${order.createdAt} · Estimasi sampai ${order.eta}`}
-        action={
-          <>
-            <Button variant="outline" asChild><Link to="/whatsapp-demo"><MessageCircle className="h-4 w-4" />Tanya CS</Link></Button>
-          </>
-        }
+        description={`Dipesan ${order.createdAt} � Estimasi sampai ${order.eta}`}
+        action={<Button variant="outline" asChild><Link to="/whatsapp-demo"><MessageCircle className="h-4 w-4" />Tanya CS</Link></Button>}
       />
 
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* Tracking timeline */}
         <div className="lg:col-span-2 rounded-3xl bg-card border border-border/40 p-6 shadow-soft">
           <div className="flex items-center justify-between mb-1">
-            <h2 className="font-display text-lg font-bold">Tracking timeline</h2>
-            <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${STATUS_TONE[order.status]}`}>
-              {STATUS_LABEL[order.status]}
+            <h2 className="font-display text-lg font-bold">Tracking timeline realtime</h2>
+            <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${STATUS_TONE[order.status as OrderStatus]}`}>
+              {STATUS_LABEL[order.status as OrderStatus]}
             </span>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
             <span className="font-mono">{order.tracking}</span>
-            <button
-              onClick={() => { navigator.clipboard.writeText(order.tracking); toast.success("Tracking number tersalin"); }}
-              className="hover:text-primary"
-            >
+            <button onClick={copyTracking} className="hover:text-primary" disabled={order.tracking === "-"}>
               <Copy className="h-3 w-3" />
             </button>
+            {liveMode && <span className="text-success">Live update aktif</span>}
           </div>
 
-          <ol className="relative space-y-5 ml-2">
-            {trackingTimeline.map((t, i) => (
-              <li key={i} className="flex gap-4">
-                <div className="relative flex flex-col items-center">
-                  <div className={`h-9 w-9 rounded-full grid place-items-center shrink-0 ${
-                    t.current ? "bg-primary text-primary-foreground shadow-glow animate-pulse-soft"
-                    : t.done ? "bg-success/15 text-success border-2 border-success/40"
-                    : "bg-muted text-muted-foreground"
-                  }`}>
-                    <Package className="h-4 w-4" />
-                  </div>
-                  {i < trackingTimeline.length - 1 && (
-                    <div className={`w-0.5 flex-1 my-1 min-h-[20px] ${t.done ? "bg-success/40" : "bg-border"}`} />
-                  )}
-                </div>
-                <div className={`pb-3 ${!t.done ? "opacity-50" : ""}`}>
-                  <p className="font-semibold text-sm">{STATUS_LABEL[t.status]}</p>
-                  <p className="text-xs text-muted-foreground">{t.at}</p>
-                  {t.note && <p className="text-xs text-foreground/70 mt-1">{t.note}</p>}
-                </div>
-              </li>
-            ))}
-          </ol>
+          {isLoading && liveMode ? (
+            <div className="py-12 flex justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <OrderTimeline
+              currentStatus={order.status as OrderStatus}
+              tracking={trackingEntries}
+              eta={orderData?.eta ?? null}
+            />
+          )}
         </div>
 
-        {/* Sidebar info */}
         <div className="space-y-5">
           <div className="rounded-3xl bg-card border border-border/40 p-6 shadow-soft">
             <h3 className="font-display font-bold mb-4">Ringkasan biaya</h3>
             <div className="space-y-2 text-sm">
-              {[
-                ["Harga produk", fmtRp(1_029_000)],
-                ["Fee jasa", fmtRp(154_000)],
-                ["Ongkir Jepang→Indo", fmtRp(285_000)],
-                ["Pajak & bea", fmtRp(124_000)],
-                ["Diskon Plus", `−${fmtRp(45_000)}`],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between text-muted-foreground">
-                  <span>{k}</span><span className="text-foreground">{v}</span>
+              {pricingRows.map(([label, value]) => (
+                <div key={label} className="flex justify-between text-muted-foreground">
+                  <span>{label}</span>
+                  <span className="text-foreground">{value}</span>
                 </div>
               ))}
               <div className="flex justify-between border-t border-border/60 pt-3 mt-2 font-bold">

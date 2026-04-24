@@ -33,6 +33,63 @@ export interface SearchProductsInput {
 const API_BASE = appConfig.backendBaseUrl;
 const FALLBACK_BACKEND = appConfig.fallbackBackendBaseUrl;
 
+const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRY_DELAYS = [350, 900, 1800];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetry = (status: number) => RETRYABLE_STATUS.has(status);
+
+async function fetchWithTieredRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      if (!shouldRetry(response.status)) {
+        return response;
+      }
+      if (attempt < RETRY_DELAYS.length - 1) {
+        await sleep(RETRY_DELAYS[attempt]);
+      }
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt < RETRY_DELAYS.length - 1) {
+        await sleep(RETRY_DELAYS[attempt]);
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Network request failed after tiered retries.");
+}
+
+async function fetchPrimaryWithOptionalFallback(path: string, init: RequestInit): Promise<Response> {
+  const primaryUrl = `${API_BASE}${path}`;
+
+  try {
+    const primaryRes = await fetchWithTieredRetry(primaryUrl, init);
+    if (primaryRes.ok) return primaryRes;
+
+    const shouldTryFallback =
+      API_BASE.startsWith("/") &&
+      FALLBACK_BACKEND &&
+      FALLBACK_BACKEND !== API_BASE &&
+      (primaryRes.status === 404 || shouldRetry(primaryRes.status));
+
+    if (shouldTryFallback) {
+      return fetchWithTieredRetry(`${FALLBACK_BACKEND}${path}`, init);
+    }
+
+    return primaryRes;
+  } catch {
+    if (!FALLBACK_BACKEND) {
+      throw new Error("Backend scraper tidak dapat diakses dan fallback tidak dikonfigurasi.");
+    }
+    return fetchWithTieredRetry(`${FALLBACK_BACKEND}${path}`, init);
+  }
+}
+
 export async function scrapeProduct(url: string): Promise<ProductData> {
   const requestInit: RequestInit = {
     method: "POST",
@@ -40,72 +97,40 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
     body: JSON.stringify({ url }),
   };
 
-  // Primary path: /browse-scrape (Crawl4AI + Sumopod AI fallback)
-  // Backward compatibility: fallback to /scrape if /browse-scrape is unavailable.
   const endpoints = ["/browse-scrape", "/scrape"];
 
   for (const endpoint of endpoints) {
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE}${endpoint}`, requestInit);
-    } catch {
-      if (!FALLBACK_BACKEND) continue;
-      res = await fetch(`${FALLBACK_BACKEND}${endpoint}`, requestInit);
+    const response = await fetchPrimaryWithOptionalFallback(endpoint, requestInit);
+
+    if (response.ok) {
+      return response.json() as Promise<ProductData>;
     }
 
-    if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
-      const retry = await fetch(`${FALLBACK_BACKEND}${endpoint}`, requestInit);
-      if (retry.ok) {
-        return retry.json() as Promise<ProductData>;
-      }
-    }
-
-    if (res.ok) {
-      return res.json() as Promise<ProductData>;
-    }
-
-    // If endpoint does not exist, try next endpoint in chain.
-    if (res.status === 404) {
+    if (response.status === 404) {
       continue;
     }
 
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(`Scraper error ${res.status}: ${err.detail ?? res.statusText}`);
+    const err = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(`Scraper error ${response.status}: ${err.detail ?? response.statusText}`);
   }
 
   throw new Error("Backend scraper tidak dapat diakses dan fallback tidak dikonfigurasi.");
 }
 
-export async function searchProducts(
-  input: SearchProductsInput
-): Promise<ProductData[]> {
+export async function searchProducts(input: SearchProductsInput): Promise<ProductData[]> {
   const requestInit: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   };
 
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/search`, requestInit);
-  } catch {
-    if (!FALLBACK_BACKEND) throw new Error("Backend search tidak dapat diakses dan fallback tidak dikonfigurasi.");
-    res = await fetch(`${FALLBACK_BACKEND}/search`, requestInit);
+  const response = await fetchPrimaryWithOptionalFallback("/search", requestInit);
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(`Search error ${response.status}: ${err.detail ?? response.statusText}`);
   }
 
-  if (!res.ok && API_BASE.startsWith("/") && FALLBACK_BACKEND && FALLBACK_BACKEND !== API_BASE) {
-    const retry = await fetch(`${FALLBACK_BACKEND}/search`, requestInit);
-    if (retry.ok) {
-      const json = (await retry.json()) as { items?: ProductData[] };
-      return json.items ?? [];
-    }
-  }
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(`Search error ${res.status}: ${err.detail ?? res.statusText}`);
-  }
-
-  const json = (await res.json()) as { items?: ProductData[] };
+  const json = (await response.json()) as { items?: ProductData[] };
   return json.items ?? [];
 }

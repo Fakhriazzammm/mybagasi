@@ -5,8 +5,16 @@ import { Link } from "react-router-dom";
 import { Users, Crown, Calculator, Settings2, Truck, Store, Share2, Brain, Activity } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { platformStats, marketplaces } from "@/lib/superadmin-mock";
+import type { LucideIcon } from "lucide-react";
 
-const Stat = ({ icon: Icon, label, value, sub }: any) => (
+type StatProps = {
+  icon: LucideIcon;
+  label: string;
+  value: string | number;
+  sub?: string;
+};
+
+const Stat = ({ icon: Icon, label, value, sub }: StatProps) => (
   <Card className="border-border/60">
     <CardContent className="p-5">
       <div className="flex items-start justify-between">
@@ -24,6 +32,7 @@ const Stat = ({ icon: Icon, label, value, sub }: any) => (
 );
 
 const sections = [
+  { icon: Activity, label: "Ops Command Center", to: "/super-admin/ops-center", desc: "Queue SLA procurement dan scraper" },
   { icon: Users, label: "Users", to: "/super-admin/users", desc: "Kelola semua role & status" },
   { icon: Crown, label: "Membership Plans", to: "/super-admin/plans", desc: "Free, Plus, Pro, Seller" },
   { icon: Calculator, label: "Pricing Rules", to: "/super-admin/pricing", desc: "Service fee & markup" },

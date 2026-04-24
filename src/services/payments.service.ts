@@ -1,5 +1,12 @@
 import { supabase } from '@/lib/supabase'
-import type { Payment, PaymentMethod, PaymentStatus, Refund, RefundStatus } from '@/types/database.types'
+import type {
+  Payment,
+  PaymentMethod,
+  PaymentStatus,
+  PaymentWithOrder,
+  Refund,
+  RefundStatus,
+} from '@/types/database.types'
 
 export const paymentsService = {
   async list(status?: PaymentStatus): Promise<Payment[]> {
@@ -59,10 +66,10 @@ export const paymentsService = {
   },
 
   // Finance: list all payments with customer & order info
-  async listAll(status?: PaymentStatus) {
+  async listAll(status?: PaymentStatus): Promise<PaymentWithOrder[]> {
     let query = supabase
       .from('payments')
-      .select('*, profiles(name), orders(product)')
+      .select('*, profiles(id, name), orders(id, product)')
       .order('created_at', { ascending: false })
 
     if (status) query = query.eq('status', status)

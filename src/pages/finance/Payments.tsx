@@ -7,6 +7,7 @@ import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePayments } from "@/hooks";
 import { fmtRp } from "@/lib/finance-mock";
+import type { PaymentWithOrder } from "@/types/database.types";
 
 const tone: Record<string, string> = {
   settled: "bg-success/15 text-success",
@@ -16,13 +17,14 @@ const tone: Record<string, string> = {
 
 export default function Payments() {
   const { data: payments = [], isLoading } = usePayments();
+  const paymentRows = payments as PaymentWithOrder[];
 
   return (
     <>
       <PageHeader
         eyebrow="Finance"
         title="Pembayaran Masuk"
-        description="Semua transaksi customer — settled, pending, dan failed."
+        description="Semua transaksi customer - settled, pending, dan failed."
         action={
           <Button variant="outline" size="sm" onClick={() => toast.success("Export CSV siap diunduh")}>
             <Download className="h-4 w-4" />Export CSV
@@ -49,22 +51,18 @@ export default function Payments() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {payments.length === 0 ? (
+                {paymentRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                       Belum ada data pembayaran.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  payments.map((p) => (
+                  paymentRows.map((p) => (
                     <TableRow key={p.id}>
-                      <TableCell className="font-mono text-xs">{p.id.slice(0, 8)}…</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {(p as any).orders?.id?.slice(0, 8) ?? "—"}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {(p as any).profiles?.name ?? "—"}
-                      </TableCell>
+                      <TableCell className="font-mono text-xs">{p.id.slice(0, 8)}...</TableCell>
+                      <TableCell className="font-mono text-xs">{p.orders?.id?.slice(0, 8) ?? "-"}</TableCell>
+                      <TableCell className="font-medium">{p.profiles?.name ?? "-"}</TableCell>
                       <TableCell className="text-sm">{p.method}</TableCell>
                       <TableCell className="font-semibold">{fmtRp(p.amount)}</TableCell>
                       <TableCell><Badge className={tone[p.status]}>{p.status}</Badge></TableCell>

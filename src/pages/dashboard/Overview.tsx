@@ -3,8 +3,17 @@ import { ArrowRight, Crown, Coins, Heart, Bell, MessageCircle, Sparkles, Package
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { customer, orders, quotations, wishlist, priceAlerts, fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/customer-mock";
+import type { LucideIcon } from "lucide-react";
 
-const Stat = ({ icon: Icon, label, value, hint, tone = "primary" }: any) => (
+type StatProps = {
+  icon: LucideIcon;
+  label: string;
+  value: string | number;
+  hint?: string;
+  tone?: "primary" | "secondary";
+};
+
+const Stat = ({ icon: Icon, label, value, hint, tone = "primary" }: StatProps) => (
   <div className="rounded-3xl bg-card border border-border/40 p-5 shadow-soft">
     <div className="flex items-start justify-between">
       <div className={`h-11 w-11 rounded-2xl grid place-items-center ${tone === "primary" ? "bg-primary-soft text-primary" : "bg-secondary text-foreground"}`}>

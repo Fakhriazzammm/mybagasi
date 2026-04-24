@@ -1,267 +1,290 @@
-import { appConfig } from '@/lib/runtime-config'
-import { supabase } from '@/lib/supabase'
-import { scrapeProduct } from './scraper'
-import type { ProductData } from './scraper'
-import { isScrapeUnusable } from './ai'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { appConfig } from "@/lib/runtime-config";
+import { supabase } from "@/lib/supabase";
+import { scrapeProduct, searchProducts } from "./scraper";
+import type { ProductData } from "./scraper";
+import { isScrapeUnusable } from "./ai";
 
 export interface ScrapeJobResult {
-  id: string
-  url: string
-  status: string
-  result?: ProductData
-  error?: string
+  id: string;
+  url: string;
+  status: string;
+  result?: ProductData;
+  error?: string;
 }
 
 export interface ScrapeProductWithFallbackResult {
-  product?: ProductData
-  error?: string
-  source: 'direct' | 'async'
+  product?: ProductData;
+  error?: string;
+  source: "direct" | "async" | "fallback_parser";
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const API_BASE = appConfig.backendBaseUrl
+const API_BASE = appConfig.backendBaseUrl;
 
 function isTerminalStatus(status: string): boolean {
-  return status === 'completed' || status === 'failed'
+  return status === "completed" || status === "failed";
 }
 
-// ---------------------------------------------------------------------------
-// 1. createScrapeJob
-// ---------------------------------------------------------------------------
+const titleFromUrl = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const raw = parsed.pathname.split("/").filter(Boolean).pop() || parsed.hostname;
+    return raw
+      .replace(/[-_]/g, " ")
+      .replace(/[0-9]{3,}/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch {
+    return "Produk Jepang";
+  }
+};
 
-export async function createScrapeJob(
-  url: string,
-  userId?: string,
-): Promise<{ jobId: string }> {
+const marketplaceFromUrl = (url: string): string => {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("mercari")) return "Mercari";
+    if (host.includes("rakuten")) return "Rakuten";
+    if (host.includes("amazon")) return "Amazon JP";
+    if (host.includes("yahoo")) return "Yahoo Auction";
+    if (host.includes("zozo")) return "ZOZOTOWN";
+    return host.replace("www.", "");
+  } catch {
+    return "Marketplace Jepang";
+  }
+};
+
+function buildFallbackParsedProduct(url: string, candidates: ProductData[]): ProductData | undefined {
+  const first = candidates.find((item) => typeof item.price_jpy === "number" || item.price_display);
+  if (!first) return undefined;
+
+  return {
+    title: first.title || titleFromUrl(url),
+    price_jpy: first.price_jpy,
+    price_display: first.price_display,
+    condition: first.condition || "unknown",
+    images: first.images || [],
+    description:
+      "Harga menggunakan fallback parser dari listing serupa karena halaman utama tidak bisa dibaca penuh.",
+    seller: first.seller || null,
+    marketplace: marketplaceFromUrl(url),
+    available: true,
+    url,
+    scraped_at: new Date().toISOString(),
+    confidence: "low",
+    scrape_reason_code: "PARSE_EMPTY",
+  };
+}
+
+export async function createScrapeJob(url: string, userId?: string): Promise<{ jobId: string }> {
   const res = await fetch(`${API_BASE}/scrape-async`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url,
-      job_type: 'scrape_product',
+      job_type: "scrape_product",
       user_id: userId ?? null,
     }),
-  })
+  });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(
-      `Failed to create scrape job (${res.status}): ${err.detail ?? res.statusText}`,
-    )
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(`Failed to create scrape job (${res.status}): ${err.detail ?? res.statusText}`);
   }
 
-  const data = await res.json()
-  return { jobId: data.job_id }
+  const data = await res.json();
+  return { jobId: data.job_id };
 }
 
-// ---------------------------------------------------------------------------
-// 2. pollScrapeJob
-// ---------------------------------------------------------------------------
-
-const POLL_INTERVAL_MS = 2_000
-const POLL_MAX_ATTEMPTS = 60 // 2 minutes
+const POLL_INTERVAL_MS = 2_000;
+const POLL_MAX_ATTEMPTS = 60;
 
 export async function pollScrapeJob(jobId: string): Promise<ScrapeJobResult> {
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(`${API_BASE}/scrape-status/${jobId}`)
+    const res = await fetch(`${API_BASE}/scrape-status/${jobId}`);
 
     if (!res.ok) {
-      // Transient error – retry after interval
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
-      continue
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      continue;
     }
 
-    const job: ScrapeJobResult = await res.json()
-
+    const job: ScrapeJobResult = await res.json();
     if (isTerminalStatus(job.status)) {
-      return job
+      return job;
     }
 
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 
   return {
     id: jobId,
-    url: '',
-    status: 'failed',
-    error: 'Polling timed out after 2 minutes without a terminal status.',
-  }
+    url: "",
+    status: "failed",
+    error: "Polling timed out after 2 minutes without a terminal status.",
+  };
 }
-
-// ---------------------------------------------------------------------------
-// 3. watchScrapeJob
-// ---------------------------------------------------------------------------
 
 export function watchScrapeJob(
   jobId: string,
   onResult: (job: ScrapeJobResult) => void,
 ): { unsubscribe: () => void } {
-  let settled = false
-  let pollingTimer: ReturnType<typeof setInterval> | null = null
+  let settled = false;
+  let pollingTimer: ReturnType<typeof setInterval> | null = null;
 
   const done = (job: ScrapeJobResult) => {
-    if (settled) return
-    settled = true
+    if (settled) return;
+    settled = true;
     if (pollingTimer !== null) {
-      clearInterval(pollingTimer)
-      pollingTimer = null
+      clearInterval(pollingTimer);
+      pollingTimer = null;
     }
-    onResult(job)
-  }
+    onResult(job);
+  };
 
-  // --- Realtime subscription -------------------------------------------------
-  const channelName = `scrape-job:${jobId}:${Date.now()}`
-
+  const channelName = `scrape-job:${jobId}:${Date.now()}`;
   const channel = supabase.channel(channelName, {
     config: { broadcast: { self: true } },
-  })
+  });
 
   channel.on(
-    'postgres_changes',
+    "postgres_changes",
     {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'scrape_jobs',
+      event: "UPDATE",
+      schema: "public",
+      table: "scrape_jobs",
       filter: `id=eq.${jobId}`,
     },
     (payload) => {
-      const row = payload.new as Record<string, unknown> | undefined
-      if (!row) return
+      const row = payload.new as Record<string, unknown> | undefined;
+      if (!row) return;
 
-      const status = (row.status as string) ?? ''
+      const status = (row.status as string) ?? "";
       if (isTerminalStatus(status)) {
         done({
           id: jobId,
-          url: (row.url as string) ?? '',
+          url: (row.url as string) ?? "",
           status,
           result: row.result as ProductData | undefined,
           error: (row.error as string) ?? undefined,
-        })
-        supabase.removeChannel(channel)
+        });
+        supabase.removeChannel(channel);
       }
     },
-  )
+  );
 
   channel.subscribe((status) => {
-    // If the Realtime channel errors or can't connect, fall back to polling
-    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-      supabase.removeChannel(channel)
-      startFallbackPolling()
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      supabase.removeChannel(channel);
+      startFallbackPolling();
     }
-  })
+  });
 
-  // --- Fallback polling (started if Realtime fails) --------------------------
   function startFallbackPolling() {
-    if (settled) return
+    if (settled) return;
 
     pollingTimer = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/scrape-status/${jobId}`)
-        if (!res.ok) return
+        const res = await fetch(`${API_BASE}/scrape-status/${jobId}`);
+        if (!res.ok) return;
 
-        const job: ScrapeJobResult = await res.json()
+        const job: ScrapeJobResult = await res.json();
         if (isTerminalStatus(job.status)) {
-          done(job)
+          done(job);
         }
       } catch {
-        // Ignore transient polling errors
+        // ignore transient polling errors
       }
-    }, 3_000)
+    }, 3_000);
   }
 
-  // --- Cleanup ---------------------------------------------------------------
   return {
     unsubscribe: () => {
-      if (settled) return
-      settled = true
-      if (pollingTimer !== null) clearInterval(pollingTimer)
-      supabase.removeChannel(channel)
+      if (settled) return;
+      settled = true;
+      if (pollingTimer !== null) clearInterval(pollingTimer);
+      supabase.removeChannel(channel);
     },
-  }
+  };
 }
 
-// ---------------------------------------------------------------------------
-// 4. scrapeProductWithFallback
-// ---------------------------------------------------------------------------
+const ASYNC_TIMEOUT_MS = 90_000;
 
-const ASYNC_TIMEOUT_MS = 90_000 // 90 seconds
-
-export async function scrapeProductWithFallback(
-  url: string,
-  userId?: string,
-): Promise<ScrapeProductWithFallbackResult> {
-  // --- Step 1: Try direct scrape --------------------------------------------
+export async function scrapeProductWithFallback(url: string, userId?: string): Promise<ScrapeProductWithFallbackResult> {
   try {
-    const product = await scrapeProduct(url)
+    const product = await scrapeProduct(url);
     if (!isScrapeUnusable(product)) {
-      return { product, source: 'direct' }
+      return { product, source: "direct" };
     }
-    // Direct scrape returned but is unusable – fall through to async
   } catch {
-    // Direct scrape threw – fall through to async
+    // continue to async
   }
 
-  // --- Step 2: Async scrape with Realtime + polling race --------------------
-  let jobId: string
+  let jobId: string;
   try {
-    const { jobId: id } = await createScrapeJob(url, userId)
-    jobId = id
+    const { jobId: id } = await createScrapeJob(url, userId);
+    jobId = id;
   } catch (err) {
+    const keyword = titleFromUrl(url);
+    const candidates = await searchProducts({ keyword, limit: 5 }).catch(() => []);
+    const fallbackProduct = buildFallbackParsedProduct(url, candidates);
+    if (fallbackProduct) {
+      return { product: fallbackProduct, source: "fallback_parser" };
+    }
     return {
       error: `Direct scrape failed and could not create async job: ${String(err)}`,
-      source: 'direct',
-    }
+      source: "direct",
+    };
   }
 
-  // Race: watchScrapeJob (realtime) + pollScrapeJob (HTTP) + timeout
-  return new Promise<ScrapeProductWithFallbackResult>((resolve) => {
-    let settled = false
+  const asyncResult = await new Promise<ScrapeProductWithFallbackResult>((resolve) => {
+    let settled = false;
 
     const finish = (result: ScrapeProductWithFallbackResult) => {
-      if (settled) return
-      settled = true
-      watcher.unsubscribe()
-      clearTimeout(timeoutId)
-      resolve(result)
-    }
+      if (settled) return;
+      settled = true;
+      watcher.unsubscribe();
+      clearTimeout(timeoutId);
+      resolve(result);
+    };
 
-    // Realtime watcher
     const watcher = watchScrapeJob(jobId, (job) => {
-      if (job.status === 'completed' && job.result) {
-        finish({ product: job.result, source: 'async' })
+      if (job.status === "completed" && job.result) {
+        finish({ product: job.result, source: "async" });
       } else {
         finish({
-          error: job.error ?? 'Async scrape job did not return a result.',
-          source: 'async',
-        })
+          error: job.error ?? "Async scrape job did not return a result.",
+          source: "async",
+        });
       }
-    })
+    });
 
-    // Polling race (pollScrapeJob also resolves the promise)
     pollScrapeJob(jobId).then((job) => {
-      if (job.status === 'completed' && job.result) {
-        finish({ product: job.result, source: 'async' })
+      if (job.status === "completed" && job.result) {
+        finish({ product: job.result, source: "async" });
       } else {
         finish({
-          error: job.error ?? 'Async scrape job did not return a result.',
-          source: 'async',
-        })
+          error: job.error ?? "Async scrape job did not return a result.",
+          source: "async",
+        });
       }
-    })
+    });
 
-    // Global timeout
     const timeoutId = setTimeout(() => {
       finish({
-        error: 'Async scrape timed out after 90 seconds.',
-        source: 'async',
-      })
-    }, ASYNC_TIMEOUT_MS)
-  })
+        error: "Async scrape timed out after 90 seconds.",
+        source: "async",
+      });
+    }, ASYNC_TIMEOUT_MS);
+  });
+
+  if (asyncResult.product && !isScrapeUnusable(asyncResult.product)) {
+    return asyncResult;
+  }
+
+  const keyword = titleFromUrl(url);
+  const candidates = await searchProducts({ keyword, limit: 6 }).catch(() => []);
+  const fallbackProduct = buildFallbackParsedProduct(url, candidates);
+  if (fallbackProduct) {
+    return { product: fallbackProduct, source: "fallback_parser" };
+  }
+
+  return asyncResult;
 }

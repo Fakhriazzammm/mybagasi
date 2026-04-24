@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users, Crown, Calculator, Settings2, Truck, Store, Share2, Brain, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, Users, Crown, Calculator, Settings2, Truck, Store, Share2, Brain, ArrowLeft, Radar } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
@@ -8,6 +8,7 @@ import { Logo } from "@/components/site/Logo";
 
 const items = [
   { title: "Overview", url: "/super-admin", icon: LayoutDashboard, end: true },
+  { title: "Ops Center", url: "/super-admin/ops-center", icon: Radar },
   { title: "Users", url: "/super-admin/users", icon: Users },
   { title: "Membership Plans", url: "/super-admin/plans", icon: Crown },
   { title: "Pricing Rules", url: "/super-admin/pricing", icon: Calculator },
