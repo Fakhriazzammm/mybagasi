@@ -5,7 +5,6 @@ const items = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/quotation", label: "Cek Harga", icon: Search },
   { to: "/batch-shipping", label: "Batch", icon: Package },
-  { to: "/quotation", label: "Chat WA", icon: MessageCircle },
   { to: "/dashboard", label: "Akun", icon: User },
 ];
 

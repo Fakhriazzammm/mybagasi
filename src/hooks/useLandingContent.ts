@@ -1,16 +1,13 @@
-import { useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { useRealtimeInvalidation } from "@/hooks/useRealtimeInvalidation";
+
+// Realtime subscription is disabled for now — Supabase realtime + HMR causes
+// "cannot add postgres_changes after subscribe()" errors on hot reload.
+// Data is still live via useQuery with 60s staleTime.
+// TODO: re-enable realtime via a module-level singleton that survives HMR.
 
 function useLandingRealtime() {
-  const queryClient = useQueryClient();
-  useRealtimeInvalidation({
-    channel: "landing-content-live",
-    tables: ["categories", "testimonials", "faqs", "preorders"],
-    queryKeys: [["landing"]],
-    queryClient,
-  });
+  // no-op for now
 }
 
 export function useLandingCategories() {

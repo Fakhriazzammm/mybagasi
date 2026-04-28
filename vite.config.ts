@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    watch: {
+      ignored: ["**/scraper/**", "**/.venv/**", "**/node_modules/**", "**/.git/**"],
+    },
     proxy: {
       "/api": {
         target: "http://localhost:8000",
