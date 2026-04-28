@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useQuotations } from "@/hooks";
-import { fmtRp } from "@/lib/customer-mock";
+import { fmtRp } from "@/lib/format";
 import type { QuotationStatus } from "@/types/database.types";
 
 const tone: Record<QuotationStatus, string> = {
@@ -16,7 +16,16 @@ const tone: Record<QuotationStatus, string> = {
 
 const Quotations = () => {
   const [search, setSearch] = useState("");
-  const { data: quotations = [], isLoading } = useQuotations();
+  const { data: quotations = [], isLoading, error } = useQuotations();
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-destructive">Gagal memuat data</p>
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+      </div>
+    );
+  }
 
   const filtered = quotations.filter(
     (q) =>

@@ -6,18 +6,24 @@ import {
   FileText, Package, Wallet, ListChecks, Truck, AlertTriangle, ClipboardCheck, MessageSquare, TrendingUp,
 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { adminStats, fmtRp, procurementQueue, trackingExceptions, scraperFailures, quoteApprovals } from "@/lib/admin-mock";
-import type { LucideIcon } from "lucide-react";
+import {
+  useAdminStats,
+  useProcurementQueue,
+  useTrackingExceptions,
+  useScraperFailures,
+  useQuoteApprovals,
+} from "@/hooks";
+import { fmtRp } from "@/lib/format";
 
-type StatProps = {
-  icon: LucideIcon;
-  label: string;
-  value: string | number;
-  delta?: string;
-  tone?: "primary" | "warn";
-};
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3600000);
+  if (h < 1) return "<1j";
+  if (h < 24) return `${h}j`;
+  return `${Math.floor(h / 24)}h`;
+}
 
-const Stat = ({ icon: Icon, label, value, delta, tone = "primary" }: StatProps) => (
+const Stat = ({ icon: Icon, label, value, delta, tone = "primary" }: any) => (
   <Card className="border-border/60">
     <CardContent className="p-5">
       <div className="flex items-start justify-between">
@@ -58,6 +64,28 @@ const QueueCard = ({ title, count, tone, href, items }: { title: string; count: 
 );
 
 export default function AdminOverview() {
+  const { data: stats, isLoading: statsLoading, error: statsError } = useAdminStats();
+  const { data: procurement = [], isLoading: procLoading, error: procError } = useProcurementQueue();
+  const { data: tracking = [], isLoading: trkLoading, error: trkError } = useTrackingExceptions();
+  const { data: scraper = [], isLoading: scrLoading, error: scrError } = useScraperFailures();
+  const { data: approvals = [], isLoading: appLoading, error: appError } = useQuoteApprovals();
+
+  const isLoading = statsLoading || procLoading || trkLoading || scrLoading || appLoading;
+  const error = statsError || procError || trkError || scrError || appError;
+
+  if (isLoading) return (
+    <div className="animate-pulse space-y-4 p-6">
+      <div className="h-20 bg-secondary rounded-3xl" />
+      <div className="h-20 bg-secondary rounded-3xl" />
+    </div>
+  );
+  if (error) return (
+    <div className="text-center py-12">
+      <p className="text-destructive">Gagal memuat</p>
+      <p className="text-xs text-muted-foreground">{(error as Error).message}</p>
+    </div>
+  );
+
   return (
     <>
       <PageHeader
@@ -67,40 +95,40 @@ export default function AdminOverview() {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-        <Stat icon={FileText} label="Quotation hari ini" value={adminStats.quotationsToday} delta={adminStats.quotationsDelta} />
-        <Stat icon={Package} label="Order hari ini" value={adminStats.ordersToday} delta={adminStats.ordersDelta} />
-        <Stat icon={Wallet} label="GMV hari ini" value={fmtRp(adminStats.gmvToday)} delta={adminStats.gmvDelta} />
-        <Stat icon={Wallet} label="Pembayaran pending" value={adminStats.paymentsPending} tone="warn" />
+        <Stat icon={FileText} label="Quotation hari ini" value={stats?.quotationsToday ?? 0} />
+        <Stat icon={Package} label="Order hari ini" value={stats?.ordersToday ?? 0} />
+        <Stat icon={Wallet} label="GMV hari ini" value={fmtRp(stats?.gmvToday ?? 0)} />
+        <Stat icon={Wallet} label="Pembayaran pending" value={stats?.paymentsPending ?? 0} tone="warn" />
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <QueueCard
           title="Procurement Queue"
-          count={adminStats.procurementPending}
+          count={stats?.procurementPending ?? 0}
           tone="bg-primary-soft text-primary"
           href="/admin/procurement"
-          items={procurementQueue.map(p => ({ left: `${p.id} · ${p.product}`, right: `${p.waitingHours}j` }))}
+          items={procurement.slice(0, 5).map((p: any) => ({ left: `${p.id} · ${p.product}`, right: timeAgo(p.created_at) }))}
         />
         <QueueCard
           title="Tracking Exceptions"
-          count={adminStats.trackingExceptions}
+          count={stats?.trackingExceptions ?? 0}
           tone="bg-warning/15 text-warning"
           href="/admin/tracking"
-          items={trackingExceptions.map(t => ({ left: `${t.id} · ${t.issue}`, right: t.since }))}
+          items={tracking.slice(0, 5).map((t: any) => ({ left: `${t.id} · ${t.issue}`, right: timeAgo(t.created_at) }))}
         />
         <QueueCard
           title="Scraper Failures"
-          count={adminStats.scraperFailures}
+          count={stats?.scraperFailures ?? 0}
           tone="bg-destructive/15 text-destructive"
           href="/admin/scraper"
-          items={scraperFailures.map(s => ({ left: `${s.source} · ${s.reason}`, right: s.since }))}
+          items={scraper.slice(0, 5).map((s: any) => ({ left: `${s.marketplaces?.name || "Unknown"} · ${s.reason}`, right: timeAgo(s.created_at) }))}
         />
         <QueueCard
           title="Quote Approval"
-          count={adminStats.approvalsQueue}
+          count={stats?.approvalsQueue ?? 0}
           tone="bg-accent/15 text-accent"
           href="/admin/approvals"
-          items={quoteApprovals.map(q => ({ left: `${q.id} · ${q.customer}`, right: fmtRp(q.total) }))}
+          items={approvals.slice(0, 5).map((q: any) => ({ left: `${q.id} · ${q.profiles?.name || "—"}`, right: fmtRp(q.quotations?.total || 0) }))}
         />
       </div>
 

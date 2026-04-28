@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { trackingExceptions } from "@/lib/admin-mock";
+import { useTrackingExceptions } from "@/hooks";
 import { AlertCircle, MessageCircle, RefreshCw } from "lucide-react";
 
 const severityTone: Record<string, string> = {
@@ -11,7 +11,35 @@ const severityTone: Record<string, string> = {
   low: "bg-muted text-muted-foreground border-border",
 };
 
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3600000);
+  if (h < 1) return "<1j";
+  if (h < 24) return `${h}j`;
+  return `${Math.floor(h / 24)}h`;
+}
+
 export default function TrackingExceptionsPage() {
+  const { data: exceptions = [], isLoading, error } = useTrackingExceptions();
+
+  if (isLoading) return (
+    <div className="animate-pulse space-y-4 p-6">
+      <div className="h-20 bg-secondary rounded-3xl" />
+      <div className="h-20 bg-secondary rounded-3xl" />
+    </div>
+  );
+  if (error) return (
+    <div className="text-center py-12">
+      <p className="text-destructive">Gagal memuat</p>
+      <p className="text-xs text-muted-foreground">{(error as Error).message}</p>
+    </div>
+  );
+  if (!exceptions.length) return (
+    <div className="text-center py-12">
+      <p className="text-muted-foreground">Belum ada data</p>
+    </div>
+  );
+
   return (
     <>
       <PageHeader
@@ -21,8 +49,8 @@ export default function TrackingExceptionsPage() {
       />
 
       <div className="grid gap-4">
-        {trackingExceptions.map((t) => (
-          <Card key={t.id} className={`border ${severityTone[t.severity]}`}>
+        {exceptions.map((t: any) => (
+          <Card key={t.id} className={`border ${severityTone[t.severity] || severityTone.low}`}>
             <CardContent className="p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className="h-10 w-10 rounded-2xl bg-background grid place-items-center shrink-0">
@@ -32,11 +60,11 @@ export default function TrackingExceptionsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs">{t.id}</span>
                     <Badge variant="outline" className="text-[10px] uppercase">{t.severity}</Badge>
-                    <span className="text-xs text-muted-foreground">{t.since}</span>
+                    <span className="text-xs text-muted-foreground">{timeAgo(t.created_at)}</span>
                   </div>
                   <p className="font-semibold mt-1">{t.issue}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {t.customer} · Tracking <span className="font-mono">{t.tracking}</span>
+                    {t.profiles?.name || "—"} · Tracking <span className="font-mono">{t.tracking_number || "—"}</span>
                   </p>
                 </div>
               </div>

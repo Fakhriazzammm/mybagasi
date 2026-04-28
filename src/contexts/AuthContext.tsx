@@ -1,64 +1,167 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Profile } from '@/types/database.types'
+import type { Profile, UserRole } from '@/types/database.types'
 
 interface AuthContextValue {
   profile: Profile | null
+  user: { id: string; email: string } | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, name: string) => Promise<void>
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  signUp: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>
   signOut: () => Promise<void>
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>
+  updateProfile: (updates: Partial<Pick<Profile, 'name' | 'avatar_url'>>) => Promise<{ success: boolean; error?: string }>
+  changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
+  refreshProfile: () => Promise<void>
+  hasRole: (...roles: UserRole[]) => boolean
+  getDashboardRoute: () => string
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const fetchProfile = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    
+    if (error) {
+      console.error('Failed to fetch profile:', error)
+      setProfile(null)
+    } else {
+      setProfile(data)
+    }
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) fetchProfile(session.user.id)
-      else setLoading(false)
+      if (session?.user) {
+        setUser({ id: session.user.id, email: session.user.email! })
+        fetchProfile(session.user.id)
+      } else {
+        setLoading(false)
+      }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setLoading(false) }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_, session) => {
+      if (session?.user) {
+        setUser({ id: session.user.id, email: session.user.email! })
+        fetchProfile(session.user.id)
+      } else {
+        setProfile(null)
+        setUser(null)
+        setLoading(false)
+      }
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [fetchProfile])
 
-  async function fetchProfile(userId: string) {
-    setLoading(true)
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
-    setProfile(data)
-    setLoading(false)
+  const signIn = async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) return { success: false, error: error.message }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Login failed' }
+    }
   }
 
-  async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
+  const signUp = async (email: string, password: string, name: string) => {
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { 
+          data: { name },
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+        },
+      })
+      if (error) return { success: false, error: error.message }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Registration failed' }
+    }
   }
 
-  async function signUp(email: string, password: string, name: string) {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { name } },
-    })
-    if (error) throw error
-  }
-
-  async function signOut() {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
+  const signOut = async () => {
+    await supabase.auth.signOut()
     setProfile(null)
+    setUser(null)
+  }
+
+  const resetPassword = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/update-password`,
+      })
+      if (error) return { success: false, error: error.message }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Password reset failed' }
+    }
+  }
+
+  const updateProfile = async (updates: Partial<Pick<Profile, 'name' | 'avatar_url'>>) => {
+    try {
+      if (!user) throw new Error('Not authenticated')
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id)
+      if (error) return { success: false, error: error.message }
+      // Refresh profile
+      await fetchProfile(user.id)
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Update failed' }
+    }
+  }
+
+  const changePassword = async (newPassword: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) return { success: false, error: error.message }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Password change failed' }
+    }
+  }
+
+  const refreshProfile = async () => {
+    if (user) await fetchProfile(user.id)
+  }
+
+  const hasRole = (...roles: UserRole[]) => {
+    if (!profile) return false
+    return roles.includes(profile.role)
+  }
+
+  const getDashboardRoute = () => {
+    if (!profile) return '/auth/login'
+    switch (profile.role) {
+      case 'super_admin': return '/super-admin'
+      case 'ops_admin': case 'support': return '/admin'
+      case 'finance': return '/finance'
+      case 'affiliate': return '/dashboard'
+      default: return '/dashboard'
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ profile, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ 
+      profile, user, loading, 
+      signIn, signUp, signOut, 
+      resetPassword, updateProfile, changePassword,
+      refreshProfile, hasRole, getDashboardRoute 
+    }}>
       {children}
     </AuthContext.Provider>
   )

@@ -8,9 +8,13 @@ import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { preorders, fmtRp, fmtJpy } from "@/lib/admin-mock";
+import { usePreorders, useBookPreorder } from "@/hooks";
+import { fmtRp } from "@/lib/format";
 import { Calendar, Clock, Sparkles, ShieldCheck, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import type { Preorder } from "@/types/database.types";
+
+const fmtJpy = (n: number) => "¥" + n.toLocaleString("ja-JP");
 
 const tagTone: Record<string, string> = {
   Hot: "bg-destructive/15 text-destructive",
@@ -21,37 +25,40 @@ const tagTone: Record<string, string> = {
   Seasonal: "bg-primary-soft text-primary",
 };
 
-function useCountdown(target: string) {
+function useCountdown(target: string | null) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
+  if (!target) return { d: 0, h: 0, ended: true };
   const diff = Math.max(0, new Date(target).getTime() - now);
   const d = Math.floor(diff / 86400000);
   const h = Math.floor((diff / 3600000) % 24);
   return { d, h, ended: diff === 0 };
 }
 
-const PreorderCard = ({ po, onBook }: { po: typeof preorders[number]; onBook: () => void }) => {
-  const { d, h, ended } = useCountdown(po.closesAt);
-  const fill = Math.round((po.quotaTaken / po.quotaTotal) * 100);
-  const left = po.quotaTotal - po.quotaTaken;
+const PreorderCard = ({ po, onBook }: { po: Preorder; onBook: () => void }) => {
+  const { d, h, ended } = useCountdown(po.closes_at);
+  const quotaTotal = po.quota_total || 0;
+  const quotaTaken = po.quota_taken || 0;
+  const fill = quotaTotal > 0 ? Math.round((quotaTaken / quotaTotal) * 100) : 0;
+  const left = quotaTotal - quotaTaken;
 
   return (
     <Card className="border-border/60 overflow-hidden hover:shadow-soft transition-shadow group">
       <CardContent className="p-0">
         <div className="aspect-[5/3] bg-gradient-hero grid place-items-center text-7xl relative">
           <span className="group-hover:scale-110 transition-transform">{po.emoji}</span>
-          <Badge className={`absolute top-3 left-3 ${tagTone[po.tag] || "bg-secondary"}`}>{po.tag}</Badge>
+          {po.tag && <Badge className={`absolute top-3 left-3 ${tagTone[po.tag] || "bg-secondary"}`}>{po.tag}</Badge>}
           {left <= 5 && <Badge className="absolute top-3 right-3 bg-destructive/15 text-destructive">Sisa {left}</Badge>}
         </div>
         <div className="p-5">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{po.brand}</p>
+          {po.brand && <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{po.brand}</p>}
           <h3 className="font-display text-lg font-bold mt-1 leading-tight line-clamp-2">{po.name}</h3>
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-2">
-            <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />Rilis {po.releaseDate}</span>
+            {po.release_date && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />Rilis {new Date(po.release_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</span>}
             <span className="flex items-center gap-1"><Clock className="h-3 w-3" />
               {ended ? "Closed" : `${d}h ${h}j`}
             </span>
@@ -60,7 +67,7 @@ const PreorderCard = ({ po, onBook }: { po: typeof preorders[number]; onBook: ()
           <div className="mt-3">
             <div className="flex justify-between text-[11px] mb-1">
               <span className="text-muted-foreground">Kuota terisi</span>
-              <span className="font-semibold">{po.quotaTaken}/{po.quotaTotal}</span>
+              <span className="font-semibold">{quotaTaken}/{quotaTotal}</span>
             </div>
             <Progress value={fill} className="h-1.5" />
           </div>
@@ -68,8 +75,8 @@ const PreorderCard = ({ po, onBook }: { po: typeof preorders[number]; onBook: ()
           <div className="flex items-end justify-between mt-4 pt-3 border-t border-border/40">
             <div>
               <p className="text-[11px] text-muted-foreground">Estimasi all-in</p>
-              <p className="font-display text-lg font-bold text-primary">{fmtRp(po.estimateIdr)}</p>
-              <p className="text-[10px] text-muted-foreground">retail {fmtJpy(po.retailJpy)}</p>
+              <p className="font-display text-lg font-bold text-primary">{po.estimate_idr ? fmtRp(po.estimate_idr) : "—"}</p>
+              {po.retail_jpy && <p className="text-[10px] text-muted-foreground">retail {fmtJpy(po.retail_jpy)}</p>}
             </div>
             <Button variant="hero" size="sm" onClick={onBook} disabled={ended || left === 0}>
               Booking <ChevronRight className="h-4 w-4" />
@@ -82,23 +89,71 @@ const PreorderCard = ({ po, onBook }: { po: typeof preorders[number]; onBook: ()
 };
 
 export default function Preorder() {
-  const [selected, setSelected] = useState<typeof preorders[number] | null>(null);
+  const { data: preorders, isLoading, error } = usePreorders();
+  const bookMutation = useBookPreorder();
+  const [selected, setSelected] = useState<Preorder | null>(null);
   const [paymentType, setPaymentType] = useState<"dp" | "full">("dp");
 
   const totals = useMemo(() => {
     if (!selected) return null;
-    const due = paymentType === "dp" ? selected.dpIdr : selected.estimateIdr;
-    const remaining = paymentType === "dp" ? selected.estimateIdr - selected.dpIdr : 0;
+    const estimate = selected.estimate_idr ?? 0;
+    const dp = selected.dp_idr ?? 0;
+    const due = paymentType === "dp" ? dp : estimate;
+    const remaining = paymentType === "dp" ? estimate - dp : 0;
     return { due, remaining };
   }, [selected, paymentType]);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selected) return;
-    toast.success(`Booking ${selected.name} terkonfirmasi!`, {
-      description: `Bayar ${paymentType === "dp" ? "DP" : "lunas"} sebesar ${fmtRp(totals!.due)} via WhatsApp.`,
-    });
-    setSelected(null);
+    try {
+      await bookMutation.mutateAsync({
+        preorder_id: selected.id,
+        payment_type: paymentType,
+        amount_paid: totals!.due,
+        amount_remaining: totals!.remaining,
+      });
+      toast.success(`Booking ${selected.name} terkonfirmasi!`, {
+        description: `Bayar ${paymentType === "dp" ? "DP" : "lunas"} sebesar ${fmtRp(totals!.due)} via WhatsApp.`,
+      });
+      setSelected(null);
+    } catch (err: any) {
+      toast.error("Booking gagal", { description: err.message });
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="container mx-auto py-14 flex-1">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-secondary rounded-full w-64" />
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-8">
+              {[1,2,3].map(i => <div key={i} className="h-80 bg-secondary rounded-3xl" />)}
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="container mx-auto py-14 flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-destructive font-semibold">Gagal memuat data</p>
+            <p className="text-xs text-muted-foreground mt-1">{(error as Error).message}</p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  const items = preorders ?? [];
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -129,11 +184,17 @@ export default function Preorder() {
       </section>
 
       <main className="container mx-auto py-10 md:py-14 flex-1">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {preorders.map((po) => (
-            <PreorderCard key={po.id} po={po} onBook={() => { setSelected(po); setPaymentType("dp"); }} />
-          ))}
-        </div>
+        {items.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Belum ada pre-order tersedia</p>
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {items.map((po) => (
+              <PreorderCard key={po.id} po={po} onBook={() => { setSelected(po); setPaymentType("dp"); }} />
+            ))}
+          </div>
+        )}
       </main>
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
@@ -147,7 +208,7 @@ export default function Preorder() {
                 <div className="h-14 w-14 rounded-xl bg-background grid place-items-center text-3xl">{selected.emoji}</div>
                 <div className="min-w-0">
                   <p className="font-semibold leading-tight line-clamp-2">{selected.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Rilis {selected.releaseDate}</p>
+                  {selected.release_date && <p className="text-xs text-muted-foreground mt-0.5">Rilis {new Date(selected.release_date).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>}
                 </div>
               </div>
 
@@ -159,9 +220,9 @@ export default function Preorder() {
                     <div className="flex-1">
                       <div className="flex justify-between font-semibold text-sm">
                         <span>Bayar DP</span>
-                        <span className="text-primary">{fmtRp(selected.dpIdr)}</span>
+                        <span className="text-primary">{fmtRp(selected.dp_idr ?? 0)}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">Sisa {fmtRp(selected.estimateIdr - selected.dpIdr)} dibayar saat barang siap kirim.</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Sisa {fmtRp((selected.estimate_idr ?? 0) - (selected.dp_idr ?? 0))} dibayar saat barang siap kirim.</p>
                     </div>
                   </Label>
                   <Label className={`flex items-start gap-3 p-3 rounded-2xl border-2 cursor-pointer transition-colors ${paymentType === "full" ? "border-primary bg-primary-soft/40" : "border-border"}`}>
@@ -169,7 +230,7 @@ export default function Preorder() {
                     <div className="flex-1">
                       <div className="flex justify-between font-semibold text-sm">
                         <span>Bayar lunas</span>
-                        <span className="text-primary">{fmtRp(selected.estimateIdr)}</span>
+                        <span className="text-primary">{fmtRp(selected.estimate_idr ?? 0)}</span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">Dapat prioritas pengiriman & bonus 200 poin.</p>
                     </div>
@@ -186,7 +247,7 @@ export default function Preorder() {
 
               <DialogFooter className="gap-2">
                 <Button variant="outline" onClick={() => setSelected(null)}>Batal</Button>
-                <Button variant="hero" onClick={handleConfirm}>Konfirmasi booking</Button>
+                <Button variant="hero" onClick={handleConfirm} disabled={bookMutation.isPending}>Konfirmasi booking</Button>
               </DialogFooter>
             </>
           )}

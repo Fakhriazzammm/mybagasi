@@ -16,6 +16,16 @@ export const marketplacesService = {
     return data
   },
 
+  async create(payload: Omit<Marketplace, 'id' | 'created_at' | 'updated_at'>): Promise<Marketplace> {
+    const { data, error } = await supabase
+      .from('marketplaces')
+      .insert(payload)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
   async update(id: string, updates: Partial<Marketplace>): Promise<Marketplace> {
     const { data, error } = await supabase
       .from('marketplaces')
@@ -148,6 +158,16 @@ export const affiliateService = {
       .from('affiliate_commission_tiers')
       .select('*')
       .order('min_orders')
+    if (error) throw error
+    return data
+  },
+
+  async createTier(payload: Omit<AffiliateCommissionTier, 'id' | 'created_at'>): Promise<AffiliateCommissionTier> {
+    const { data, error } = await supabase
+      .from('affiliate_commission_tiers')
+      .insert(payload)
+      .select()
+      .single()
     if (error) throw error
     return data
   },

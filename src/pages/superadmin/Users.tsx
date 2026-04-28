@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { users } from "@/lib/superadmin-mock";
+import { useUsers } from "@/hooks";
 import { Search, UserPlus, MoreHorizontal } from "lucide-react";
 
 const roleTone: Record<string, string> = {
@@ -19,7 +19,10 @@ const roleTone: Record<string, string> = {
 
 export default function UsersPage() {
   const [q, setQ] = useState("");
-  const filtered = users.filter(u => u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase()));
+  const { data: users = [], isLoading, error } = useUsers();
+
+  const filtered = users.filter(u => u.name?.toLowerCase().includes(q.toLowerCase()) || u.email?.toLowerCase().includes(q.toLowerCase()));
+
   return (
     <>
       <PageHeader
@@ -34,40 +37,48 @@ export default function UsersPage() {
       </div>
       <Card className="border-border/60">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Nama</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Tier</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-mono text-xs">{u.id}</TableCell>
-                  <TableCell className="font-medium">{u.name}</TableCell>
-                  <TableCell className="text-xs">{u.email}</TableCell>
-                  <TableCell><Badge className={roleTone[u.role] || "bg-secondary"}>{u.role}</Badge></TableCell>
-                  <TableCell className="text-xs">{u.tier}</TableCell>
-                  <TableCell>
-                    <Badge className={u.status === "active" ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"}>
-                      {u.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{u.joined}</TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="ghost"><MoreHorizontal className="h-4 w-4" /></Button>
-                  </TableCell>
+          {isLoading ? (
+            <div className="p-5 text-sm text-muted-foreground">Memuat data user...</div>
+          ) : error ? (
+            <div className="p-5 text-sm text-destructive">Gagal memuat data user.</div>
+          ) : filtered.length === 0 ? (
+            <div className="p-5 text-sm text-muted-foreground">Tidak ada user ditemukan.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nama</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Tier</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Bergabung</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">{u.name}</TableCell>
+                    <TableCell className="text-xs">{u.email}</TableCell>
+                    <TableCell><Badge className={roleTone[u.role] || "bg-secondary"}>{u.role}</Badge></TableCell>
+                    <TableCell className="text-xs">{u.tier}</TableCell>
+                    <TableCell>
+                      <Badge className={u.status === "active" ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"}>
+                        {u.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {u.created_at ? new Date(u.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="ghost"><MoreHorizontal className="h-4 w-4" /></Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </>

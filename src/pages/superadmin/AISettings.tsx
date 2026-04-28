@@ -39,7 +39,7 @@ const aiFeatureDefaults = [
 
 export default function AISettingsPage() {
   const qc = useQueryClient();
-  const { data: aiSettings = [], isLoading } = useAiSettings();
+  const { data: aiSettings = [], isLoading, error } = useAiSettings();
   const { data: stats } = useSuperAdminStats();
   const updateMutation = useUpdateAiSetting();
   const createMutation = useCreateAiSetting();
@@ -271,6 +271,10 @@ export default function AISettingsPage() {
 
       <div className="grid gap-3">
         {isLoading && <p className="text-sm text-muted-foreground">Memuat AI settings...</p>}
+        {error && <p className="text-sm text-destructive">Gagal memuat AI settings.</p>}
+        {!isLoading && !error && aiSettings.length === 0 && (
+          <p className="text-sm text-muted-foreground">Belum ada AI setting. Tambahkan di atas.</p>
+        )}
         {aiSettings.map((s) => (
           <Card key={s.id} className="border-border/60">
             <CardContent className="p-5">

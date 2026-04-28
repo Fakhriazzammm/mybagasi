@@ -2,12 +2,13 @@ import { supabase } from '@/lib/supabase'
 import type { MembershipPlan, MembershipTier, UserMembership } from '@/types/database.types'
 
 export const membershipService = {
-  async getPlans(): Promise<MembershipPlan[]> {
-    const { data, error } = await supabase
+  async getPlans(includeInactive = false): Promise<MembershipPlan[]> {
+    let query = supabase
       .from('membership_plans')
       .select('*')
-      .eq('active', true)
       .order('price_monthly', { ascending: true })
+    if (!includeInactive) query = query.eq('active', true)
+    const { data, error } = await query
     if (error) throw error
     return data
   },

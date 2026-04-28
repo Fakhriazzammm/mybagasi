@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, MessageCircle } from "lucide-react";
+import { Menu, X, MessageCircle, User, LogOut, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./Logo";
+import { useAuth } from "@/contexts/AuthContext";
 
 const links = [
   { to: "/", label: "Beranda" },
@@ -10,13 +11,15 @@ const links = [
   { to: "/biaya-transparan", label: "Biaya Transparan" },
   { to: "/batch-shipping", label: "Batch" },
   { to: "/preorder", label: "Pre-order" },
-  { to: "/whatsapp-demo", label: "Demo WA" },
   { to: "/#faq", label: "FAQ" },
 ];
 
 export const Navbar = () => {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
+  const { profile, signOut, getDashboardRoute } = useAuth();
+
+  const dashRoute = getDashboardRoute();
 
   return (
     <header className="sticky top-0 z-40 w-full backdrop-blur-xl bg-background/70 border-b border-border/60">
@@ -36,15 +39,34 @@ export const Navbar = () => {
           ))}
         </nav>
         <div className="hidden md:flex items-center gap-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/dashboard">Dashboard</Link>
-          </Button>
-          <Button variant="hero" size="sm" asChild>
-            <Link to="/whatsapp-demo">
-              <MessageCircle className="h-4 w-4" />
-              Mulai via WhatsApp
-            </Link>
-          </Button>
+          {profile ? (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to={dashRoute}>
+                  <LayoutDashboard className="h-4 w-4 mr-1.5" />
+                  Dashboard
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/profile">
+                  <User className="h-4 w-4 mr-1.5" />
+                  {profile.name?.split(' ')[0] || 'Profil'}
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => signOut()}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/auth/login">Masuk</Link>
+              </Button>
+              <Button variant="hero" size="sm" asChild>
+                <Link to="/auth/register">Daftar Gratis</Link>
+              </Button>
+            </>
+          )}
         </div>
         <button
           className="md:hidden h-10 w-10 grid place-items-center rounded-full hover:bg-secondary"
@@ -67,11 +89,49 @@ export const Navbar = () => {
                 {l.label}
               </Link>
             ))}
-            <Button variant="hero" className="mt-2" asChild>
-              <Link to="/whatsapp-demo" onClick={() => setOpen(false)}>
-                <MessageCircle className="h-4 w-4" /> Mulai via WhatsApp
-              </Link>
-            </Button>
+            <div className="border-t border-border/60 my-2 pt-2">
+              {profile ? (
+                <>
+                  <Link
+                    to={dashRoute}
+                    onClick={() => setOpen(false)}
+                    className="px-4 py-3 rounded-2xl text-sm font-medium hover:bg-secondary flex items-center gap-2"
+                  >
+                    <LayoutDashboard className="h-4 w-4" /> Dashboard
+                  </Link>
+                  <Link
+                    to="/profile"
+                    onClick={() => setOpen(false)}
+                    className="px-4 py-3 rounded-2xl text-sm font-medium hover:bg-secondary flex items-center gap-2"
+                  >
+                    <User className="h-4 w-4" /> {profile.name || 'Profil'}
+                  </Link>
+                  <button
+                    onClick={() => { signOut(); setOpen(false); }}
+                    className="w-full px-4 py-3 rounded-2xl text-sm font-medium hover:bg-secondary flex items-center gap-2 text-red-500"
+                  >
+                    <LogOut className="h-4 w-4" /> Keluar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    to="/auth/login"
+                    onClick={() => setOpen(false)}
+                    className="px-4 py-3 rounded-2xl text-sm font-medium hover:bg-secondary"
+                  >
+                    Masuk
+                  </Link>
+                  <Link
+                    to="/auth/register"
+                    onClick={() => setOpen(false)}
+                    className="px-4 py-3 rounded-2xl text-sm font-bold text-primary hover:bg-primary-soft"
+                  >
+                    Daftar Gratis
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

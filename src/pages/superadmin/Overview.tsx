@@ -4,17 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import { Users, Crown, Calculator, Settings2, Truck, Store, Share2, Brain, Activity } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { platformStats, marketplaces } from "@/lib/superadmin-mock";
-import type { LucideIcon } from "lucide-react";
+import { useSuperAdminStats, useMarketplaces } from "@/hooks";
 
-type StatProps = {
-  icon: LucideIcon;
-  label: string;
-  value: string | number;
-  sub?: string;
-};
-
-const Stat = ({ icon: Icon, label, value, sub }: StatProps) => (
+const Stat = ({ icon: Icon, label, value, sub }: any) => (
   <Card className="border-border/60">
     <CardContent className="p-5">
       <div className="flex items-start justify-between">
@@ -32,7 +24,6 @@ const Stat = ({ icon: Icon, label, value, sub }: StatProps) => (
 );
 
 const sections = [
-  { icon: Activity, label: "Ops Command Center", to: "/super-admin/ops-center", desc: "Queue SLA procurement dan scraper" },
   { icon: Users, label: "Users", to: "/super-admin/users", desc: "Kelola semua role & status" },
   { icon: Crown, label: "Membership Plans", to: "/super-admin/plans", desc: "Free, Plus, Pro, Seller" },
   { icon: Calculator, label: "Pricing Rules", to: "/super-admin/pricing", desc: "Service fee & markup" },
@@ -44,6 +35,9 @@ const sections = [
 ];
 
 export default function SuperAdminOverview() {
+  const { data: stats, isLoading: statsLoading, error: statsError } = useSuperAdminStats();
+  const { data: marketplaces, isLoading: mpLoading, error: mpError } = useMarketplaces();
+
   return (
     <>
       <PageHeader
@@ -52,10 +46,18 @@ export default function SuperAdminOverview() {
         description="Konfigurasi dan kontrol penuh seluruh sistem MyBagasi."
       />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
-        <Stat icon={Users} label="Total users" value={platformStats.totalUsers.toLocaleString("id-ID")} sub="semua role" />
-        <Stat icon={Crown} label="Active members" value={platformStats.activeMembers.toLocaleString("id-ID")} sub="Plus / Pro / Seller" />
-        <Stat icon={Share2} label="Affiliates" value={platformStats.affiliates} sub="creator aktif" />
-        <Stat icon={Activity} label="AI tokens MTD" value={(platformStats.aiTokensMtd / 1000).toFixed(0) + "K"} sub="pemakaian bulan ini" />
+        {statsLoading ? (
+          <Card className="border-border/60 col-span-4"><CardContent className="p-5 text-sm text-muted-foreground">Memuat statistik...</CardContent></Card>
+        ) : statsError ? (
+          <Card className="border-border/60 col-span-4"><CardContent className="p-5 text-sm text-destructive">Gagal memuat statistik.</CardContent></Card>
+        ) : stats ? (
+          <>
+            <Stat icon={Users} label="Total users" value={(stats.totalUsers ?? 0).toLocaleString("id-ID")} sub="semua role" />
+            <Stat icon={Crown} label="Active members" value={(stats.activeMembers ?? 0).toLocaleString("id-ID")} sub="Plus / Pro / Seller" />
+            <Stat icon={Share2} label="Affiliates" value={stats.affiliates ?? 0} sub="creator aktif" />
+            <Stat icon={Activity} label="Marketplaces" value={stats.marketplacesActive ?? 0} sub="source aktif" />
+          </>
+        ) : null}
       </div>
 
       <h2 className="font-display text-lg font-bold mb-3">Konfigurasi Sistem</h2>
@@ -81,17 +83,25 @@ export default function SuperAdminOverview() {
           <Button variant="ghost" size="sm" asChild><Link to="/super-admin/marketplaces">Manage</Link></Button>
         </CardHeader>
         <CardContent className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {marketplaces.slice(0, 8).map((m) => (
-            <div key={m.id} className="border border-border/60 rounded-2xl p-3">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm">{m.name}</span>
-                <Badge className={m.scraperHealth >= 95 ? "bg-success/15 text-success" : m.scraperHealth >= 90 ? "bg-warning/15 text-warning" : "bg-destructive/15 text-destructive"}>
-                  {m.scraperHealth}%
-                </Badge>
+          {mpLoading ? (
+            <p className="text-sm text-muted-foreground col-span-full">Memuat marketplace...</p>
+          ) : mpError ? (
+            <p className="text-sm text-destructive col-span-full">Gagal memuat marketplace.</p>
+          ) : marketplaces && marketplaces.length > 0 ? (
+            marketplaces.slice(0, 8).map((m) => (
+              <div key={m.id} className="border border-border/60 rounded-2xl p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-sm">{m.name}</span>
+                  <Badge className={m.scraper_health >= 95 ? "bg-success/15 text-success" : m.scraper_health >= 90 ? "bg-warning/15 text-warning" : "bg-destructive/15 text-destructive"}>
+                    {m.scraper_health}%
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">{m.orders_mtd} orders MTD</p>
               </div>
-              <p className="text-[11px] text-muted-foreground mt-1">{m.ordersMtd} orders MTD</p>
-            </div>
-          ))}
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground col-span-full">Belum ada marketplace terdaftar.</p>
+          )}
         </CardContent>
       </Card>
     </>

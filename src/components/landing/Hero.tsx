@@ -27,7 +27,7 @@ export const Hero = () => (
         </p>
         <div className="flex flex-col sm:flex-row gap-3">
           <Button variant="whatsapp" size="xl" asChild>
-            <Link to="/whatsapp-demo">
+            <Link to="/quotation">
               <MessageCircle className="h-5 w-5" />
               Mulai via WhatsApp
             </Link>

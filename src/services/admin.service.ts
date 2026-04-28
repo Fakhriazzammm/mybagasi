@@ -25,12 +25,25 @@ export const procurementService = {
   },
 
   async updateStatus(id: string, status: ProcurementStatus): Promise<ProcurementQueue> {
+    const updates: Partial<ProcurementQueue> & Record<string, unknown> = { status }
+    if (status === 'purchasing' || status === 'failed') updates.last_attempt_at = new Date().toISOString()
+    if (status === 'failed') updates.retry_count = undefined
+
     const { data, error } = await supabase
       .from('procurement_queue')
-      .update({ status })
+      .update(updates)
       .eq('id', id)
       .select()
       .single()
+    if (error) throw error
+    return data
+  },
+
+  async markPurchased(id: string, purchaseRef?: string): Promise<ProcurementQueue> {
+    const { data, error } = await supabase.rpc('mark_procurement_purchased', {
+      p_procurement_id: id,
+      p_purchase_ref: purchaseRef ?? null,
+    })
     if (error) throw error
     return data
   },

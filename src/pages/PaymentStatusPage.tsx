@@ -99,7 +99,7 @@ const PaymentStatusPage = () => {
                   </Link>
                 </Button>
                 <Button variant="outline" asChild className="flex-1">
-                  <Link to="/whatsapp-demo">
+                  <Link to="/dashboard/ai-shopper">
                     <MessageCircle className="h-4 w-4" />
                     WhatsApp
                   </Link>

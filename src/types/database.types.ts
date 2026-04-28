@@ -15,7 +15,7 @@ export type SupportChannel = 'WhatsApp' | 'Email'
 export type SupportStatus = 'open' | 'in_progress' | 'resolved'
 export type PointsType = 'earn' | 'redeem' | 'expire'
 export type BatchStatus = 'open' | 'closing_soon' | 'closed' | 'shipping'
-export type AlertStatus = 'monitoring' | 'triggered'
+export type AlertStatus = 'monitoring' | 'triggered' | 'paused'
 export type AffiliatePayoutStatus = 'pending' | 'approved' | 'paid'
 export type PricingType = 'percent' | 'flat'
 export type ProcurementStatus = 'pending' | 'purchasing' | 'purchased' | 'failed'
@@ -425,4 +425,37 @@ export interface SupportNoteWithDetails extends SupportNote {
 
 export interface BatchShipmentWithCount extends BatchShipment {
   participant_count: number
+}
+
+// Landing page content tables
+export interface Category {
+  id: string
+  emoji: string
+  name: string
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Testimonial {
+  id: string
+  name: string
+  city: string
+  text: string
+  rating: number
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FAQ {
+  id: string
+  question: string
+  answer: string
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
 }

@@ -5,12 +5,21 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOrders } from "@/hooks";
-import { fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/customer-mock";
+import { fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
 import type { OrderStatus } from "@/types/database.types";
 
 const Orders = () => {
   const [search, setSearch] = useState("");
-  const { data: orders = [], isLoading } = useOrders();
+  const { data: orders = [], isLoading, error } = useOrders();
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-destructive">Gagal memuat data</p>
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+      </div>
+    );
+  }
 
   const filtered = orders.filter(
     (o) =>

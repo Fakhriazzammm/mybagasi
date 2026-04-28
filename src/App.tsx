@@ -3,11 +3,25 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+
+// Auth
+import Login from "@/pages/auth/Login";
+import Register from "@/pages/auth/Register";
+import ForgotPassword from "@/pages/auth/ForgotPassword";
+import Profile from "@/pages/Profile";
+import { ProtectedRoute, GuestRoute } from "@/components/auth/RouteGuards";
+
+// Public pages
 import Index from "./pages/Index.tsx";
-import WhatsAppDemo from "./pages/WhatsAppDemo.tsx";
 import Quotation from "./pages/Quotation.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Install from "./pages/Install.tsx";
+import CheckoutPage from "./pages/CheckoutPage";
+import PaymentStatusPage from "./pages/PaymentStatusPage";
+import BatchShipping from "./pages/BatchShipping";
+import Preorder from "./pages/Preorder";
+
+// Dashboard (customer)
 import { DashboardLayout } from "./components/dashboard/DashboardLayout";
 import Overview from "./pages/dashboard/Overview";
 import Quotations from "./pages/dashboard/Quotations";
@@ -19,11 +33,8 @@ import Addresses from "./pages/dashboard/Addresses";
 import Membership from "./pages/dashboard/Membership";
 import Points from "./pages/dashboard/Points";
 import AIShopper from "./pages/dashboard/AIShopper";
-import CheckoutPage from "./pages/CheckoutPage";
-import PaymentStatusPage from "./pages/PaymentStatusPage";
-import TransparentPricing from "./pages/TransparentPricing";
-import BatchShipping from "./pages/BatchShipping";
-import Preorder from "./pages/Preorder";
+
+// Admin
 import { AdminLayout } from "./components/admin/AdminLayout";
 import AdminOverview from "./pages/admin/Overview";
 import Procurement from "./pages/admin/Procurement";
@@ -31,6 +42,8 @@ import TrackingExceptionsPage from "./pages/admin/TrackingExceptions";
 import ScraperFailuresPage from "./pages/admin/ScraperFailures";
 import Approvals from "./pages/admin/Approvals";
 import Support from "./pages/admin/Support";
+
+// Finance
 import { FinanceLayout } from "./components/finance/FinanceLayout";
 import FinanceOverview from "./pages/finance/Overview";
 import Payments from "./pages/finance/Payments";
@@ -39,6 +52,8 @@ import Refunds from "./pages/finance/Refunds";
 import PointsLedger from "./pages/finance/Points";
 import AffiliatePayoutPage from "./pages/finance/Affiliate";
 import MembershipRevenuePage from "./pages/finance/Membership";
+
+// Super Admin
 import { SuperAdminLayout } from "./components/superadmin/SuperAdminLayout";
 import SuperAdminOverview from "./pages/superadmin/Overview";
 import UsersPage from "./pages/superadmin/Users";
@@ -49,7 +64,6 @@ import Shipping from "./pages/superadmin/Shipping";
 import Marketplaces from "./pages/superadmin/Marketplaces";
 import Commission from "./pages/superadmin/Commission";
 import AISettingsPage from "./pages/superadmin/AISettings";
-import OpsCommandCenter from "./pages/superadmin/OpsCommandCenter";
 
 const queryClient = new QueryClient();
 
@@ -60,45 +74,33 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
+          {/* Public routes */}
           <Route path="/" element={<Index />} />
-          <Route path="/whatsapp-demo" element={<WhatsAppDemo />} />
           <Route path="/quotation" element={<Quotation />} />
           <Route path="/batch-shipping" element={<BatchShipping />} />
           <Route path="/preorder" element={<Preorder />} />
           <Route path="/install" element={<Install />} />
           <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/biaya-transparan" element={<TransparentPricing />} />
           <Route path="/payment/status" element={<PaymentStatusPage />} />
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<AdminOverview />} />
-            <Route path="procurement" element={<Procurement />} />
-            <Route path="tracking" element={<TrackingExceptionsPage />} />
-            <Route path="scraper" element={<ScraperFailuresPage />} />
-            <Route path="approvals" element={<Approvals />} />
-            <Route path="support" element={<Support />} />
-          </Route>
-          <Route path="/finance" element={<FinanceLayout />}>
-            <Route index element={<FinanceOverview />} />
-            <Route path="payments" element={<Payments />} />
-            <Route path="pending" element={<Pending />} />
-            <Route path="refunds" element={<Refunds />} />
-            <Route path="points" element={<PointsLedger />} />
-            <Route path="affiliate" element={<AffiliatePayoutPage />} />
-            <Route path="membership" element={<MembershipRevenuePage />} />
-          </Route>
-          <Route path="/super-admin" element={<SuperAdminLayout />}>
-            <Route index element={<SuperAdminOverview />} />
-            <Route path="ops-center" element={<OpsCommandCenter />} />
-            <Route path="users" element={<UsersPage />} />
-            <Route path="plans" element={<Plans />} />
-            <Route path="pricing" element={<Pricing />} />
-            <Route path="fees" element={<Fees />} />
-            <Route path="shipping" element={<Shipping />} />
-            <Route path="marketplaces" element={<Marketplaces />} />
-            <Route path="commission" element={<Commission />} />
-            <Route path="ai" element={<AISettingsPage />} />
-          </Route>
-          <Route path="/dashboard" element={<DashboardLayout />}>
+
+          {/* Auth routes (guest only) */}
+          <Route path="/auth/login" element={<GuestRoute><Login /></GuestRoute>} />
+          <Route path="/auth/register" element={<GuestRoute><Register /></GuestRoute>} />
+          <Route path="/auth/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
+
+          {/* Profile (requires auth) */}
+          <Route path="/profile" element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          } />
+
+          {/* Customer Dashboard (requires auth) */}
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Overview />} />
             <Route path="quotations" element={<Quotations />} />
             <Route path="orders" element={<Orders />} />
@@ -111,7 +113,53 @@ const App = () => (
             <Route path="ai-shopper" element={<AIShopper />} />
             <Route path="shopper-ai" element={<AIShopper />} />
           </Route>
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+
+          {/* Admin (requires ops_admin or super_admin) */}
+          <Route path="/admin" element={
+            <ProtectedRoute roles={['ops_admin', 'support', 'super_admin']}>
+              <AdminLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<AdminOverview />} />
+            <Route path="procurement" element={<Procurement />} />
+            <Route path="tracking" element={<TrackingExceptionsPage />} />
+            <Route path="scraper" element={<ScraperFailuresPage />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="support" element={<Support />} />
+          </Route>
+
+          {/* Finance (requires finance or super_admin) */}
+          <Route path="/finance" element={
+            <ProtectedRoute roles={['finance', 'super_admin']}>
+              <FinanceLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<FinanceOverview />} />
+            <Route path="payments" element={<Payments />} />
+            <Route path="pending" element={<Pending />} />
+            <Route path="refunds" element={<Refunds />} />
+            <Route path="points" element={<PointsLedger />} />
+            <Route path="affiliate" element={<AffiliatePayoutPage />} />
+            <Route path="membership" element={<MembershipRevenuePage />} />
+          </Route>
+
+          {/* Super Admin (requires super_admin) */}
+          <Route path="/super-admin" element={
+            <ProtectedRoute roles={['super_admin']}>
+              <SuperAdminLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<SuperAdminOverview />} />
+            <Route path="users" element={<UsersPage />} />
+            <Route path="plans" element={<Plans />} />
+            <Route path="pricing" element={<Pricing />} />
+            <Route path="fees" element={<Fees />} />
+            <Route path="shipping" element={<Shipping />} />
+            <Route path="marketplaces" element={<Marketplaces />} />
+            <Route path="commission" element={<Commission />} />
+            <Route path="ai" element={<AISettingsPage />} />
+          </Route>
+
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

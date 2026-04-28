@@ -2,7 +2,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { refunds, fmtRp } from "@/lib/finance-mock";
+import { useQuery } from "@tanstack/react-query";
+import { refundsService } from "@/services/payments.service";
+import { fmtRp } from "@/lib/format";
 import { Check, X, FileText } from "lucide-react";
 
 const tone: Record<string, string> = {
@@ -20,6 +22,37 @@ const label: Record<string, string> = {
 };
 
 export default function Refunds() {
+  const { data: refunds = [], isLoading, error } = useQuery({
+    queryKey: ["refunds", "all"],
+    queryFn: () => refundsService.listAll(),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="animate-pulse space-y-4 p-6">
+        <div className="h-20 bg-secondary rounded-3xl" />
+        <div className="h-20 bg-secondary rounded-3xl" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-destructive">Gagal memuat</p>
+        <p className="text-xs text-muted-foreground">{(error as Error).message}</p>
+      </div>
+    );
+  }
+
+  if (refunds.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Belum ada data</p>
+      </div>
+    );
+  }
+
   return (
     <>
       <PageHeader eyebrow="Finance" title="Refund Queue" description="Permintaan refund yang perlu review dan diproses." />
@@ -33,12 +66,12 @@ export default function Refunds() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-xs">{r.id}</span>
-                    <span className="font-mono text-xs text-muted-foreground">{r.order}</span>
+                    <span className="font-mono text-xs">{r.id.slice(0, 8)}…</span>
+                    <span className="font-mono text-xs text-muted-foreground">{r.order_id?.slice(0, 8) ?? "—"}</span>
                     <Badge className={tone[r.status]}>{label[r.status]}</Badge>
                   </div>
-                  <p className="font-semibold mt-1">{r.customer}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{r.reason} · {r.at}</p>
+                  <p className="font-semibold mt-1">{(r as any).profiles?.name ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{r.reason} · {new Date(r.created_at).toLocaleString("id-ID")}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

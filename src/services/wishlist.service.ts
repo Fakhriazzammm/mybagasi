@@ -32,7 +32,7 @@ export const wishlistService = {
     if (error) throw error
   },
 
-  async update(id: string, payload: Partial<Pick<WishlistItem, 'name' | 'emoji' | 'note' | 'price_idr'>>): Promise<WishlistItem> {
+  async update(id: string, payload: Partial<Pick<WishlistItem, 'name' | 'emoji' | 'note' | 'price_idr' | 'url' | 'source'>>): Promise<WishlistItem> {
     const { data, error } = await supabase
       .from('wishlist_items')
       .update(payload)
@@ -69,6 +69,25 @@ export const priceAlertsService = {
       .single()
     if (error) throw error
     return data
+  },
+
+  async update(id: string, payload: Partial<Pick<PriceAlert, 'product' | 'url' | 'current_price' | 'target_price' | 'status'>>): Promise<PriceAlert> {
+    const { data, error } = await supabase
+      .from('price_alerts')
+      .update({ ...payload, last_checked_at: payload.current_price != null ? new Date().toISOString() : undefined })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async pause(id: string): Promise<PriceAlert> {
+    return priceAlertsService.update(id, { status: 'paused' })
+  },
+
+  async resume(id: string): Promise<PriceAlert> {
+    return priceAlertsService.update(id, { status: 'monitoring' })
   },
 
   async delete(id: string): Promise<void> {

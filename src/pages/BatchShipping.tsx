@@ -5,9 +5,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { batches, batchParticipants, fmtRp } from "@/lib/admin-mock";
+import { useBatchShipments, useJoinBatch } from "@/hooks";
+import { fmtRp } from "@/lib/format";
 import { Clock, MapPin, Users, Plane, Package, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 
 const statusTone: Record<string, string> = {
   open: "bg-success/15 text-success",
@@ -52,6 +54,37 @@ const Countdown = ({ to }: { to: string }) => {
 };
 
 export default function BatchShipping() {
+  const { data: batches = [], isLoading, error } = useBatchShipments();
+  const joinBatch = useJoinBatch();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <div className="flex-1 container mx-auto py-20">
+          <div className="animate-pulse space-y-4 p-6">
+            <div className="h-20 bg-secondary rounded-3xl" />
+            <div className="h-20 bg-secondary rounded-3xl" />
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <div className="flex-1 container mx-auto py-20 text-center">
+          <p className="text-destructive">Gagal memuat</p>
+          <p className="text-xs text-muted-foreground">{(error as Error).message}</p>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
@@ -75,77 +108,86 @@ export default function BatchShipping() {
       <main className="container mx-auto py-10 md:py-14 flex-1">
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 grid gap-5">
-            {batches.map((b) => {
-              const fillPct = Math.round((b.joined / b.capacity) * 100);
-              return (
-                <Card key={b.id} className="border-border/60 overflow-hidden">
-                  <CardContent className="p-0">
-                    <div className="p-5 md:p-6">
-                      <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge className={statusTone[b.status]}>{statusLabel[b.status]}</Badge>
-                            <span className="font-mono text-[11px] text-muted-foreground">{b.id}</span>
-                          </div>
-                          <h3 className="font-display text-xl font-bold mt-2">{b.name}</h3>
-                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
-                            <MapPin className="h-3 w-3" />{b.route} · sampai {b.arrivesAt}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[11px] text-muted-foreground flex items-center gap-1 justify-end"><Clock className="h-3 w-3" />Tutup dalam</p>
-                          <div className="mt-1.5"><Countdown to={b.closesAt} /></div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-3 my-4">
-                        <div className="bg-secondary/60 rounded-2xl p-3">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Hemat ongkir</p>
-                          <p className="font-display text-xl font-bold text-success mt-1">{b.savingsPercent}%</p>
-                        </div>
-                        <div className="bg-secondary/60 rounded-2xl p-3">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Per kg</p>
-                          <p className="font-display text-xl font-bold mt-1">{fmtRp(b.pricePerKg)}</p>
-                        </div>
-                        <div className="bg-secondary/60 rounded-2xl p-3">
-                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Peserta</p>
-                          <p className="font-display text-xl font-bold mt-1">{b.joined}/{b.capacity}</p>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-xs mb-1.5">
-                          <span className="text-muted-foreground">Kapasitas terisi</span>
-                          <span className="font-semibold">{fillPct}%</span>
-                        </div>
-                        <Progress value={fillPct} className="h-2" />
-                      </div>
-
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/40">
-                        <div className="flex -space-x-2">
-                          {batchParticipants.slice(0, 5).map((p, i) => (
-                            <div key={i} className="h-8 w-8 rounded-full bg-gradient-coral text-primary-foreground grid place-items-center text-[10px] font-bold border-2 border-background">
-                              {p.initials}
+            {batches.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Belum ada batch tersedia</p>
+              </div>
+            ) : (
+              batches.map((b: any) => {
+                const joined = b.participants?.[0]?.count ?? 0;
+                const fillPct = b.capacity > 0 ? Math.round((joined / b.capacity) * 100) : 0;
+                return (
+                  <Card key={b.id} className="border-border/60 overflow-hidden">
+                    <CardContent className="p-0">
+                      <div className="p-5 md:p-6">
+                        <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className={statusTone[b.status] ?? "bg-muted text-muted-foreground"}>{statusLabel[b.status] ?? b.status}</Badge>
+                              <span className="font-mono text-[11px] text-muted-foreground">{b.id.slice(0, 8)}…</span>
                             </div>
-                          ))}
-                          <div className="h-8 w-8 rounded-full bg-secondary grid place-items-center text-[10px] font-bold border-2 border-background">
-                            +{Math.max(0, b.joined - 5)}
+                            <h3 className="font-display text-xl font-bold mt-2">{b.name}</h3>
+                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+                              <MapPin className="h-3 w-3" />{b.route} · sampai {b.arrives_at ? new Date(b.arrives_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1 justify-end"><Clock className="h-3 w-3" />Tutup dalam</p>
+                            <div className="mt-1.5"><Countdown to={b.closes_at} /></div>
                           </div>
                         </div>
-                        <Button
-                          variant={b.status === "shipping" || b.status === "closed" ? "outline" : "hero"}
-                          size="sm"
-                          disabled={b.status === "shipping" || b.status === "closed"}
-                        >
-                          <Package className="h-4 w-4" />
-                          {b.status === "shipping" ? "Sedang dikirim" : b.status === "closed" ? "Closed" : "Join batch"}
-                        </Button>
+
+                        <div className="grid grid-cols-3 gap-3 my-4">
+                          <div className="bg-secondary/60 rounded-2xl p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Hemat ongkir</p>
+                            <p className="font-display text-xl font-bold text-success mt-1">{b.savings_percent}%</p>
+                          </div>
+                          <div className="bg-secondary/60 rounded-2xl p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Per kg</p>
+                            <p className="font-display text-xl font-bold mt-1">{fmtRp(b.price_per_kg)}</p>
+                          </div>
+                          <div className="bg-secondary/60 rounded-2xl p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Peserta</p>
+                            <p className="font-display text-xl font-bold mt-1">{joined}/{b.capacity}</p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-xs mb-1.5">
+                            <span className="text-muted-foreground">Kapasitas terisi</span>
+                            <span className="font-semibold">{fillPct}%</span>
+                          </div>
+                          <Progress value={fillPct} className="h-2" />
+                        </div>
+
+                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/40">
+                          <div className="text-xs text-muted-foreground">
+                            {joined} peserta terdaftar
+                          </div>
+                          <Button
+                            variant={b.status === "shipping" || b.status === "closed" ? "outline" : "hero"}
+                            size="sm"
+                            disabled={b.status === "shipping" || b.status === "closed" || joinBatch.isPending}
+                            onClick={() => {
+                              joinBatch.mutate(
+                                { batch_id: b.id, items: 1, weight_kg: 1 },
+                                {
+                                  onSuccess: () => toast.success("Berhasil join batch!"),
+                                  onError: (e) => toast.error("Gagal join", { description: (e as Error).message }),
+                                }
+                              );
+                            }}
+                          >
+                            <Package className="h-4 w-4" />
+                            {b.status === "shipping" ? "Sedang dikirim" : b.status === "closed" ? "Closed" : "Join batch"}
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
           </div>
 
           <div className="space-y-5">
@@ -173,17 +215,18 @@ export default function BatchShipping() {
 
             <Card className="border-border/60">
               <CardContent className="p-5">
-                <h3 className="font-semibold flex items-center gap-2"><Users className="h-4 w-4 text-primary" />Peserta batch aktif</h3>
-                <div className="mt-3 space-y-2.5">
-                  {batchParticipants.map((p, i) => (
-                    <div key={i} className="flex items-center gap-3 text-sm">
-                      <div className="h-8 w-8 rounded-full bg-gradient-coral text-primary-foreground grid place-items-center text-[10px] font-bold">{p.initials}</div>
-                      <div className="flex-1">
-                        <p className="font-medium">{p.name}</p>
-                        <p className="text-[11px] text-muted-foreground">{p.items} item · {p.weight} kg</p>
+                <h3 className="font-semibold flex items-center gap-2"><Users className="h-4 w-4 text-primary" />Batch tersedia</h3>
+                <div className="mt-3 space-y-2.5 text-sm">
+                  {batches.length === 0 ? (
+                    <p className="text-muted-foreground">Belum ada batch</p>
+                  ) : (
+                    batches.map((b: any) => (
+                      <div key={b.id} className="flex items-center gap-3">
+                        <span className="font-medium flex-1">{b.name}</span>
+                        <span className="text-xs text-muted-foreground">{b.route}</span>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
                 <Button variant="ghost" size="sm" asChild className="w-full mt-3">
                   <Link to="/preorder">Lihat juga Pre-order →</Link>

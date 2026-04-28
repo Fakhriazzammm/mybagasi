@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Package } from "lucide-react";
 import type { OrderStatus, OrderTracking } from "@/types/database.types";
-import { STATUS_LABEL } from "@/lib/customer-mock";
+import { STATUS_LABEL } from "@/lib/order-status";
 
 const ORDER_STAGES: OrderStatus[] = [
   "quote_created",

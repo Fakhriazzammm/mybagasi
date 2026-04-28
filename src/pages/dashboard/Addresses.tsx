@@ -4,9 +4,18 @@ import { Button } from "@/components/ui/button";
 import { useAddresses, useDeleteAddress, useSetPrimaryAddress } from "@/hooks";
 
 const Addresses = () => {
-  const { data: addresses = [], isLoading } = useAddresses();
+  const { data: addresses = [], isLoading, error } = useAddresses();
   const deleteMutation = useDeleteAddress();
   const setPrimaryMutation = useSetPrimaryAddress();
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-destructive">Gagal memuat data</p>
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+      </div>
+    );
+  }
 
   return (
     <>
