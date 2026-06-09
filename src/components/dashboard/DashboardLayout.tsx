@@ -10,16 +10,20 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 
-const customerNav = [
-  { to: "/dashboard", label: "Beranda", icon: LayoutDashboard, end: true },
-  { to: "/dashboard/orders", label: "Pesanan", icon: Package },
-  { to: "/dashboard/wishlist", label: "Wishlist", icon: Heart },
-  { to: "/dashboard/membership", label: "Member", icon: Crown },
-  { to: "/dashboard/addresses", label: "Akun", icon: User },
-];
-
 export const DashboardLayout = () => {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, getDashboardRoute } = useAuth();
+  const dash = getDashboardRoute();
+
+  const customerNav = [
+    { to: dash, label: "Beranda", icon: LayoutDashboard, end: true },
+    { to: `${dash}/orders`, label: "Pesanan", icon: Package },
+    { to: `${dash}/wishlist`, label: "Wishlist", icon: Heart },
+    { to: `${dash}/membership`, label: "Member", icon: Crown },
+    { to: `${dash}/addresses`, label: "Akun", icon: User },
+  ];
+
+  if (!profile) return null;
+
   const name = profile?.name || "User";
   const initials = name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "U";
   const email = profile?.email || "";
@@ -37,7 +41,7 @@ export const DashboardLayout = () => {
               <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary" />
             </Button>
             <Button variant="hero" size="sm" asChild className="hidden sm:inline-flex">
-              <Link to="/dashboard/ai-shopper"><MessageCircle className="h-4 w-4" />Chat MyBagasi</Link>
+              <Link to={`${dash}/ai-shopper`}><MessageCircle className="h-4 w-4" />Chat MyBagasi</Link>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

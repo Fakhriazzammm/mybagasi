@@ -39,7 +39,7 @@ const TIER_COLORS: Record<string, string> = {
 }
 
 export default function Profile() {
-  const { profile, user, signOut, updateProfile, changePassword, loading: authLoading } = useAuth()
+  const { profile, user, signOut, updateProfile, changePassword, loading: authLoading, getDashboardRoute } = useAuth()
   const navigate = useNavigate()
 
   const [name, setName] = useState(profile?.name || '')
@@ -126,7 +126,7 @@ export default function Profile() {
     <div className="min-h-screen bg-gradient-to-br from-background via-orange-50/10 to-background">
       {/* Header */}
       <header className="sticky top-0 z-30 h-16 flex items-center gap-4 border-b border-border/60 bg-background/80 backdrop-blur px-4 md:px-6">
-        <Link to="/dashboard" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+        <Link to={getDashboardRoute()} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div className="flex items-center gap-2">
@@ -134,7 +134,7 @@ export default function Profile() {
           <span className="font-semibold text-lg">MyBagasi</span>
         </div>
         <div className="flex-1" />
-        <Link to="/dashboard">
+        <Link to={getDashboardRoute()}>
           <Button variant="ghost" size="sm">
             <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
           </Button>

@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   CheckCircle2,
   Clock,
@@ -16,9 +17,14 @@ import { getInvoice, type MayarInvoiceStatus } from "@/lib/mayar";
 
 const PaymentStatusPage = () => {
   const [params] = useSearchParams();
+  const { getDashboardRoute } = useAuth();
   const invoiceId = params.get("invoice_id") ?? params.get("id") ?? "";
   const orderId = params.get("order_id");
   const statusUpdatedRef = useRef(false);
+
+  if (!getDashboardRoute) {
+    return null;
+  }
 
   const [status, setStatus] = useState<MayarInvoiceStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,13 +118,13 @@ const PaymentStatusPage = () => {
               </div>
               <div className="flex gap-3">
                 <Button variant="hero" asChild className="flex-1">
-                  <Link to="/dashboard/orders">
+                  <Link to={getDashboardRoute() + "/orders"}>
                     <Home className="h-4 w-4" />
                     Lihat Order
                   </Link>
                 </Button>
                 <Button variant="outline" asChild className="flex-1">
-                  <Link to="/dashboard/ai-shopper">
+                  <Link to={getDashboardRoute() + "/ai-shopper"}>
                     <MessageCircle className="h-4 w-4" />
                     WhatsApp
                   </Link>
@@ -171,7 +177,7 @@ const PaymentStatusPage = () => {
                 </p>
               </div>
               <Button variant="hero" asChild>
-                <Link to="/dashboard/ai-shopper">Buat Order Baru</Link>
+                <Link to={getDashboardRoute() + "/ai-shopper"}>Buat Order Baru</Link>
               </Button>
             </div>
           )}
@@ -192,7 +198,7 @@ const PaymentStatusPage = () => {
                   Coba Lagi
                 </Button>
                 <Button variant="hero" asChild className="flex-1">
-                  <Link to="/dashboard/ai-shopper">AI Shopper</Link>
+                  <Link to={getDashboardRoute() + "/ai-shopper"}>AI Shopper</Link>
                 </Button>
               </div>
             </div>

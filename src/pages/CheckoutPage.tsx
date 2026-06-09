@@ -3,6 +3,7 @@ import { useSearchParams, Link } from "react-router-dom";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   CreditCard,
   ExternalLink,
@@ -19,7 +20,12 @@ const APP_BASE_URL = import.meta.env.VITE_APP_BASE_URL as string;
 
 const CheckoutPage = () => {
   const [params] = useSearchParams();
+  const { getDashboardRoute } = useAuth();
   const orderId = params.get("order_id");
+
+  if (!getDashboardRoute) {
+    return null;
+  }
 
   const [dbOrder, setDbOrder] = useState(null);
   const [loadingOrder, setLoadingOrder] = useState(false);
@@ -39,7 +45,7 @@ const CheckoutPage = () => {
   const productPrice = dbOrder?.total ?? parseInt(params.get("price") ?? "0", 10);
   const sourceUrl = params.get("url") ?? "";
 
-  const backLink = params.get("from") || "/dashboard/ai-shopper";
+  const backLink = params.get("from") || getDashboardRoute() + "/ai-shopper";
   const backLabel = params.get("from") === "/aipersonalshopper" ? "Kembali ke Personal Shopper" : "Kembali ke AI Shopper";
 
   const feeService = Math.round(productPrice * 0.15);

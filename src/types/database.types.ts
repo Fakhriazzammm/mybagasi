@@ -24,6 +24,7 @@ export interface Profile {
   id: string
   name: string
   email: string
+  username: string
   role: UserRole
   tier: MembershipTier
   status: UserStatus

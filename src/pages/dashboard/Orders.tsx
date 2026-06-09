@@ -5,12 +5,18 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOrders } from "@/hooks";
+import { useAuth } from "@/contexts/AuthContext";
 import { fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
 import type { OrderStatus } from "@/types/database.types";
 
 const Orders = () => {
   const [search, setSearch] = useState("");
+  const { getDashboardRoute } = useAuth();
   const { data: orders = [], isLoading, error } = useOrders();
+
+  if (!getDashboardRoute) {
+    return null;
+  }
 
   if (error) {
     return (
@@ -66,7 +72,7 @@ const Orders = () => {
             filtered.map((o) => (
               <Link
                 key={o.id}
-                to={`/dashboard/orders/${o.id}`}
+                to={`${getDashboardRoute()}/orders/${o.id}`}
                 className="flex items-center gap-4 p-5 hover:bg-secondary/30 transition-colors"
               >
                 <div className="h-14 w-14 rounded-2xl bg-secondary grid place-items-center text-primary shrink-0">

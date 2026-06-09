@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,6 +10,7 @@ import Register from "@/pages/auth/Register";
 import ForgotPassword from "@/pages/auth/ForgotPassword";
 import Profile from "@/pages/Profile";
 import { ProtectedRoute, GuestRoute } from "@/components/auth/RouteGuards";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Public pages
 import Index from "./pages/Index.tsx";
@@ -33,6 +34,14 @@ import Addresses from "./pages/dashboard/Addresses";
 import Membership from "./pages/dashboard/Membership";
 import Points from "./pages/dashboard/Points";
 import AIShopper from "./pages/dashboard/AIShopper";
+
+// Redirect /dashboard → /:username/dashboard
+function DashboardRedirect() {
+  const { profile, loading } = useAuth();
+  if (loading) return null;
+  if (!profile) return <Navigate to="/auth/login" replace />;
+  return <Navigate to={`/${profile.username}/dashboard`} replace />;
+}
 
 // Admin
 import { AdminLayout } from "./components/admin/AdminLayout";
@@ -95,8 +104,9 @@ const App = () => (
             </ProtectedRoute>
           } />
 
-          {/* Customer Dashboard (requires auth) */}
-          <Route path="/dashboard" element={
+          {/* Customer Dashboard (requires auth) */}          
+          <Route path="/dashboard" element={<DashboardRedirect />} />
+          <Route path=":username/dashboard" element={
             <ProtectedRoute>
               <DashboardLayout />
             </ProtectedRoute>

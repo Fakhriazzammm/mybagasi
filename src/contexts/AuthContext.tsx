@@ -150,8 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       case 'super_admin': return '/super-admin'
       case 'ops_admin': case 'support': return '/admin'
       case 'finance': return '/finance'
-      case 'affiliate': return '/dashboard'
-      default: return '/dashboard'
+      case 'affiliate': return `/${profile.username}/dashboard`
+      default: return `/${profile.username}/dashboard`
     }
   }
 

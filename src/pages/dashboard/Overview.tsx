@@ -28,7 +28,7 @@ const Stat = ({ icon: Icon, label, value, hint, tone = "primary" }: any) => (
 );
 
 const Overview = () => {
-  const { profile } = useAuth();
+  const { profile, getDashboardRoute } = useAuth();
   const { data: orders = [], isLoading: ordersLoading, error: ordersError } = useOrders();
   const { data: quotations = [], isLoading: quotLoading } = useQuotations();
   const { data: wishlist = [], isLoading: wishLoading } = useWishlist();
@@ -44,6 +44,10 @@ const Overview = () => {
   const tierProgress = membership ? Math.round((membership.spent_amount / membership.target_amount) * 100) : 0;
   const nextTier = membership ? (membership.tier === "Free" ? "Plus" : membership.tier === "Plus" ? "Pro" : "Seller") : "Plus";
   const rupiahValue = pointsBalance != null ? pointsBalance * 10 : 0;
+
+  if (!profile) {
+    return null;
+  }
 
   if (ordersError) {
     return (
@@ -89,7 +93,7 @@ const Overview = () => {
               <p className="text-xs text-muted-foreground">Lacak realtime sampai depan rumahmu.</p>
             </div>
             <Button variant="ghost" size="sm" asChild>
-              <Link to="/dashboard/orders">Semua <ArrowRight className="h-3.5 w-3.5" /></Link>
+              <Link to={getDashboardRoute() + "/orders"}>Semua <ArrowRight className="h-3.5 w-3.5" /></Link>
             </Button>
           </div>
           {isLoading ? (
@@ -104,7 +108,7 @@ const Overview = () => {
               ) : activeOrders.map((o) => (
                 <Link
                   key={o.id}
-                  to={`/dashboard/orders/${o.id}`}
+                  to={`${getDashboardRoute()}/orders/${o.id}`}
                   className="flex items-center gap-4 p-4 rounded-2xl bg-secondary/50 hover:bg-secondary transition-colors group"
                 >
                   <div className="h-12 w-12 rounded-xl bg-background grid place-items-center text-primary shrink-0">
@@ -152,14 +156,14 @@ const Overview = () => {
                 <span>{fmtRp(membership.target_amount)}</span>
               </div>
               <Button size="sm" className="bg-background text-foreground hover:bg-background/90 mt-5 w-full" asChild>
-                <Link to="/dashboard/membership">Lihat Benefit</Link>
+                <Link to={getDashboardRoute() + "/membership"}>Lihat Benefit</Link>
               </Button>
             </div>
           ) : (
             <div className="relative text-center">
               <p className="text-sm opacity-80">Membership data tidak tersedia.</p>
               <Button size="sm" className="bg-background text-foreground hover:bg-background/90 mt-5 w-full" asChild>
-                <Link to="/dashboard/membership">Lihat Benefit</Link>
+                <Link to={getDashboardRoute() + "/membership"}>Lihat Benefit</Link>
               </Button>
             </div>
           )}
@@ -174,7 +178,7 @@ const Overview = () => {
               <Heart className="h-5 w-5 text-primary" />
               <h2 className="font-display text-lg font-bold">Wishlist</h2>
             </div>
-            <Button variant="ghost" size="sm" asChild><Link to="/dashboard/wishlist">Semua <ArrowRight className="h-3.5 w-3.5" /></Link></Button>
+            <Button variant="ghost" size="sm" asChild><Link to={getDashboardRoute() + "/wishlist"}>Semua <ArrowRight className="h-3.5 w-3.5" /></Link></Button>
           </div>
           {isLoading ? (
             <div className="animate-pulse space-y-3">
@@ -207,7 +211,7 @@ const Overview = () => {
               <Bell className="h-5 w-5 text-primary" />
               <h2 className="font-display text-lg font-bold">Price Alerts</h2>
             </div>
-            <Button variant="ghost" size="sm" asChild><Link to="/dashboard/price-alerts">Semua <ArrowRight className="h-3.5 w-3.5" /></Link></Button>
+            <Button variant="ghost" size="sm" asChild><Link to={getDashboardRoute() + "/price-alerts"}>Semua <ArrowRight className="h-3.5 w-3.5" /></Link></Button>
           </div>
           {isLoading ? (
             <div className="animate-pulse space-y-3">
@@ -240,8 +244,8 @@ const Overview = () => {
           <p className="text-sm text-muted-foreground">Chat AI personal shopper kami — gratis, jawab dalam detik.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" asChild><Link to="/dashboard/ai-shopper"><Sparkles className="h-4 w-4" />AI Shopper</Link></Button>
-          <Button variant="hero" asChild><Link to="/dashboard/ai-shopper"><MessageCircle className="h-4 w-4" />WhatsApp</Link></Button>
+          <Button variant="outline" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><Sparkles className="h-4 w-4" />AI Shopper</Link></Button>
+          <Button variant="hero" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><MessageCircle className="h-4 w-4" />WhatsApp</Link></Button>
         </div>
       </div>
     </>

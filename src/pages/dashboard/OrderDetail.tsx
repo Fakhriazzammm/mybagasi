@@ -3,13 +3,19 @@ import { ArrowLeft, Package, Copy, MessageCircle, ExternalLink, Loader2 } from "
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { useOrder, useAddresses } from "@/hooks";
+import { useAuth } from "@/contexts/AuthContext";
 import { fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
 import { toast } from "sonner";
 
 const OrderDetail = () => {
   const { id } = useParams();
+  const { getDashboardRoute } = useAuth();
   const { data: order, isLoading, error } = useOrder(id!);
   const { data: addresses = [] } = useAddresses();
+
+  if (!getDashboardRoute) {
+    return null;
+  }
 
   if (isLoading) {
     return (
@@ -42,7 +48,7 @@ const OrderDetail = () => {
   return (
     <>
       <Button variant="ghost" size="sm" asChild className="mb-4 -ml-2">
-        <Link to="/dashboard/orders"><ArrowLeft className="h-4 w-4" />Kembali ke orders</Link>
+        <Link to={getDashboardRoute() + "/orders"}><ArrowLeft className="h-4 w-4" />Kembali ke orders</Link>
       </Button>
 
       <PageHeader
@@ -51,7 +57,7 @@ const OrderDetail = () => {
         description={`Dipesan ${new Date(order.created_at).toLocaleDateString("id-ID")} · Estimasi sampai ${order.eta ? new Date(order.eta).toLocaleDateString("id-ID") : "TBA"}`}
         action={
           <>
-            <Button variant="outline" asChild><Link to="/dashboard/ai-shopper"><MessageCircle className="h-4 w-4" />Tanya CS</Link></Button>
+            <Button variant="outline" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><MessageCircle className="h-4 w-4" />Tanya CS</Link></Button>
           </>
         }
       />
@@ -148,7 +154,7 @@ const OrderDetail = () => {
             <h3 className="font-display font-bold mb-2">Butuh bantuan?</h3>
             <p className="text-xs text-muted-foreground mb-3">Tim CS siap bantu 24/7 lewat WhatsApp.</p>
             <Button variant="outline" size="sm" className="w-full" asChild>
-              <Link to="/dashboard/ai-shopper"><MessageCircle className="h-4 w-4" />Buka chat</Link>
+              <Link to={getDashboardRoute() + "/ai-shopper"}><MessageCircle className="h-4 w-4" />Buka chat</Link>
             </Button>
           </div>
         </div>

@@ -5,29 +5,35 @@ import {
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from "@/components/ui/sidebar";
 import { Logo } from "@/components/site/Logo";
-
-const main = [
-  { title: "Overview", url: "/dashboard", icon: LayoutDashboard, end: true },
-  { title: "Quotations", url: "/dashboard/quotations", icon: FileText },
-  { title: "Orders", url: "/dashboard/orders", icon: Package },
-];
-
-const collection = [
-  { title: "Wishlist", url: "/dashboard/wishlist", icon: Heart },
-  { title: "Price Alerts", url: "/dashboard/price-alerts", icon: Bell },
-  { title: "AI Shopper", url: "/dashboard/ai-shopper", icon: Sparkles },
-];
-
-const account = [
-  { title: "Membership", url: "/dashboard/membership", icon: Crown },
-  { title: "Poin", url: "/dashboard/points", icon: Coins },
-  { title: "Alamat", url: "/dashboard/addresses", icon: MapPin },
-];
+import { useAuth } from "@/contexts/AuthContext";
 
 export function CustomerSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { pathname } = useLocation();
+  const { profile, getDashboardRoute } = useAuth();
+
+  const dash = getDashboardRoute();
+
+  const main = [
+    { title: "Overview", url: dash, icon: LayoutDashboard, end: true },
+    { title: "Quotations", url: `${dash}/quotations`, icon: FileText },
+    { title: "Orders", url: `${dash}/orders`, icon: Package },
+  ];
+
+  const collection = [
+    { title: "Wishlist", url: `${dash}/wishlist`, icon: Heart },
+    { title: "Price Alerts", url: `${dash}/price-alerts`, icon: Bell },
+    { title: "AI Shopper", url: `${dash}/ai-shopper`, icon: Sparkles },
+  ];
+
+  const account = [
+    { title: "Membership", url: `${dash}/membership`, icon: Crown },
+    { title: "Poin", url: `${dash}/points`, icon: Coins },
+    { title: "Alamat", url: `${dash}/addresses`, icon: MapPin },
+  ];
+
+  if (!profile) return null;
 
   const renderItems = (items: typeof main) => (
     <SidebarMenu>
