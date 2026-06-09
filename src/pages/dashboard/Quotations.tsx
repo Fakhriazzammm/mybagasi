@@ -41,7 +41,7 @@ const Quotations = () => {
         description="Quote yang sudah kamu buat. Klik untuk lanjut beli atau pantau harganya."
         action={
           <Button variant="hero" asChild>
-            <Link to="/quotation">
+            <Link to="/aipersonalshopper">
               <Plus className="h-4 w-4" />Buat Baru
             </Link>
           </Button>

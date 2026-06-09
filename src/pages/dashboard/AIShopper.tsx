@@ -331,7 +331,7 @@ const AIShopper = () => {
                       size="sm"
                       className="mt-3 w-full gap-1.5"
                       onClick={() => navigate(
-                        `/quotation?url=${encodeURIComponent(m.scrapedProduct.url)}`
+                        `/aipersonalshopper?url=${encodeURIComponent(m.scrapedProduct.url)}`
                       )}
                     >
                       <Sparkles className="h-3.5 w-3.5" />

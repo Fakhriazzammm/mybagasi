@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const links = [
   { to: "/", label: "Beranda" },
-  { to: "/quotation", label: "Cek Harga" },
+  { to: "/aipersonalshopper", label: "AI Shopper" },
   { to: "/biaya-transparan", label: "Biaya Transparan" },
   { to: "/batch-shipping", label: "Batch" },
   { to: "/preorder", label: "Pre-order" },

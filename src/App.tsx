@@ -13,7 +13,7 @@ import { ProtectedRoute, GuestRoute } from "@/components/auth/RouteGuards";
 
 // Public pages
 import Index from "./pages/Index.tsx";
-import Quotation from "./pages/Quotation.tsx";
+import PersonalShopper from "./pages/PersonalShopper.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Install from "./pages/Install.tsx";
 import CheckoutPage from "./pages/CheckoutPage";
@@ -76,7 +76,7 @@ const App = () => (
         <Routes>
           {/* Public routes */}
           <Route path="/" element={<Index />} />
-          <Route path="/quotation" element={<Quotation />} />
+          <Route path="/aipersonalshopper" element={<PersonalShopper />} />
           <Route path="/batch-shipping" element={<BatchShipping />} />
           <Route path="/preorder" element={<Preorder />} />
           <Route path="/install" element={<Install />} />

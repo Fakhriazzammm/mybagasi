@@ -13,7 +13,7 @@ export const CTA = () => (
         <p className="opacity-90">Mulai gratis. Cukup chat WhatsApp, AI kami siap bantu 24/7.</p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Button size="xl" variant="hero" asChild>
-            <Link to="/quotation"><Sparkles className="h-5 w-5" /> Coba AI Shopper</Link>
+            <Link to="/aipersonalshopper"><Sparkles className="h-5 w-5" /> Coba AI Shopper</Link>
           </Button>
           <Button variant="outline" size="xl" className="border-background/40 bg-transparent text-primary-foreground hover:bg-background/10" asChild>
             <a href="https://wa.me/6281234567890?text=Halo%20MyBagasi%2C%20saya%20mau%20belanja%20dari%20Jepang" target="_blank" rel="noopener noreferrer">

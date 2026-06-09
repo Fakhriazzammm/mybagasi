@@ -71,9 +71,9 @@ describe("Route smoke test", () => {
     expect(screen.getByText(/Belanja barang Jepang/i)).toBeInTheDocument();
   });
 
-  it("renders smart quotation route", async () => {
-    await renderRoute("/quotation");
-    expect(screen.getByText(/Smart Quotation Assistant/i)).toBeInTheDocument();
+  it("renders AI personal shopper route", async () => {
+    await renderRoute("/aipersonalshopper");
+    expect(screen.getByText(/AI Personal Shopper/i)).toBeInTheDocument();
   });
 
   it("renders transparent pricing route", async () => {

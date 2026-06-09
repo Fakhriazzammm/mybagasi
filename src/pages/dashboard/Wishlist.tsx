@@ -45,7 +45,7 @@ const Wishlist = () => {
   };
 
   const buyItem = async (w: any) => {
-    if (!w.price_idr) return navigate(`/quotation?url=${encodeURIComponent(w.url ?? "")}&query=${encodeURIComponent(w.name)}`);
+    if (!w.price_idr) return navigate(`/aipersonalshopper?url=${encodeURIComponent(w.url ?? "")}&query=${encodeURIComponent(w.name)}`);
     try {
       const order = await orderMutation.mutateAsync({
         product: w.name,

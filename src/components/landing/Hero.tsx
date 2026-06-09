@@ -27,7 +27,7 @@ export const Hero = () => (
         </p>
         <div className="flex flex-col sm:flex-row gap-3">
           <Button variant="hero" size="xl" asChild>
-            <Link to="/quotation">
+            <Link to="/aipersonalshopper">
               <Sparkles className="h-5 w-5" />
               Coba AI Shopper
             </Link>

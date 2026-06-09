@@ -40,7 +40,7 @@ const CheckoutPage = () => {
   const sourceUrl = params.get("url") ?? "";
 
   const backLink = params.get("from") || "/dashboard/ai-shopper";
-  const backLabel = params.get("from") === "/quotation" ? "Kembali ke Quotation" : "Kembali ke AI Shopper";
+  const backLabel = params.get("from") === "/aipersonalshopper" ? "Kembali ke Personal Shopper" : "Kembali ke AI Shopper";
 
   const feeService = Math.round(productPrice * 0.15);
   const shipping = 250_000;

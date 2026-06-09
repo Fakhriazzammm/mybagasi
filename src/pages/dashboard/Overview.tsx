@@ -62,7 +62,7 @@ const Overview = () => {
         description="Pantau quotation, order, dan keinginanmu dari Jepang di satu tempat."
         action={
           <Button variant="hero" asChild>
-            <Link to="/quotation"><Sparkles className="h-4 w-4" />Buat Quotation Baru</Link>
+            <Link to="/aipersonalshopper"><Sparkles className="h-4 w-4" />Buat Quotation Baru</Link>
           </Button>
         }
       />
