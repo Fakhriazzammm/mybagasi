@@ -747,3 +747,102 @@ export function extractUrl(text: string): string | null {
 
   return null;
 }
+
+// ─── Streaming ──────────────────────────────────────────────────────────────
+
+export type StreamChunk = {
+  type: "content";
+  text: string;
+} | {
+  type: "done";
+  fullContent: string;
+} | {
+  type: "error";
+  error: string;
+};
+
+/**
+ * Call the AI API with streaming enabled.
+ * Yields chunks of text as they arrive from the SSE stream.
+ *
+ * Usage:
+ *   const reader = streamChatCompletion(messages, apiKey);
+ *   for await (const chunk of reader) {
+ *     if (chunk.type === "content") setText(prev => prev + chunk.text);
+ *   }
+ */
+export async function* streamChatCompletion(
+  messages: ChatMessage[],
+  apiKey: string,
+  options?: { systemPrompt?: string; maxTokens?: number }
+): AsyncGenerator<StreamChunk> {
+  const msgs: object[] = options?.systemPrompt
+    ? [{ role: "system", content: options.systemPrompt }, ...messages]
+    : messages;
+
+  const body: Record<string, unknown> = {
+    model: MODEL,
+    messages: msgs,
+    max_tokens: options?.maxTokens ?? 700,
+    temperature: 0.7,
+    stream: true,
+  };
+
+  const res = await fetch(`${BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => res.statusText);
+    yield { type: "error", error: `AI API error ${res.status}: ${err}` };
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    yield { type: "error", error: "Response body is not readable" };
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullContent = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? ""; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+        const payload = trimmed.slice(6); // Remove "data: " prefix
+        if (payload === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(payload);
+          const delta = parsed?.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullContent += delta;
+            yield { type: "content", text: delta };
+          }
+        } catch {
+          // Skip malformed JSON chunks
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  yield { type: "done", fullContent };
+}
