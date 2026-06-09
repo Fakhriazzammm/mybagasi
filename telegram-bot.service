@@ -1,0 +1,17 @@
+[Unit]
+Description=MyBagasi Telegram Bot
+After=network.target mybagasi-scraper.service
+Wants=mybagasi-scraper.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/mybagasi/scraper
+EnvironmentFile=/opt/mybagasi/scraper/.env
+ExecStart=/opt/mybagasi/scraper/.venv/bin/python /opt/mybagasi/scraper/telegram_bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

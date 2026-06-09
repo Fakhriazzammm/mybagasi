@@ -29,6 +29,8 @@ export interface Profile {
   status: UserStatus
   points_balance: number
   avatar_url: string | null
+  telegram_token: string | null
+  telegram_id: number | null
   created_at: string
   updated_at: string
 }

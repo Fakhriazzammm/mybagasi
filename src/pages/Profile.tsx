@@ -285,6 +285,107 @@ export default function Profile() {
           </CardContent>
         </Card>
 
+        {/* Telegram Integration */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="h-5 w-5 text-blue-500" fill="currentColor">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.127.087.498.082.607-.096 1.392-.613 5.039-.866 6.673-.107.69-.32 1.023-.525 1.122-.446.217-1.109-.156-2.067-1.011l-.017.012c-.588-.443-2.044-1.67-2.149-1.78-.168-.18-.262-.308-.02-.565l3.452-3.39c.156-.156.227-.363-.012-.553-.14-.11-.28-.054-.413-.014l-.04.013-5.57 3.562c-.452.24-.76.17-.962-.083-.215-.266-.72-.935-.88-1.274-.24-.497-.34-.952.262-1.178.338-.129 3.554-1.508 5.49-2.257 1.425-.553 2.384-.84 2.818-.87z"/>
+              </svg>
+              Hubungkan Telegram
+            </CardTitle>
+            <CardDescription>
+              Hubungkan akun MyBagasi kamu ke Telegram untuk notifikasi & kemudahan akses
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {profile.telegram_id ? (
+              <>
+                <Alert>
+                  <AlertDescription className="text-green-600 dark:text-green-400 flex items-center gap-2">
+                    ✅ Terhubung ke Telegram
+                  </AlertDescription>
+                </Alert>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 text-blue-500" fill="currentColor">
+                      <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.127.087.498.082.607-.096 1.392-.613 5.039-.866 6.673-.107.69-.32 1.023-.525 1.122-.446.217-1.109-.156-2.067-1.011l-.017.012c-.588-.443-2.044-1.67-2.149-1.78-.168-.18-.262-.308-.02-.565l3.452-3.39c.156-.156.227-.363-.012-.553-.14-.11-.28-.054-.413-.014l-.04.013-5.57 3.562c-.452.24-.76.17-.962-.083-.215-.266-.72-.935-.88-1.274-.24-.497-.34-.952.262-1.178.338-.129 3.554-1.508 5.49-2.257 1.425-.553 2.384-.84 2.818-.87z"/>
+                    </svg>
+                    Status
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Akun Telegram kamu sudah terhubung ke MyBagasi.
+                    Kamu bisa menggunakan bot untuk cek status pesanan dan lainnya.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <Alert>
+                  <AlertDescription className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                    ⚠️ Belum terhubung ke Telegram
+                  </AlertDescription>
+                </Alert>
+
+                <div className="space-y-2">
+                  <Label>Kode Unik Kamu</Label>
+                  <div className="flex items-center gap-2">
+                    <code className="relative rounded bg-muted px-4 py-2.5 font-mono text-sm font-bold tracking-widest select-all border">
+                      {profile.telegram_token || '-'}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (profile.telegram_token) {
+                          navigator.clipboard.writeText(profile.telegram_token)
+                        }
+                      }}
+                    >
+                      Salin
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                  <p className="text-sm font-medium">📋 Cara menghubungkan:</p>
+                  <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                    <li>
+                      Buka Telegram dan buka <a href="https://t.me/mybagasibot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline font-medium">@mybagasibot</a>
+                    </li>
+                    <li>
+                      Kirim pesan: <code className="text-xs">/start {profile.telegram_token || 'KODE_ANDA'}</code>
+                    </li>
+                    <li>
+                      Bot akan mengkonfirmasi akun kamu terhubung ✅
+                    </li>
+                  </ol>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Link langsung: <a href="https://t.me/mybagasibot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">https://t.me/mybagasibot</a>
+                  </p>
+                  <p className="text-xs text-destructive mt-1">
+                    ⚠️ Jangan bagikan kode ini ke siapapun!
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => window.open('https://t.me/mybagasibot', '_blank')}
+                    className="flex items-center gap-2"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                      <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.127.087.498.082.607-.096 1.392-.613 5.039-.866 6.673-.107.69-.32 1.023-.525 1.122-.446.217-1.109-.156-2.067-1.011l-.017.012c-.588-.443-2.044-1.67-2.149-1.78-.168-.18-.262-.308-.02-.565l3.452-3.39c.156-.156.227-.363-.012-.553-.14-.11-.28-.054-.413-.014l-.04.013-5.57 3.562c-.452.24-.76.17-.962-.083-.215-.266-.72-.935-.88-1.274-.24-.497-.34-.952.262-1.178.338-.129 3.554-1.508 5.49-2.257 1.425-.553 2.384-.84 2.818-.87z"/>
+                    </svg>
+                    Buka @mybagasibot
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Account Info */}
         <Card>
           <CardHeader>
