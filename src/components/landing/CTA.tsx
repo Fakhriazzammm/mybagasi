@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { MessageCircle, ArrowRight } from "lucide-react";
+import { MessageCircle, ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const CTA = () => (
@@ -12,11 +12,13 @@ export const CTA = () => (
         </h2>
         <p className="opacity-90">Mulai gratis. Cukup chat WhatsApp, AI kami siap bantu 24/7.</p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Button size="xl" className="bg-background text-foreground hover:bg-background/90" asChild>
-            <Link to="/quotation"><MessageCircle className="h-5 w-5" /> Mulai via WhatsApp</Link>
+          <Button size="xl" variant="hero" asChild>
+            <Link to="/quotation"><Sparkles className="h-5 w-5" /> Coba AI Shopper</Link>
           </Button>
           <Button variant="outline" size="xl" className="border-background/40 bg-transparent text-primary-foreground hover:bg-background/10" asChild>
-            <Link to="/quotation">Cek Estimasi <ArrowRight className="h-4 w-4" /></Link>
+            <a href="https://wa.me/6281234567890?text=Halo%20MyBagasi%2C%20saya%20mau%20belanja%20dari%20Jepang" target="_blank" rel="noopener noreferrer">
+              <MessageCircle className="h-5 w-5" /> Chat WhatsApp
+            </a>
           </Button>
         </div>
       </div>

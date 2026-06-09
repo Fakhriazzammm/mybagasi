@@ -1,7 +1,7 @@
 import { Bot, Bell, Users, Calendar, Coins, ShieldCheck } from "lucide-react";
 
 const features = [
-  { icon: Bot, title: "AI Personal Shopper", desc: "Bingung pilih? AI kami bantu cari berdasarkan budget, brand, ukuran, warna." },
+  { icon: Bot, title: "AI Personal Shopper", desc: "Paste link Mercari/Rakuten/Amazon JP atau kirim screenshot. AI langsung cari, kasih harga all-in, dan siap checkout — semua di web, tanpa antri." },
   { icon: Bell, title: "Price Alert", desc: "Pantau target harga & stok. Kami kabari saat barang impian turun harga." },
   { icon: Users, title: "Batch Shipping", desc: "Gabung pengiriman bareng user lain, ongkir bisa hemat sampai 50%." },
   { icon: Calendar, title: "Pre-order", desc: "Booking limited release Jepang sebelum sold-out. DP atau full payment." },

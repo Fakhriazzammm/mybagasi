@@ -26,16 +26,22 @@ export const Hero = () => (
           Kirim link, foto, atau cukup bilang <span className="font-semibold text-foreground">"belikan sepatu ini dari Jepang"</span>. AI kami akan cari, hitung total all-in, dan antar sampai rumah kamu.
         </p>
         <div className="flex flex-col sm:flex-row gap-3">
-          <Button variant="whatsapp" size="xl" asChild>
+          <Button variant="hero" size="xl" asChild>
             <Link to="/quotation">
-              <MessageCircle className="h-5 w-5" />
-              Mulai via WhatsApp
+              <Sparkles className="h-5 w-5" />
+              Coba AI Shopper
             </Link>
           </Button>
           <Button variant="outline" size="xl" asChild>
-            <Link to="/quotation">
-              Cek Estimasi Harga <ArrowRight className="h-4 w-4" />
-            </Link>
+            <a
+              href="https://wa.me/6281234567890?text=Halo%20MyBagasi%2C%20saya%20mau%20belanja%20dari%20Jepang"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <MessageCircle className="h-5 w-5" />
+              Chat WhatsApp
+              <ArrowRight className="h-4 w-4" />
+            </a>
           </Button>
         </div>
         <div className="flex flex-wrap gap-5 pt-2 text-xs text-muted-foreground">
