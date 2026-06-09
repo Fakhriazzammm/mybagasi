@@ -47,6 +47,7 @@ export interface CreateInvoiceInput {
   redirectUrl?: string;
   expiredAt?: string;
   items: InvoiceItem[];
+  custom_field?: Array<{ key: string; value: string; type?: string }>;
 }
 
 const API_BASE = appConfig.backendBaseUrl;

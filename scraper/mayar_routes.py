@@ -121,6 +121,53 @@ async def create_customer(request: Request):
     return resp.json()
 
 
+# ─── Webhook receiver (from Mayar → our backend) ────────────────────
+
+@router.post("/webhook/receive")
+async def receive_webhook(request: Request):
+    """
+    Receive webhook callbacks from Mayar (payment.received, etc).
+    Updates Supabase order status to 'confirmed' when payment is received.
+    """
+    body = await request.json()
+    event = body.get("event", {}).get("received") or body.get("event")
+    data = body.get("data", {})
+
+    # Only process payment.received with status=true (paid)
+    if event == "payment.received" and data.get("status") is True:
+        custom_fields = data.get("custom_field", []) or []
+        order_id = None
+        for field in custom_fields:
+            if isinstance(field, dict) and field.get("key") == "order_id":
+                order_id = field.get("value")
+                break
+
+        if order_id:
+            supabase_url = os.getenv("SUPABASE_URL", "")
+            supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+            if supabase_url and supabase_key:
+                headers = {
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                }
+                payload = {
+                    "status": "confirmed",
+                    "paid_at": datetime.now(timezone.utc).isoformat(),
+                }
+                async with httpx.AsyncClient(timeout=10) as client:
+                    await client.patch(
+                        f"{supabase_url}/rest/v1/orders",
+                        headers=headers,
+                        params={"id": f"eq.{order_id}"},
+                        json=payload,
+                    )
+
+    return {"status": "ok"}
+
+
 # ─── Webhook history ─────────────────────────────────────────────────────────
 
 @router.get("/webhook/history")

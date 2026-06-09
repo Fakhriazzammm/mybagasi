@@ -66,6 +66,7 @@ const CheckoutPage = () => {
         mobile: form.mobile || DEFAULT_MOBILE,
         description: `Pembelian ${productName} via MyBagasi${sourceUrl ? ` — ${sourceUrl}` : ""}`,
         redirectUrl: `${APP_BASE_URL}/payment/status`,
+        custom_field: orderId ? [{ key: "order_id", value: orderId, type: "string" }] : undefined,
         items: [
           ...(productPrice > 0
             ? [{ description: productName, quantity: 1, rate: productPrice }]
