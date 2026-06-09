@@ -39,7 +39,6 @@ import { AdminLayout } from "./components/admin/AdminLayout";
 import AdminOverview from "./pages/admin/Overview";
 import Procurement from "./pages/admin/Procurement";
 import TrackingExceptionsPage from "./pages/admin/TrackingExceptions";
-import ScraperFailuresPage from "./pages/admin/ScraperFailures";
 import Approvals from "./pages/admin/Approvals";
 import Support from "./pages/admin/Support";
 import JadwalManagement from "./pages/admin/JadwalManagement";
@@ -124,7 +123,6 @@ const App = () => (
             <Route index element={<AdminOverview />} />
             <Route path="procurement" element={<Procurement />} />
             <Route path="tracking" element={<TrackingExceptionsPage />} />
-            <Route path="scraper" element={<ScraperFailuresPage />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="support" element={<Support />} />
             <Route path="jadwal" element={<JadwalManagement />} />

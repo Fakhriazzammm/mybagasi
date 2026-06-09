@@ -3,14 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import {
-  FileText, Package, Wallet, ListChecks, Truck, AlertTriangle, ClipboardCheck, MessageSquare, TrendingUp,
+  FileText, Package, Wallet, ListChecks, Truck, ClipboardCheck, MessageSquare, TrendingUp,
 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import {
   useAdminStats,
   useProcurementQueue,
   useTrackingExceptions,
-  useScraperFailures,
   useQuoteApprovals,
 } from "@/hooks";
 import { fmtRp } from "@/lib/format";
@@ -67,11 +66,11 @@ export default function AdminOverview() {
   const { data: stats, isLoading: statsLoading, error: statsError } = useAdminStats();
   const { data: procurement = [], isLoading: procLoading, error: procError } = useProcurementQueue();
   const { data: tracking = [], isLoading: trkLoading, error: trkError } = useTrackingExceptions();
-  const { data: scraper = [], isLoading: scrLoading, error: scrError } = useScraperFailures();
+
   const { data: approvals = [], isLoading: appLoading, error: appError } = useQuoteApprovals();
 
-  const isLoading = statsLoading || procLoading || trkLoading || scrLoading || appLoading;
-  const error = statsError || procError || trkError || scrError || appError;
+  const isLoading = statsLoading || procLoading || trkLoading || appLoading;
+  const error = statsError || procError || trkError || appError;
 
   if (isLoading) return (
     <div className="animate-pulse space-y-4 p-6">
@@ -117,13 +116,6 @@ export default function AdminOverview() {
           items={tracking.slice(0, 5).map((t: any) => ({ left: `${t.id} · ${t.issue}`, right: timeAgo(t.created_at) }))}
         />
         <QueueCard
-          title="Scraper Failures"
-          count={stats?.scraperFailures ?? 0}
-          tone="bg-destructive/15 text-destructive"
-          href="/admin/scraper"
-          items={scraper.slice(0, 5).map((s: any) => ({ left: `${s.marketplaces?.name || "Unknown"} · ${s.reason}`, right: timeAgo(s.created_at) }))}
-        />
-        <QueueCard
           title="Quote Approval"
           count={stats?.approvalsQueue ?? 0}
           tone="bg-accent/15 text-accent"
@@ -140,7 +132,6 @@ export default function AdminOverview() {
           {[
             { icon: ListChecks, label: "Procurement", to: "/admin/procurement" },
             { icon: Truck, label: "Tracking", to: "/admin/tracking" },
-            { icon: AlertTriangle, label: "Scraper", to: "/admin/scraper" },
             { icon: ClipboardCheck, label: "Approvals", to: "/admin/approvals" },
             { icon: MessageSquare, label: "Support", to: "/admin/support" },
             { icon: Package, label: "Jadwal", to: "/jadwal" },

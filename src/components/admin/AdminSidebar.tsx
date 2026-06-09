@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, ListChecks, Truck, AlertTriangle, ClipboardCheck, MessageSquare, Calendar, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, ListChecks, Truck, ClipboardCheck, MessageSquare, Calendar, ArrowLeft } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
@@ -10,7 +10,6 @@ const ops = [
   { title: "Overview", url: "/admin", icon: LayoutDashboard, end: true },
   { title: "Procurement", url: "/admin/procurement", icon: ListChecks },
   { title: "Tracking Exceptions", url: "/admin/tracking", icon: Truck },
-  { title: "Scraper Failures", url: "/admin/scraper", icon: AlertTriangle },
   { title: "Approval Quote", url: "/admin/approvals", icon: ClipboardCheck },
   { title: "Support Notes", url: "/admin/support", icon: MessageSquare },
   { title: "Jadwal", url: "/admin/jadwal", icon: Calendar },
