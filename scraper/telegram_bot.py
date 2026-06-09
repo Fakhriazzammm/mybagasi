@@ -530,22 +530,41 @@ def reset_conversation(chat_id: int):
 
 async def handle_start(chat_id: int, args: str):
     token = args.strip().upper()
+    
+    # Cek apakah user sudah terlink
+    existing = await lookup_user_by_telegram_id(chat_id)
+    
     if not token:
-        await tg_send(chat_id,
-            "👋 *Selamat datang di MyBagasi Bot!*\n\n"
-            "Untuk menghubungkan akun MyBagasi kamu:\n"
-            "`/start KODE_RAHASIA_KAMU`\n\n"
-            "Kode rahasia ada di halaman *Profile* aplikasi MyBagasi.\n"
-            "https://mybagasi.my.id/profile\n\n"
-            "Belum punya akun? Daftar di https://mybagasi.my.id/auth/register")
+        if existing:
+            # Sudah login → sambutan langsung, tanpa minta link lagi
+            await tg_send(chat_id,
+                f"👋 *Halo lagi, {existing['name']}!* 🎉\n\n"
+                f"Kamu sudah terhubung ke MyBagasi.\n"
+                f"Email: `{existing['email']}`\n\n"
+                f"*Yang bisa kamu lakukan:*\n"
+                f"🔍 *Cari produk Jepang* — kirim kata kunci\n"
+                f"   Contoh: `cari sepatu nike size 42`\n\n"
+                f"🔗 *Cek harga* — kirim link marketplace\n"
+                f"   Contoh: `https://jp.mercari.com/item/...`\n\n"
+                f"💳 *Beli & bayar* — bilang \"mau beli\"\n\n"
+                f"Atau kirim `/help` untuk bantuan lengkap.")
+        else:
+            # Belum login → tampilkan instruksi link
+            await tg_send(chat_id,
+                "👋 *Selamat datang di MyBagasi Bot!*\n\n"
+                "Untuk menghubungkan akun MyBagasi kamu:\n"
+                "`/start KODE_RAHASIA_KAMU`\n\n"
+                "Kode rahasia ada di halaman *Profile* aplikasi MyBagasi.\n"
+                "https://mybagasi.my.id/profile\n\n"
+                "Belum punya akun? Daftar di https://mybagasi.my.id/auth/register")
         return
 
-    existing = await lookup_user_by_telegram_id(chat_id)
+    # Ada token
     if existing:
         await tg_send(chat_id,
             f"⚠️ Akun Telegram ini sudah terhubung ke *{existing['name']}*.\n"
             f"Email: `{existing['email']}`\n\n"
-            "Gunakan `/unlink` dulu untuk ganti akun.")
+            "Kamu sudah bisa langsung menggunakan bot untuk belanja!")
         return
 
     user = await lookup_user_by_token(token)
