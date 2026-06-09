@@ -99,7 +99,7 @@ const App = () => (
           <Route path="/auth/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
 
           {/* Legacy redirects — keep working for backward compatibility */}
-          <Route path="/profile" element={<ProfileRedirect />} />
+          <Route path="/profile" element={<DashboardRedirect />} />
           <Route path="/dashboard" element={<DashboardRedirect />} />
 
           {/* Username-based profile route */}
