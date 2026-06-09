@@ -12,7 +12,9 @@ export default function Login() {
   const { signIn, getDashboardRoute } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as any)?.from?.pathname || getDashboardRoute() || '/dashboard'
+  const params = new URLSearchParams(location.search)
+  const redirectFromQuery = params.get('redirect')
+  const from = (location.state as any)?.from?.pathname || redirectFromQuery || getDashboardRoute() || '/dashboard'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

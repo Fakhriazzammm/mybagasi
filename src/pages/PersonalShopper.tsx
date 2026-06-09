@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Navbar } from "@/components/site/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Sparkles, Send, ShoppingBag, Loader2, ArrowRight, Bell, Bookmark,
-  ExternalLink, StopCircle, User as UserIcon, Copy, Check,
+  ExternalLink, StopCircle, User as UserIcon, Copy, Check, LogIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scrapeProduct, searchProducts, type ProductData } from "@/lib/scraper";
@@ -15,6 +15,7 @@ import { appConfig } from "@/lib/runtime-config";
 import { quotationsService } from "@/services/quotations.service";
 import { wishlistService, priceAlertsService } from "@/services/wishlist.service";
 import { ordersService } from "@/services/orders.service";
+import { useAuth } from '@/contexts/AuthContext'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,7 +103,16 @@ function renderMarkdown(text: string): string {
 
 const PersonalShopper = () => {
   const navigate = useNavigate();
+  const { profile, loading: authLoading } = useAuth();
   const [searchParams] = useSearchParams();
+  const [showAuthGate, setShowAuthGate] = useState(false);
+
+  // ─── Auth Gate ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!authLoading && !profile) {
+      setShowAuthGate(true);
+    }
+  }, [authLoading, profile]);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState(searchParams.get("url") ?? searchParams.get("query") ?? "");
   const [loading, setLoading] = useState(false);
@@ -677,6 +687,68 @@ const PersonalShopper = () => {
           </div>
         </div>
       </main>
+
+      {/* ── Auth Gate Overlay ── */}
+      {showAuthGate && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="relative max-w-md w-full bg-card border border-border/60 rounded-3xl shadow-2xl p-8 text-center space-y-6 animate-in zoom-in-95 duration-300">
+            {/* Icon */}
+            <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 grid place-items-center">
+              <Sparkles className="h-7 w-7 text-primary" />
+            </div>
+
+            {/* Title */}
+            <div className="space-y-2">
+              <h2 className="font-display text-xl font-bold">
+                AI Personal Shopper
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Cari produk Jepang, cek harga all-in, dan checkout langsung dari marketplace Jepang seperti Mercari, Rakuten, Amazon JP, dan Yahoo Auction.
+              </p>
+            </div>
+
+            {/* Feature list */}
+            <div className="text-left space-y-3 bg-muted/40 rounded-2xl p-4">
+              {[
+                ["🔍", "Cari produk dari marketplace Jepang"],
+                ["💰", "Estimasi harga all-in (produk + fee + ongkir + pajak)"],
+                ["💳", "Bayar via Mayar payment gateway"],
+                ["🤖", "AI bantu rekomendasi & perbandingan"],
+              ].map(([emoji, text]) => (
+                <div key={text} className="flex items-center gap-3 text-sm">
+                  <span className="text-base shrink-0">{emoji}</span>
+                  <span className="text-muted-foreground">{text}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* CTA */}
+            <div className="space-y-3">
+              <Button
+                variant="hero"
+                size="lg"
+                className="w-full gap-2"
+                onClick={() => navigate('/auth/login?redirect=/aipersonalshopper')}
+              >
+                <LogIn className="h-4 w-4" />
+                Masuk / Daftar untuk menggunakan
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-muted-foreground"
+                onClick={() => navigate('/')}
+              >
+                Kembali ke beranda
+              </Button>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground/50">
+              MyBagasi — Belanja dari Jepang, diantar ke rumah
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
