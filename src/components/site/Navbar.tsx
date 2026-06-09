@@ -8,8 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const links = [
   { to: "/", label: "Beranda" },
   { to: "/aipersonalshopper", label: "AI Shopper" },
-  { to: "/batch-shipping", label: "Batch" },
-  { to: "/preorder", label: "Pre-order" },
+  { to: "/jadwal", label: "Jadwal" },
   { to: "/#faq", label: "FAQ" },
 ];
 

@@ -77,7 +77,7 @@ const App = () => (
           {/* Public routes */}
           <Route path="/" element={<Index />} />
           <Route path="/aipersonalshopper" element={<PersonalShopper />} />
-          <Route path="/batch-shipping" element={<BatchShipping />} />
+          <Route path="/jadwal" element={<BatchShipping />} />
           <Route path="/preorder" element={<Preorder />} />
           <Route path="/install" element={<Install />} />
           <Route path="/checkout" element={<CheckoutPage />} />

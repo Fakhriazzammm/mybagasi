@@ -27,7 +27,7 @@ export const Footer = () => (
         </div>
 
         {[
-          { title: "Produk", items: ["Cek Estimasi", "Demo WhatsApp", "Batch Shipping", "Pre-order", "Price Alert"] },
+          { title: "Produk", items: ["Cek Estimasi", "Demo WhatsApp", "Jadwal Pengiriman", "Price Alert"] },
           { title: "Bisnis", items: ["Membership", "Reseller", "Affiliate", "Creator Program", "API"] },
           { title: "Bantuan", items: ["FAQ", "Cara Kerja", "Lacak Order", "Kontak", "Kebijakan"] },
         ].map((col) => (

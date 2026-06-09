@@ -143,7 +143,7 @@ export default function AdminOverview() {
             { icon: AlertTriangle, label: "Scraper", to: "/admin/scraper" },
             { icon: ClipboardCheck, label: "Approvals", to: "/admin/approvals" },
             { icon: MessageSquare, label: "Support", to: "/admin/support" },
-            { icon: Package, label: "Batch Shipping", to: "/batch-shipping" },
+            { icon: Package, label: "Jadwal", to: "/jadwal" },
             { icon: FileText, label: "Pre-order", to: "/preorder" },
           ].map((s) => (
             <Button key={s.to} variant="outline" asChild className="justify-start h-12 rounded-2xl">
