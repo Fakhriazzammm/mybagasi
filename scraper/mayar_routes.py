@@ -130,7 +130,7 @@ async def receive_webhook(request: Request):
     Updates Supabase order status to 'confirmed' when payment is received.
     """
     body = await request.json()
-    event = body.get("event", {}).get("received") or body.get("event")
+    event = body.get("event", {})
     data = body.get("data", {})
 
     # Only process payment.received with status=true (paid)
