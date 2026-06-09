@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
@@ -11,6 +11,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { createInvoice } from "@/lib/mayar";
+import { supabase } from "@/lib/supabase";
 
 const DEFAULT_EMAIL = import.meta.env.VITE_MAYAR_DEFAULT_EMAIL as string;
 const DEFAULT_MOBILE = import.meta.env.VITE_MAYAR_DEFAULT_MOBILE as string;
@@ -18,10 +19,28 @@ const APP_BASE_URL = import.meta.env.VITE_APP_BASE_URL as string;
 
 const CheckoutPage = () => {
   const [params] = useSearchParams();
+  const orderId = params.get("order_id");
 
-  const productName = params.get("product") ?? "Produk dari Jepang";
-  const productPrice = parseInt(params.get("price") ?? "0", 10);
+  const [dbOrder, setDbOrder] = useState(null);
+  const [loadingOrder, setLoadingOrder] = useState(false);
+
+  useEffect(() => {
+    if (orderId) {
+      setLoadingOrder(true);
+      supabase.from('orders').select('*').eq('id', orderId).single()
+        .then(({ data, error }) => {
+          if (!error && data) setDbOrder(data);
+          setLoadingOrder(false);
+        });
+    }
+  }, [orderId]);
+
+  const productName = dbOrder?.product ?? params.get("product") ?? "Produk dari Jepang";
+  const productPrice = dbOrder?.total ?? parseInt(params.get("price") ?? "0", 10);
   const sourceUrl = params.get("url") ?? "";
+
+  const backLink = params.get("from") || "/dashboard/ai-shopper";
+  const backLabel = params.get("from") === "/quotation" ? "Kembali ke Quotation" : "Kembali ke AI Shopper";
 
   const feeService = Math.round(productPrice * 0.15);
   const shipping = 250_000;
@@ -75,11 +94,11 @@ const CheckoutPage = () => {
       <main className="container mx-auto py-10 md:py-16 max-w-2xl px-4">
         {/* Back link */}
         <Link
-          to="/dashboard/ai-shopper"
+          to={backLink}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors"
         >
           <ChevronLeft className="h-4 w-4" />
-          Kembali ke AI Shopper
+          {backLabel}
         </Link>
 
         <div className="text-center mb-8">
@@ -96,46 +115,56 @@ const CheckoutPage = () => {
           {/* Order summary */}
           <div className="md:col-span-2 rounded-2xl border border-border/60 bg-muted/30 p-5 h-fit">
             <h2 className="font-semibold text-sm mb-4">Ringkasan Order</h2>
-            <p className="text-sm font-medium mb-4 line-clamp-2">{productName}</p>
-            {productPrice > 0 ? (
-              <div className="space-y-2 text-xs text-muted-foreground">
-                <div className="flex justify-between">
-                  <span>Harga produk</span>
-                  <span className="text-foreground">
-                    Rp {productPrice.toLocaleString("id-ID")}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Jasa MyBagasi (15%)</span>
-                  <span className="text-foreground">
-                    Rp {feeService.toLocaleString("id-ID")}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Est. ongkir</span>
-                  <span className="text-foreground">
-                    Rp {shipping.toLocaleString("id-ID")}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Est. pajak & bea</span>
-                  <span className="text-foreground">Rp {tax.toLocaleString("id-ID")}</span>
-                </div>
-                <div className="flex justify-between border-t border-border/60 pt-2 mt-1 font-bold text-foreground text-sm">
-                  <span>Total</span>
-                  <span className="text-primary">
-                    Rp {total.toLocaleString("id-ID")}
-                  </span>
-                </div>
+            {loadingOrder ? (
+              <div className="space-y-3">
+                <div className="h-4 bg-muted rounded w-1/2 animate-pulse" />
+                <div className="h-4 bg-muted rounded w-full animate-pulse" />
+                <div className="h-4 bg-muted rounded w-3/4 animate-pulse" />
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                Harga akan dikonfirmasi oleh tim MyBagasi setelah order dibuat.
-              </p>
+              <>
+                <p className="text-sm font-medium mb-4 line-clamp-2">{productName}</p>
+                {productPrice > 0 ? (
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span>Harga produk</span>
+                      <span className="text-foreground">
+                        Rp {productPrice.toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Jasa MyBagasi (15%)</span>
+                      <span className="text-foreground">
+                        Rp {feeService.toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Est. ongkir</span>
+                      <span className="text-foreground">
+                        Rp {shipping.toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Est. pajak & bea</span>
+                      <span className="text-foreground">Rp {tax.toLocaleString("id-ID")}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-border/60 pt-2 mt-1 font-bold text-foreground text-sm">
+                      <span>Total</span>
+                      <span className="text-primary">
+                        Rp {total.toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Harga akan dikonfirmasi oleh tim MyBagasi setelah order dibuat.
+                  </p>
+                )}
+                <p className="text-[11px] text-muted-foreground mt-4 pt-4 border-t border-border/40">
+                  Harga final dikonfirmasi setelah pengecekan produk oleh tim kami.
+                </p>
+              </>
             )}
-            <p className="text-[11px] text-muted-foreground mt-4 pt-4 border-t border-border/40">
-              Harga final dikonfirmasi setelah pengecekan produk oleh tim kami.
-            </p>
           </div>
 
           {/* Form */}

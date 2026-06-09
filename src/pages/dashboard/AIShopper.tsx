@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Sparkles,
   Send,
@@ -7,6 +7,7 @@ import {
   CreditCard,
   ExternalLink,
   ShoppingCart,
+  ArrowRight,
   Image as ImageIcon,
 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
@@ -55,6 +56,7 @@ const AIShopper = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const screenshotInputRef = useRef<HTMLInputElement>(null);
   const hasApiKey = Boolean(API_KEY?.trim());
+  const navigate = useNavigate();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -211,8 +213,8 @@ const AIShopper = () => {
       />
 
       <div
-        className="flex flex-col rounded-3xl border border-border/40 shadow-soft overflow-hidden"
-        style={{ height: "calc(100vh - 260px)", minHeight: 480 }}
+        className="mx-auto w-full max-w-2xl flex flex-col rounded-3xl border border-border/40 shadow-soft overflow-hidden"
+        style={{ height: "calc(100vh - 280px)", minHeight: 420 }}
       >
         <div
           ref={scrollRef}
@@ -273,16 +275,29 @@ const AIShopper = () => {
                 <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
 
                 {m.paymentUrl && (
-                  <a
-                    href={m.paymentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 flex items-center gap-2 rounded-xl bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors"
-                  >
-                    <CreditCard className="h-4 w-4 shrink-0" />
-                    <span className="flex-1">Bayar Sekarang</span>
-                    <ExternalLink className="h-3.5 w-3.5 opacity-70" />
-                  </a>
+                  <>
+                    <a
+                      href={m.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 flex items-center gap-2 rounded-xl bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    >
+                      <CreditCard className="h-4 w-4 shrink-0" />
+                      <span className="flex-1">Bayar Sekarang</span>
+                      <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+                    </a>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 w-full gap-1.5"
+                      onClick={() => navigate(
+                        `/checkout?product=${encodeURIComponent(m.scrapedProduct?.title || "Produk")}&price=${m.scrapedProduct?.price_jpy ? m.scrapedProduct.price_jpy * 105 : 0}&url=${encodeURIComponent(m.scrapedProduct?.url || "")}`
+                      )}
+                    >
+                      <CreditCard className="h-3.5 w-3.5" />
+                      Review & Checkout
+                    </Button>
+                  </>
                 )}
 
                 {m.scrapedProduct && (
@@ -311,6 +326,18 @@ const AIShopper = () => {
                       Buka link produk
                       <ExternalLink className="h-3 w-3" />
                     </a>
+                    <Button
+                      variant="hero"
+                      size="sm"
+                      className="mt-3 w-full gap-1.5"
+                      onClick={() => navigate(
+                        `/quotation?url=${encodeURIComponent(m.scrapedProduct.url)}`
+                      )}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Dapatkan Quotation Resmi
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 )}
 
@@ -377,7 +404,7 @@ const AIShopper = () => {
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send(input)}
+            onKeyDown={(e) => (e.key === "Enter" && (e.metaKey || e.ctrlKey || !e.shiftKey)) && send(input)}
             placeholder="Tanya tentang produk Jepang atau paste link produk..."
             disabled={loading || !hasApiKey}
             className="flex-1 rounded-xl border border-border/60 bg-muted/40 px-4 py-2.5 text-sm outline-none focus:border-primary/50 focus:bg-background transition-colors disabled:opacity-50"

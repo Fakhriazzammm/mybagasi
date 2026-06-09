@@ -29,6 +29,8 @@ export interface MayarInvoiceStatus {
     mobile: string;
     name: string;
   };
+  payment_method?: string;
+  paid_at?: string;
 }
 
 export interface InvoiceItem {

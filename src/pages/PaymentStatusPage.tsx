@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,8 @@ import { getInvoice, type MayarInvoiceStatus } from "@/lib/mayar";
 const PaymentStatusPage = () => {
   const [params] = useSearchParams();
   const invoiceId = params.get("invoice_id") ?? params.get("id") ?? "";
+  const orderId = params.get("order_id");
+  const statusUpdatedRef = useRef(false);
 
   const [status, setStatus] = useState<MayarInvoiceStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,6 +35,16 @@ const PaymentStatusPage = () => {
       const data = await getInvoice(invoiceId);
       setStatus(data);
       setError(null);
+      if (data.status === "paid" && orderId && !statusUpdatedRef.current) {
+        try {
+          await supabase.from('orders')
+            .update({ status: 'confirmed', paid_at: new Date().toISOString() })
+            .eq('id', orderId);
+          statusUpdatedRef.current = true;
+        } catch (e) {
+          console.error("Failed to update order status:", e);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal mengecek status pembayaran.");
     } finally {
@@ -90,6 +103,12 @@ const PaymentStatusPage = () => {
                 <p>
                   Nama: <span className="text-foreground">{status.customer.name}</span>
                 </p>
+                {status.payment_method && (
+                  <p>Metode: <span className="text-foreground">{status.payment_method}</span></p>
+                )}
+                {status.paid_at && (
+                  <p>Dibayar: <span className="text-foreground">{new Date(status.paid_at).toLocaleString("id-ID")}</span></p>
+                )}
               </div>
               <div className="flex gap-3">
                 <Button variant="hero" asChild className="flex-1">
