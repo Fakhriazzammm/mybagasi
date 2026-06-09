@@ -83,7 +83,17 @@ export const batchShippingService = {
     return data
   },
 
-  // Super admin
+  // ─── Admin CRUD ──────────────────────────────────────────
+
+  async listAll(): Promise<BatchShipment[]> {
+    const { data, error } = await supabase
+      .from('batch_shipments')
+      .select('*, participants:batch_participants(count)')
+      .order('departure_date', { ascending: true })
+    if (error) throw error
+    return data
+  },
+
   async create(payload: Omit<BatchShipment, 'id' | 'created_at' | 'updated_at'>): Promise<BatchShipment> {
     const { data, error } = await supabase
       .from('batch_shipments')
@@ -92,6 +102,25 @@ export const batchShippingService = {
       .single()
     if (error) throw error
     return data
+  },
+
+  async update(id: string, updates: Partial<BatchShipment>): Promise<BatchShipment> {
+    const { data, error } = await supabase
+      .from('batch_shipments')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('batch_shipments')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
   },
 
   async updateStatus(id: string, status: BatchStatus): Promise<BatchShipment> {

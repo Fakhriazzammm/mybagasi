@@ -42,6 +42,7 @@ import TrackingExceptionsPage from "./pages/admin/TrackingExceptions";
 import ScraperFailuresPage from "./pages/admin/ScraperFailures";
 import Approvals from "./pages/admin/Approvals";
 import Support from "./pages/admin/Support";
+import JadwalManagement from "./pages/admin/JadwalManagement";
 
 // Finance
 import { FinanceLayout } from "./components/finance/FinanceLayout";
@@ -126,6 +127,7 @@ const App = () => (
             <Route path="scraper" element={<ScraperFailuresPage />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="support" element={<Support />} />
+            <Route path="jadwal" element={<JadwalManagement />} />
           </Route>
 
           {/* Finance (requires finance or super_admin) */}

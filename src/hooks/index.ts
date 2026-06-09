@@ -198,6 +198,30 @@ export function useJoinBatch() {
   })
 }
 
+export function useCreateBatch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof batchShippingService.create>[0]) => batchShippingService.create(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batch-shipments'] }),
+  })
+}
+
+export function useUpdateBatch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...updates }: { id: string } & Parameters<typeof batchShippingService.update>[1]) => batchShippingService.update(id, updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batch-shipments'] }),
+  })
+}
+
+export function useDeleteBatch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => batchShippingService.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['batch-shipments'] }),
+  })
+}
+
 export const usePreorders = () => {
   const qc = useQueryClient()
   useRealtimeInvalidation({ channel: 'preorders-live', tables: ['preorders', 'preorder_bookings'], queryKeys: [['preorders']], queryClient: qc })

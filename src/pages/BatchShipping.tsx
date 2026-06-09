@@ -7,23 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useBatchShipments, useJoinBatch } from "@/hooks";
 import { fmtRp } from "@/lib/format";
-import { Clock, MapPin, Users, Plane, Package, Sparkles } from "lucide-react";
+import {
+  Clock, MapPin, Users, Plane, Sparkles, Weight, ArrowRight,
+  Calendar,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
-const statusTone: Record<string, string> = {
-  open: "bg-success/15 text-success",
-  closing_soon: "bg-warning/15 text-warning",
-  closed: "bg-muted text-muted-foreground",
-  shipping: "bg-primary-soft text-primary",
-};
-
-const statusLabel: Record<string, string> = {
-  open: "Open",
-  closing_soon: "Closing soon",
-  closed: "Closed",
-  shipping: "On the way",
-};
+// ─── Countdown ──────────────────────────────────────────────────────────────
 
 function useCountdown(target: string) {
   const [now, setNow] = useState(Date.now());
@@ -41,11 +32,11 @@ function useCountdown(target: string) {
 
 const Countdown = ({ to }: { to: string }) => {
   const { d, h, m, s, ended } = useCountdown(to);
-  if (ended) return <span className="text-xs text-muted-foreground">Closed</span>;
+  if (ended) return <span className="text-xs text-muted-foreground">Tutup</span>;
   return (
-    <div className="flex gap-1.5 text-xs font-mono">
-      {[{ v: d, l: "d" }, { v: h, l: "j" }, { v: m, l: "m" }, { v: s, l: "s" }].map((x, i) => (
-        <span key={i} className="bg-foreground text-background rounded-lg px-2 py-1 font-bold tabular-nums">
+    <div className="flex gap-1 text-xs font-mono">
+      {[{ v: d, l: "h" }, { v: h, l: "j" }, { v: m, l: "m" }, { v: s, l: "d" }].map((x, i) => (
+        <span key={i} className="bg-foreground/80 text-background rounded-lg px-1.5 py-1 font-bold tabular-nums text-[11px]">
           {String(x.v).padStart(2, "0")}<span className="opacity-60 ml-0.5">{x.l}</span>
         </span>
       ))}
@@ -53,9 +44,28 @@ const Countdown = ({ to }: { to: string }) => {
   );
 };
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+const statusTone: Record<string, string> = {
+  open: "bg-success/15 text-success",
+  closing_soon: "bg-warning/15 text-warning",
+  closed: "bg-muted text-muted-foreground",
+  shipping: "bg-primary-soft text-primary",
+};
+
+const directionLabel: Record<string, string> = {
+  indonesia_to_japan: "🇮🇩 → 🇯🇵",
+  japan_to_indonesia: "🇯🇵 → 🇮🇩",
+};
+
+// ─── Page ───────────────────────────────────────────────────────────────────
+
 export default function BatchShipping() {
   const { data: batches = [], isLoading, error } = useBatchShipments();
   const joinBatch = useJoinBatch();
+
+  const jpToId = batches.filter((b: any) => b.direction === "japan_to_indonesia" || !b.direction);
+  const idToJp = batches.filter((b: any) => b.direction === "indonesia_to_japan");
 
   if (isLoading) {
     return (
@@ -77,7 +87,7 @@ export default function BatchShipping() {
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
         <div className="flex-1 container mx-auto py-20 text-center">
-          <p className="text-destructive">Gagal memuat</p>
+          <p className="text-destructive">Gagal memuat data</p>
           <p className="text-xs text-muted-foreground">{(error as Error).message}</p>
         </div>
         <Footer />
@@ -85,155 +95,185 @@ export default function BatchShipping() {
     );
   }
 
+  const renderCard = (b: any) => {
+    const joined = b.participants?.[0]?.count ?? 0;
+    const fillPct = b.capacity > 0 ? Math.round((joined / b.capacity) * 100) : 0;
+    const weightUsed = b.participants?.[0]?.total_weight ?? 0;
+    const weightPct = b.max_weight_kg > 0 ? Math.round((weightUsed / b.max_weight_kg) * 100) : 0;
+
+    return (
+      <Card key={b.id} className="border-border/60 overflow-hidden hover:shadow-card transition-shadow">
+        <CardContent className="p-0">
+          <div className="p-5">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge className={statusTone[b.status] ?? "bg-muted text-muted-foreground"}>
+                    {b.status === "open" ? "Buka" : b.status === "closing_soon" ? "Segera Tutup" : b.status === "closed" ? "Tutup" : "Dikirim"}
+                  </Badge>
+                  {b.direction && (
+                    <span className="text-xs">{directionLabel[b.direction] ?? b.route}</span>
+                  )}
+                </div>
+                <h3 className="font-display text-lg font-bold mt-2">{b.name}</h3>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1 justify-end mb-1">
+                  <Clock className="h-3 w-3" />Tutup
+                </p>
+                <Countdown to={b.closes_at} />
+              </div>
+            </div>
+
+            {/* Schedule info */}
+            <div className="flex items-center gap-4 mb-4 text-xs text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-primary" />
+                Berangkat {new Date(b.departure_date || b.closes_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+              </span>
+              {b.arrives_at && (
+                <>
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-accent" />
+                    Tiba {new Date(b.arrives_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Stats grid */}
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Orang</p>
+                <p className="font-display text-lg font-bold mt-0.5">{joined}/{b.capacity}</p>
+              </div>
+              <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Berat</p>
+                <p className="font-display text-lg font-bold mt-0.5">{b.max_weight_kg || "—"} kg</p>
+              </div>
+              <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Per kg</p>
+                <p className="font-display text-lg font-bold mt-0.5">{fmtRp(b.price_per_kg)}</p>
+              </div>
+              <div className="bg-secondary/60 rounded-xl p-2.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Hemat</p>
+                <p className="font-display text-lg font-bold mt-0.5 text-success">{b.savings_percent}%</p>
+              </div>
+            </div>
+
+            {/* Progress bars */}
+            <div className="space-y-2 mb-4">
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-muted-foreground">Kapasitas orang</span>
+                  <span className="font-semibold">{fillPct}%</span>
+                </div>
+                <Progress value={fillPct} className="h-1.5" />
+              </div>
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-muted-foreground">Kapasitas berat</span>
+                  <span className="font-semibold">{weightPct}%</span>
+                </div>
+                <Progress value={weightPct} className="h-1.5" />
+              </div>
+            </div>
+
+            {/* Join button */}
+            <div className="flex items-center justify-between pt-3 border-t border-border/40">
+              <div className="text-xs text-muted-foreground">
+                <Users className="h-3 w-3 inline mr-1" />
+                {joined} peserta
+              </div>
+              <Button
+                variant={b.status === "open" || b.status === "closing_soon" ? "hero" : "outline"}
+                size="sm"
+                disabled={b.status === "closed" || b.status === "shipping" || joinBatch.isPending}
+                onClick={() => {
+                  joinBatch.mutate(
+                    { batch_id: b.id, items: 1, weight_kg: 1 },
+                    {
+                      onSuccess: () => toast.success("Berhasil join!"),
+                      onError: (e) => toast.error("Gagal", { description: (e as Error).message }),
+                    }
+                  );
+                }}
+                className="gap-1.5"
+              >
+                <Plane className="h-3.5 w-3.5" />
+                {b.status === "shipping" ? "Dikirim" : b.status === "closed" ? "Tutup" : "Gabung"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderSection = (title: string, icon: any, items: any[], empty: string) => (
+    <div>
+      <div className="flex items-center gap-2.5 mb-5">
+        <div className="h-9 w-9 rounded-xl bg-primary-soft text-primary grid place-items-center">
+          {icon}
+        </div>
+        <div>
+          <h2 className="font-display font-bold text-lg">{title}</h2>
+          <p className="text-xs text-muted-foreground">{items.length} jadwal tersedia</p>
+        </div>
+      </div>
+      <div className="space-y-4">
+        {items.length === 0 ? (
+          <Card className="border-dashed border-border/60">
+            <CardContent className="p-8 text-center text-sm text-muted-foreground">
+              {empty}
+            </CardContent>
+          </Card>
+        ) : (
+          items.map(renderCard)
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
 
       <section className="bg-gradient-hero border-b border-border/60">
-        <div className="container mx-auto py-12 md:py-16">
-          <div className="max-w-3xl">
-            <span className="inline-flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold text-primary bg-primary-soft px-3 py-1 rounded-full">
-              <Plane className="h-3 w-3" /> Batch Shipping
+        <div className="container mx-auto py-10 md:py-14">
+          <div className="max-w-2xl">
+            <span className="inline-flex items-center gap-2 text-[11px] uppercase tracking-widest font-bold text-primary bg-primary-soft px-3 py-1 rounded-full mb-4">
+              <Calendar className="h-3 w-3" /> Jadwal Pengiriman
             </span>
-            <h1 className="font-display text-3xl md:text-5xl font-bold mt-4 leading-tight">
-              Patungan ongkir, hemat sampai <span className="text-primary">48%</span>
+            <h1 className="font-display text-3xl md:text-5xl font-bold leading-tight">
+              Kirim & terima barang dari <span className="text-primary">Indonesia ↔ Jepang</span>
             </h1>
-            <p className="text-muted-foreground mt-3 max-w-xl">
-              Gabung batch pengiriman bareng pengguna lain. Makin banyak yang join, makin murah ongkir per kg.
+            <p className="text-muted-foreground mt-3 max-w-xl text-sm">
+              Pilih jadwal keberangkatan. Patungan ongkir — makin banyak peserta, makin murah per kg.
             </p>
           </div>
         </div>
       </section>
 
-      <main className="container mx-auto py-10 md:py-14 flex-1">
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 grid gap-5">
-            {batches.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground">Belum ada batch tersedia</p>
-              </div>
-            ) : (
-              batches.map((b: any) => {
-                const joined = b.participants?.[0]?.count ?? 0;
-                const fillPct = b.capacity > 0 ? Math.round((joined / b.capacity) * 100) : 0;
-                return (
-                  <Card key={b.id} className="border-border/60 overflow-hidden">
-                    <CardContent className="p-0">
-                      <div className="p-5 md:p-6">
-                        <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge className={statusTone[b.status] ?? "bg-muted text-muted-foreground"}>{statusLabel[b.status] ?? b.status}</Badge>
-                              <span className="font-mono text-[11px] text-muted-foreground">{b.id.slice(0, 8)}…</span>
-                            </div>
-                            <h3 className="font-display text-xl font-bold mt-2">{b.name}</h3>
-                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
-                              <MapPin className="h-3 w-3" />{b.route} · sampai {b.arrives_at ? new Date(b.arrives_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[11px] text-muted-foreground flex items-center gap-1 justify-end"><Clock className="h-3 w-3" />Tutup dalam</p>
-                            <div className="mt-1.5"><Countdown to={b.closes_at} /></div>
-                          </div>
-                        </div>
+      <main className="container mx-auto py-8 md:py-12 flex-1">
+        <div className="grid lg:grid-cols-2 gap-8">
+          {/* Japan → Indonesia */}
+          {renderSection(
+            "Jepang → Indonesia",
+            <Plane className="h-4 w-4" />,
+            jpToId,
+            "Belum ada jadwal dari Jepang ke Indonesia"
+          )}
 
-                        <div className="grid grid-cols-3 gap-3 my-4">
-                          <div className="bg-secondary/60 rounded-2xl p-3">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Hemat ongkir</p>
-                            <p className="font-display text-xl font-bold text-success mt-1">{b.savings_percent}%</p>
-                          </div>
-                          <div className="bg-secondary/60 rounded-2xl p-3">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Per kg</p>
-                            <p className="font-display text-xl font-bold mt-1">{fmtRp(b.price_per_kg)}</p>
-                          </div>
-                          <div className="bg-secondary/60 rounded-2xl p-3">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Peserta</p>
-                            <p className="font-display text-xl font-bold mt-1">{joined}/{b.capacity}</p>
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="flex justify-between text-xs mb-1.5">
-                            <span className="text-muted-foreground">Kapasitas terisi</span>
-                            <span className="font-semibold">{fillPct}%</span>
-                          </div>
-                          <Progress value={fillPct} className="h-2" />
-                        </div>
-
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/40">
-                          <div className="text-xs text-muted-foreground">
-                            {joined} peserta terdaftar
-                          </div>
-                          <Button
-                            variant={b.status === "shipping" || b.status === "closed" ? "outline" : "hero"}
-                            size="sm"
-                            disabled={b.status === "shipping" || b.status === "closed" || joinBatch.isPending}
-                            onClick={() => {
-                              joinBatch.mutate(
-                                { batch_id: b.id, items: 1, weight_kg: 1 },
-                                {
-                                  onSuccess: () => toast.success("Berhasil join batch!"),
-                                  onError: (e) => toast.error("Gagal join", { description: (e as Error).message }),
-                                }
-                              );
-                            }}
-                          >
-                            <Package className="h-4 w-4" />
-                            {b.status === "shipping" ? "Sedang dikirim" : b.status === "closed" ? "Closed" : "Join batch"}
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
-          </div>
-
-          <div className="space-y-5">
-            <Card className="border-border/60 bg-gradient-hero">
-              <CardContent className="p-5">
-                <div className="h-10 w-10 rounded-2xl bg-primary text-primary-foreground grid place-items-center mb-3">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <h3 className="font-display text-lg font-bold">Cara kerja Batch Shipping</h3>
-                <ol className="mt-3 space-y-2.5 text-sm">
-                  {[
-                    "Pilih batch dengan rute & jadwal cocok",
-                    "Order kamu masuk ke gudang Tokyo / Osaka",
-                    "Saat batch closing, semua paket dikirim bareng",
-                    "Hemat ongkir karena biaya cargo dibagi",
-                  ].map((s, i) => (
-                    <li key={i} className="flex gap-2.5">
-                      <span className="h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center text-[10px] font-bold shrink-0 mt-0.5">{i + 1}</span>
-                      <span>{s}</span>
-                    </li>
-                  ))}
-                </ol>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/60">
-              <CardContent className="p-5">
-                <h3 className="font-semibold flex items-center gap-2"><Users className="h-4 w-4 text-primary" />Batch tersedia</h3>
-                <div className="mt-3 space-y-2.5 text-sm">
-                  {batches.length === 0 ? (
-                    <p className="text-muted-foreground">Belum ada batch</p>
-                  ) : (
-                    batches.map((b: any) => (
-                      <div key={b.id} className="flex items-center gap-3">
-                        <span className="font-medium flex-1">{b.name}</span>
-                        <span className="text-xs text-muted-foreground">{b.route}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <Button variant="ghost" size="sm" asChild className="w-full mt-3">
-                  <Link to="/preorder">Lihat juga Pre-order →</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Indonesia → Japan */}
+          {renderSection(
+            "Indonesia → Jepang",
+            <Plane className="h-4 w-4 scale-x-[-1]" />,
+            idToJp,
+            "Belum ada jadwal dari Indonesia ke Jepang"
+          )}
         </div>
       </main>
 

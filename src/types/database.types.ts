@@ -14,7 +14,7 @@ export type PriorityLevel = 'high' | 'normal' | 'low'
 export type SupportChannel = 'WhatsApp' | 'Email'
 export type SupportStatus = 'open' | 'in_progress' | 'resolved'
 export type PointsType = 'earn' | 'redeem' | 'expire'
-export type BatchStatus = 'open' | 'closing_soon' | 'closed' | 'shipping'
+export type BatchStatus = 'draft' | 'open' | 'closing_soon' | 'closed' | 'shipping'
 export type AlertStatus = 'monitoring' | 'triggered' | 'paused'
 export type AffiliatePayoutStatus = 'pending' | 'approved' | 'paid'
 export type PricingType = 'percent' | 'flat'
@@ -234,6 +234,9 @@ export interface BatchShipment {
   capacity: number
   price_per_kg: number
   savings_percent: number
+  direction: 'indonesia_to_japan' | 'japan_to_indonesia'
+  max_weight_kg: number
+  departure_date: string
   status: BatchStatus
   created_at: string
   updated_at: string
