@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Navbar } from "@/components/site/Navbar";
-import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -595,40 +594,35 @@ const PersonalShopper = () => {
   // ─── Render ───────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       <Navbar />
 
-      <main className="flex-1 flex flex-col max-w-3xl mx-auto w-full px-4 pb-4">
-        {/* Header */}
-        <div className="text-center py-4 md:py-6 shrink-0">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-soft border border-primary/20 text-xs font-medium text-primary mb-3">
-            <Sparkles className="h-3.5 w-3.5" />
-            AI Personal Shopper
-          </div>
-          <h1 className="font-display text-xl md:text-2xl font-bold mb-1">
-            Belanja dari Jepang, tanya AI
+      <main className="flex-1 flex flex-col max-w-3xl w-full mx-auto overflow-hidden">
+        {/* Compact header */}
+        <div className="shrink-0 text-center px-4 py-2 md:py-3 border-b border-border/30">
+          <h1 className="font-display text-base md:text-lg font-bold">
+            <span className="text-primary">AI</span> Personal Shopper
           </h1>
-          <p className="text-xs text-muted-foreground">
-            Paste link atau ketik produk — langsung dihitung all-in
+          <p className="text-[11px] text-muted-foreground">
+            Paste link atau ketik produk Jepang
           </p>
         </div>
 
-        {/* Chat container */}
+        {/* Chat messages — only this scrolls */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto space-y-4 px-1 pb-2 scroll-smooth"
-          style={{ maxHeight: "calc(100vh - 320px)" }}
+          className="flex-1 overflow-y-auto space-y-3 px-4 py-3 scroll-smooth"
         >
           {/* Welcome */}
           {msgs.length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center h-full gap-5 text-center px-4 py-8">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-warm text-primary grid place-items-center shadow-soft animate-float">
-                <Sparkles className="h-6 w-6" />
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-4">
+              <div className="h-12 w-12 rounded-2xl bg-gradient-warm text-primary grid place-items-center shadow-soft animate-float">
+                <Sparkles className="h-5 w-5" />
               </div>
               <div className="max-w-sm">
-                <p className="font-display text-lg font-bold mb-1">Halo! 👋</p>
+                <p className="font-display font-bold mb-1">Halo! 👋</p>
                 <p className="text-sm text-muted-foreground">
-                  Mau cari atau cek harga barang dari Jepang? Paste link, ketik nama produk, atau tanya aja.
+                  Cari atau cek harga barang dari Jepang. Paste link, ketik produk, atau tanya aja.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 justify-center">
@@ -650,51 +644,39 @@ const PersonalShopper = () => {
         </div>
 
         {/* Input bar */}
-        <div className="shrink-0 mt-3 flex items-end gap-2 bg-card border border-border/40 rounded-2xl p-2 shadow-soft">
-          <Input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend(input);
-              }
-            }}
-            placeholder={hasApiKey ? "Paste link atau ketik produk..." : "AI API key belum dikonfigurasi"}
-            disabled={loading || !hasApiKey}
-            className="flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 text-sm placeholder:text-muted-foreground/50"
-          />
-          {loading ? (
-            <Button
-              onClick={stopStreaming}
-              size="sm"
-              variant="destructive"
-              className="h-9 w-9 p-0 shrink-0 rounded-xl"
-            >
-              <StopCircle className="h-4 w-4" />
-            </Button>
-          ) : (
-            <Button
-              onClick={() => handleSend(input)}
-              disabled={!input.trim() || !hasApiKey}
-              size="sm"
-              variant="hero"
-              className="h-9 w-9 p-0 shrink-0 rounded-xl"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+        <div className="shrink-0 px-4 pb-3 pt-2 border-t border-border/30">
+          {!hasApiKey && (
+            <div className="mb-2 rounded-xl bg-warning/10 border border-warning/20 px-3 py-2 text-[11px] text-warning-foreground text-center">
+              VITE_SUMOPOD_API_KEY belum diatur — AI chat tidak aktif
+            </div>
           )}
-        </div>
-
-        {/* API key warning */}
-        {!hasApiKey && (
-          <div className="mt-2 rounded-xl bg-warning/10 border border-warning/20 px-3 py-2 text-[11px] text-warning-foreground text-center">
-            VITE_SUMOPOD_API_KEY belum diatur — AI chat tidak aktif
+          <div className="flex items-end gap-2 bg-card border border-border/40 rounded-2xl p-2 shadow-soft">
+            <Input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(input);
+                }
+              }}
+              placeholder={hasApiKey ? "Paste link atau ketik produk..." : "AI API key belum dikonfigurasi"}
+              disabled={loading || !hasApiKey}
+              className="flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 text-sm placeholder:text-muted-foreground/50"
+            />
+            {loading ? (
+              <Button onClick={stopStreaming} size="sm" variant="destructive" className="h-9 w-9 p-0 shrink-0 rounded-xl">
+                <StopCircle className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button onClick={() => handleSend(input)} disabled={!input.trim() || !hasApiKey} size="sm" variant="hero" className="h-9 w-9 p-0 shrink-0 rounded-xl">
+                <Send className="h-4 w-4" />
+              </Button>
+            )}
           </div>
-        )}
+        </div>
       </main>
-      <Footer />
     </div>
   );
 };
