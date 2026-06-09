@@ -10,7 +10,7 @@ interface AuthContextValue {
   signUp: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>
-  updateProfile: (updates: Partial<Pick<Profile, 'name' | 'avatar_url'>>) => Promise<{ success: boolean; error?: string }>
+  updateProfile: (updates: Partial<Pick<Profile, 'name' | 'avatar_url' | 'username'>>) => Promise<{ success: boolean; error?: string }>
   changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
   refreshProfile: () => Promise<void>
   hasRole: (...roles: UserRole[]) => boolean
@@ -76,15 +76,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, name: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { 
           data: { name },
-          emailRedirectTo: `${window.location.origin}/dashboard`,
+          emailRedirectTo: `${window.location.origin}/${username}/dashboard`,
         },
       })
       if (error) return { success: false, error: error.message }
+
+      // Generate username from name
+      const username = name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+
+      // Set username in profile
+      if (data?.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ username })
+          .eq('id', data.user.id)
+        if (profileError) {
+          console.error('Failed to set username:', profileError)
+        }
+      }
+
       return { success: true }
     } catch (err: any) {
       return { success: false, error: err.message || 'Registration failed' }
@@ -109,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const updateProfile = async (updates: Partial<Pick<Profile, 'name' | 'avatar_url'>>) => {
+  const updateProfile = async (updates: Partial<Pick<Profile, 'name' | 'avatar_url' | 'username'>>) => {
     try {
       if (!user) throw new Error('Not authenticated')
       const { error } = await supabase

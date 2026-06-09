@@ -1,4 +1,4 @@
-import { Outlet, Link } from "react-router-dom";
+import { Outlet, Link, useParams, Navigate } from "react-router-dom";
 import { Bell, MessageCircle, LayoutDashboard, Package, Heart, Crown, User, LogOut } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { CustomerSidebar } from "./CustomerSidebar";
@@ -12,7 +12,13 @@ import {
 
 export const DashboardLayout = () => {
   const { profile, signOut, getDashboardRoute } = useAuth();
+  const { username } = useParams();
   const dash = getDashboardRoute();
+
+  // Security: ensure URL username matches logged-in user's username
+  if (profile && username && username !== profile.username) {
+    return <Navigate to={dash} replace />;
+  }
 
   const customerNav = [
     { to: dash, label: "Beranda", icon: LayoutDashboard, end: true },

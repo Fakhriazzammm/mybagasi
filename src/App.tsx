@@ -10,6 +10,7 @@ import Register from "@/pages/auth/Register";
 import ForgotPassword from "@/pages/auth/ForgotPassword";
 import Profile from "@/pages/Profile";
 import { ProtectedRoute, GuestRoute } from "@/components/auth/RouteGuards";
+import { UserRoute } from "@/components/auth/UserRoute";
 import { useAuth } from "@/contexts/AuthContext";
 
 // Public pages
@@ -22,7 +23,7 @@ import PaymentStatusPage from "./pages/PaymentStatusPage";
 import BatchShipping from "./pages/BatchShipping";
 import Preorder from "./pages/Preorder";
 
-// Dashboard (customer)
+// Customer Dashboard (via /:username/...)
 import { DashboardLayout } from "./components/dashboard/DashboardLayout";
 import Overview from "./pages/dashboard/Overview";
 import Quotations from "./pages/dashboard/Quotations";
@@ -34,14 +35,6 @@ import Addresses from "./pages/dashboard/Addresses";
 import Membership from "./pages/dashboard/Membership";
 import Points from "./pages/dashboard/Points";
 import AIShopper from "./pages/dashboard/AIShopper";
-
-// Redirect /dashboard → /:username/dashboard
-function DashboardRedirect() {
-  const { profile, loading } = useAuth();
-  if (loading) return null;
-  if (!profile) return <Navigate to="/auth/login" replace />;
-  return <Navigate to={`/${profile.username}/dashboard`} replace />;
-}
 
 // Admin
 import { AdminLayout } from "./components/admin/AdminLayout";
@@ -74,6 +67,14 @@ import Marketplaces from "./pages/superadmin/Marketplaces";
 import Commission from "./pages/superadmin/Commission";
 import AISettingsPage from "./pages/superadmin/AISettings";
 
+// Redirect /profile and /dashboard to username-based routes
+function DashboardRedirect() {
+  const { profile, loading } = useAuth();
+  if (loading) return null;
+  if (!profile) return <Navigate to="/auth/login" replace />;
+  return <Navigate to={`/${profile.username}/dashboard`} replace />;
+}
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -97,18 +98,25 @@ const App = () => (
           <Route path="/auth/register" element={<GuestRoute><Register /></GuestRoute>} />
           <Route path="/auth/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
 
-          {/* Profile (requires auth) */}
-          <Route path="/profile" element={
+          {/* Legacy redirects — keep working for backward compatibility */}
+          <Route path="/profile" element={<ProfileRedirect />} />
+          <Route path="/dashboard" element={<DashboardRedirect />} />
+
+          {/* Username-based profile route */}
+          <Route path="/:username/profile" element={
             <ProtectedRoute>
-              <Profile />
+              <UserRoute>
+                <Profile />
+              </UserRoute>
             </ProtectedRoute>
           } />
 
-          {/* Customer Dashboard (requires auth) */}          
-          <Route path="/dashboard" element={<DashboardRedirect />} />
-          <Route path=":username/dashboard" element={
+          {/* Username-based dashboard (customer) */}
+          <Route path="/:username/dashboard" element={
             <ProtectedRoute>
-              <DashboardLayout />
+              <UserRoute>
+                <DashboardLayout />
+              </UserRoute>
             </ProtectedRoute>
           }>
             <Route index element={<Overview />} />

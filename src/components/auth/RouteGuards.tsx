@@ -31,7 +31,7 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
   }
 
   if (roles && !roles.includes(profile.role)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={`/${profile.username}/dashboard`} replace />
   }
 
   return <>{children}</>
@@ -52,7 +52,7 @@ export function GuestRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (profile) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={`/${profile.username}/dashboard`} replace />
   }
 
   return <>{children}</>
