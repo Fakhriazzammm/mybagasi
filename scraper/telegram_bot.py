@@ -828,7 +828,7 @@ async def handle_start(chat_id: int, args: str):
                 f"*Yang bisa kamu lakukan:*\n"
                 f"🔍 *Cari produk* — langsung ketik nama barang (contoh: `onitsuka tiger`)\n"
                 f"🔗 *Cek harga* — kirim link marketplace Jepang\n"
-                f"💳 *Beli & bayar* — via chat, bayar pakai DjiwaApp\n"
+                f"💳 *Beli & bayar* — via chat, bayar pakai Zantara Pay\n"
                 f"📋 *Simpan wishlist* — bilang aja \"simpen ini\"\n\n"
                 f"Atau tap tombol di bawah 👇",
                 reply_markup=kb)
@@ -848,7 +848,7 @@ async def handle_start(chat_id: int, args: str):
                 "✨ *Yang bisa aku lakukan:*\n"
                 "🔍 *Cari produk* di Mercari, Rakuten, Amazon JP & lainnya\n"
                 "💰 *Estimasi harga* all-in (produk + fee + ongkir + pajak)\n"
-                "💳 *Bayar aman* via DjiwaApp\n"
+                "💳 *Bayar aman* via Zantara Pay\n"
                 "📦 *Lacak pesanan* sampai ke rumah kamu\n\n"
                 "🚀 *Baru pertama?* Tinggal tap tombol *Daftar* di bawah — cuma 30 detik!\n"
                 "👇 *Pilih salah satu:*",
@@ -1267,7 +1267,7 @@ async def handle_about(chat_id: int):
         "✨ *Kenapa MyBagasi?*\n"
         "• 🛍️ Akses ke Mercari, Rakuten, Amazon JP, Yahoo Auction\n"
         "• 💰 Estimasi harga *all-in* (produk + fee 15% + ongkir + pajak)\n"
-        "• 💳 Bayar pakai DjiwaApp (QRIS, transfer)\n"
+        "• 💳 Bayar pakai Zantara Pay (QRIS, transfer)\n"
         "• 📦 Barang dikirim langsung ke alamat kamu\n"
         "• 🤖 Chat AI — tinggal bilang barang yang kamu mau!\n\n"
         "🌐 *Kunjungi website:* mybagasi.my.id\n"
