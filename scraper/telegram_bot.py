@@ -58,6 +58,8 @@ log = logging.getLogger("mybagasi_bot")
 # ── Conversation State (per user) ─────────────────────────
 # Structure: {chat_id: {"messages": [...], "context": {"last_quotation_id": ..., "last_product": ..., "user_id": ...}}}
 conversations: dict[int, dict[str, Any]] = {}
+_pending_reg: dict[int, dict[str, Any]] = {}    # {chat_id: {"step": "name"|"email"|"password"|"verify", ...}}
+_pending_login: dict[int, dict[str, Any]] = {}   # {chat_id: {"step": "email"|"verify", ...}}
 MAX_HISTORY = 20
 
 # ── Telegram Helpers ──────────────────────────────────────
@@ -163,6 +165,69 @@ async def lookup_user_by_telegram_id(telegram_chat_id: int) -> dict | None:
             return None
     except Exception as e:
         log.error(f"lookup_user_by_telegram_id error: {e}")
+        return None
+
+# ── Bot Auth Helpers ──────────────────────────────────────
+
+async def register_user_via_admin_api(name: str, email: str, password: str) -> dict:
+    """Create a new user via Supabase Auth Admin API (service_role).
+    The trigger handle_new_user() will auto-create profile + telegram_token."""
+    url = f"{SUPABASE_URL}/auth/v1/admin/users"
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_KEY,
+    }
+    payload = {
+        "email": email,
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": {"name": name},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(url, json=payload, headers=headers)
+            if r.status_code in (200, 201):
+                data = r.json()
+                return {"success": True, "user_id": data["id"], "email": data.get("email", email)}
+            err = r.json().get("msg") or r.text[:200]
+            return {"error": err}
+    except Exception as e:
+        log.error(f"register_user error: {e}")
+        return {"error": str(e)}
+
+async def get_profile_by_email(email: str) -> dict | None:
+    """Lookup profile by email address."""
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/profiles",
+                params={"email": f"eq.{email.lower()}", "select": "id,name,email,telegram_id,telegram_token,role", "limit": 1},
+                headers=headers,
+            )
+            if r.status_code == 200 and r.json():
+                return r.json()[0]
+            return None
+    except Exception as e:
+        log.error(f"get_profile_by_email error: {e}")
+        return None
+
+async def rotate_telegram_token(user_id: str) -> str | None:
+    """Generate a new telegram_token for a user via DB RPC function."""
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/rotate_telegram_token",
+                json={"p_user_id": user_id},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                return r.text.strip().strip('"')
+            return None
+    except Exception as e:
+        log.error(f"rotate_token error: {e}")
         return None
 
 # ── Supabase Data Persistence ─────────────────────────────
@@ -760,11 +825,12 @@ async def handle_start(chat_id: int, args: str):
         else:
             await tg_send(chat_id,
                 "👋 *Selamat datang di MyBagasi Bot!*\n\n"
-                "Untuk menghubungkan akun MyBagasi kamu:\n"
-                "`/start KODE_RAHASIA_KAMU`\n\n"
-                "Kode rahasia ada di halaman *Profile* aplikasi MyBagasi.\n"
-                "https://mybagasi.my.id/profile\n\n"
-                "Belum punya akun? Daftar di https://mybagasi.my.id/auth/register")
+                "Pilih salah satu:\n\n"
+                "🆕 `/register` — Daftar akun baru (30 detik)\n"
+                "🔐 `/login` — Login ke akun yang sudah ada\n\n"
+                "Atau jika sudah punya kode rahasia:\n"
+                "📌 `/start KODE` — Hubungkan dengan kode\n\n"
+                "💡 *Baru pertama?* Langsung `/register` aja!")
         return
 
     if existing:
@@ -886,6 +952,248 @@ async def handle_wishlist(chat_id: int):
         log.error(f"wishlist fetch error: {e}")
         await tg_send(chat_id, "❌ Gagal mengambil wishlist. Coba lagi nanti.")
 
+# ── Auth Command Handlers ─────────────────────────────────
+
+async def handle_register(chat_id: int):
+    """Start multi-step registration flow."""
+    existing = await lookup_user_by_telegram_id(chat_id)
+    if existing:
+        await tg_send(chat_id,
+            f"⚠️ Akun Telegram ini sudah terhubung ke *{existing['name']}*.\n"
+            f"Gunakan `/unlink` dulu untuk ganti akun.")
+        return
+    _pending_reg.pop(chat_id, None)
+    _pending_login.pop(chat_id, None)
+    _pending_reg[chat_id] = {"step": "name"}
+    await tg_send(chat_id,
+        "👋 *Daftar MyBagasi* — Langkah 1/3\n\n"
+        "Masukkan *Nama Lengkap* kamu:")
+
+async def handle_login(chat_id: int):
+    """Start login flow for existing users."""
+    existing = await lookup_user_by_telegram_id(chat_id)
+    if existing:
+        await tg_send(chat_id,
+            f"⚠️ Akun Telegram ini sudah terhubung ke *{existing['name']}*.\n"
+            f"Gunakan `/unlink` dulu untuk ganti akun.")
+        return
+    _pending_reg.pop(chat_id, None)
+    _pending_login.pop(chat_id, None)
+    _pending_login[chat_id] = {"step": "email"}
+    await tg_send(chat_id,
+        "🔐 *Login MyBagasi*\n\n"
+        "Masukkan *Email* yang terdaftar:")
+
+async def handle_token_verification(chat_id: int, token: str):
+    """Handle when user types a raw token code for verification."""
+    existing = await lookup_user_by_telegram_id(chat_id)
+    if existing:
+        await tg_send(chat_id, f"✅ Akun kamu (*{existing['name']}*) sudah terhubung!")
+        return
+    user = await lookup_user_by_token(token)
+    if not user:
+        await tg_send(chat_id,
+            "❌ Kode tidak valid.\n\n"
+            "• `/register` — Daftar akun baru\n"
+            "• `/login` — Login dengan email\n"
+            "• Cek kode di mybagasi.my.id/profile")
+        return
+    if user.get("telegram_id") and user["telegram_id"] != chat_id:
+        await tg_send(chat_id,
+            "❌ Kode ini sudah terhubung ke Telegram lain.\n"
+            "Gunakan `/login` untuk login ulang.")
+        return
+    success = await link_telegram(user["id"], chat_id)
+    if success:
+        conversations[chat_id] = {"messages": [], "context": {"user_id": user["id"]}}
+        await tg_send(chat_id,
+            f"✅ *Verifikasi Berhasil!*\n\n"
+            f"Selamat datang, *{user['name']}*! 🎉\n\n"
+            f"Lanjutkan dengan mengirim kata kunci atau link produk!")
+        log.info(f"User verified via token: {user['name']} ({user['id'][:8]})")
+    else:
+        await tg_send(chat_id, "❌ Gagal menghubungkan. Coba lagi.")
+
+async def process_reg_step(chat_id: int, text: str):
+    """Process registration step by step."""
+    state = _pending_reg.get(chat_id)
+    if not state:
+        return False
+    step = state["step"]
+
+    if step == "name":
+        name = text.strip()
+        if len(name) < 2:
+            await tg_send(chat_id, "❌ Nama minimal 2 karakter. Coba lagi:")
+            return True
+        state["name"] = name
+        state["step"] = "email"
+        await tg_send(chat_id,
+            "✉️ *Langkah 2/3* — Masukkan *Email* kamu:\n\n"
+            "Email akan digunakan untuk login di mybagasi.my.id.")
+        return True
+
+    elif step == "email":
+        email = text.strip().lower()
+        if "@" not in email or "." not in email:
+            await tg_send(chat_id, "❌ Email tidak valid. Coba lagi:")
+            return True
+        state["email"] = email
+        state["step"] = "password"
+        await tg_send(chat_id,
+            "🔑 *Langkah 3/3* — Buat *Password* (minimal 6 karakter):")
+        return True
+
+    elif step == "password":
+        password = text.strip()
+        if len(password) < 6:
+            await tg_send(chat_id, "❌ Password minimal 6 karakter. Coba lagi:")
+            return True
+        await tg_send(chat_id, "⏳ Membuat akun MyBagasi...")
+        result = await register_user_via_admin_api(state["name"], state["email"], password)
+        password = ""
+        if "error" in result:
+            if "already registered" in result["error"].lower() or "already exists" in result["error"].lower() or "duplicate" in result["error"].lower():
+                await tg_send(chat_id,
+                    f"❌ Email `{state['email']}` sudah terdaftar.\n\n"
+                    f"Gunakan `/login` untuk masuk ke akun yang sudah ada.")
+            else:
+                await tg_send(chat_id, f"❌ Gagal daftar: {result['error'][:100]}")
+            _pending_reg.pop(chat_id, None)
+            return True
+
+        user_id = result["user_id"]
+        # Baca profile yang auto-created oleh trigger (dapatkan telegram_token)
+        profile = None
+        for attempt in range(5):
+            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    r = await client.get(
+                        f"{SUPABASE_URL}/rest/v1/profiles",
+                        params={"id": f"eq.{user_id}", "select": "id,name,email,telegram_token", "limit": 1},
+                        headers=headers,
+                    )
+                    if r.status_code == 200 and r.json():
+                        profile = r.json()[0]
+                        break
+            except:
+                pass
+            await asyncio.sleep(0.5)
+
+        if not profile:
+            await tg_send(chat_id, "❌ Akun dibuat tapi gagal membaca profile. Coba login dengan `/login`.")
+            _pending_reg.pop(chat_id, None)
+            return True
+
+        token = profile["telegram_token"]
+        await tg_send(chat_id,
+            f"✅ *Akun MyBagasi berhasil dibuat!*\n\n"
+            f"Halo *{state['name']}*! 🎉\n\n"
+            f"*Kode Rahasia kamu:*\n"
+            f"`{token}`\n\n"
+            f"📋 *Simpan kode ini* — kamu bisa pakai untuk:\n"
+            f"• Menghubungkan Telegram lain\n"
+            f"• Verifikasi ulang akun\n\n"
+            f"🔗 Kunjungi profilmu: mybagasi.my.id/profile\n\n"
+            f"📌 *Sekarang ketik kode di atas* untuk verifikasi dan mulai belanja!")
+        _pending_reg[chat_id] = {"step": "verify", "user_id": user_id, "token": token, "name": state["name"]}
+        return True
+
+    elif step == "verify":
+        input_token = text.strip().upper()
+        expected_token = state.get("token", "")
+        if input_token == expected_token:
+            success = await link_telegram(state["user_id"], chat_id)
+            if success:
+                conversations[chat_id] = {"messages": [], "context": {"user_id": state["user_id"]}}
+                await tg_send(chat_id,
+                    f"✅ *Verifikasi Berhasil!*\n\n"
+                    f"Halo *{state['name']}*! Selamat berbelanja! 🎉\n\n"
+                    f"*Yang bisa kamu lakukan:*\n"
+                    f"🔍 Kirim *kata kunci* — cari produk Jepang\n"
+                    f"🔗 Kirim *link marketplace* — cek harga\n"
+                    f"💳 Bayar via chat — checkout langsung\n"
+                    f"📋 `/wishlist` — lihat wishlist\n"
+                    f"📊 Dashboard: mybagasi.my.id/dashboard\n\n"
+                    f"💡 Contoh: ketik `/beli onitsuka tiger`")
+                log.info(f"User registered via bot: {state['name']} ({state['user_id'][:8]})")
+            else:
+                await tg_send(chat_id, "❌ Gagal menghubungkan. Coba `/start` dengan kode rahasia.")
+        else:
+            await tg_send(chat_id,
+                f"❌ Kode salah. Coba lagi.\n\n"
+                f"Kode rahasia kamu: `{expected_token}`")
+        _pending_reg.pop(chat_id, None)
+        return True
+
+    return False
+
+async def process_login_step(chat_id: int, text: str):
+    """Process login step by step."""
+    state = _pending_login.get(chat_id)
+    if not state:
+        return False
+    step = state["step"]
+
+    if step == "email":
+        email = text.strip().lower()
+        if "@" not in email:
+            await tg_send(chat_id, "❌ Email tidak valid. Coba lagi:")
+            return True
+        profile = await get_profile_by_email(email)
+        if not profile:
+            await tg_send(chat_id,
+                f"❌ Email `{email}` tidak ditemukan.\n\n"
+                f"Gunakan `/register` untuk membuat akun baru.")
+            _pending_login.pop(chat_id, None)
+            return True
+        if profile.get("telegram_id"):
+            await tg_send(chat_id,
+                f"⚠️ Akun *{profile['name']}* sudah terhubung ke Telegram lain.\n"
+                f"Hubungi admin untuk bantuan.")
+            _pending_login.pop(chat_id, None)
+            return True
+        new_token = await rotate_telegram_token(profile["id"])
+        if not new_token:
+            await tg_send(chat_id, "❌ Gagal generate kode. Coba lagi nanti.")
+            _pending_login.pop(chat_id, None)
+            return True
+        state["user_id"] = profile["id"]
+        state["name"] = profile["name"]
+        state["new_token"] = new_token
+        state["step"] = "verify"
+        await tg_send(chat_id,
+            f"🔐 *Verifikasi Login*\n\n"
+            f"Halo *{profile['name']}*! 👋\n\n"
+            f"*Kode verifikasi kamu:*\n"
+            f"`{new_token}`\n\n"
+            f"📌 Ketik kode di atas untuk mengaktifkan bot.")
+        return True
+
+    elif step == "verify":
+        input_token = text.strip().upper()
+        expected_token = state.get("new_token", "")
+        if input_token == expected_token:
+            success = await link_telegram(state["user_id"], chat_id)
+            if success:
+                conversations[chat_id] = {"messages": [], "context": {"user_id": state["user_id"]}}
+                await tg_send(chat_id,
+                    f"✅ *Login Berhasil!*\n\n"
+                    f"Selamat datang kembali, *{state['name']}*! 🎉\n\n"
+                    f"Lanjutkan belanja dengan kirim kata kunci atau link produk!")
+                log.info(f"User logged in via bot: {state['name']} ({state['user_id'][:8]})")
+            else:
+                await tg_send(chat_id, "❌ Gagal menghubungkan. Coba lagi.")
+        else:
+            await tg_send(chat_id,
+                f"❌ Kode salah. Coba lagi.\n\n"
+                f"Kode verifikasi: `{expected_token}`")
+        _pending_login.pop(chat_id, None)
+        return True
+
+    return False
+
 async def handle_unlink(chat_id: int):
     user = await lookup_user_by_telegram_id(chat_id)
     if not user:
@@ -906,6 +1214,8 @@ async def handle_help(chat_id: int):
     await tg_send(chat_id,
         "📖 *MyBagasi Bot — Bantuan*\n\n"
         "*Akun & Data*\n"
+        "`/register` — Daftar akun baru\n"
+        "`/login` — Login ke akun yang sudah ada\n"
         "`/start` — Sambutan / hubungkan akun\n"
         "`/status` — Cek akun + data tersimpan\n"
         "`/wishlist` — Lihat wishlist tersimpan\n"
@@ -959,12 +1269,18 @@ async def process_update(update: dict):
         await handle_status(chat_id)
     elif command == "/unlink":
         await handle_unlink(chat_id)
+    elif command == "/register":
+        await handle_register(chat_id)
+    elif command == "/login":
+        await handle_login(chat_id)
     elif command == "/wishlist":
         await handle_wishlist(chat_id)
     elif command == "/help":
         await handle_help(chat_id)
     elif command == "/reset":
         reset_conversation(chat_id)
+        _pending_reg.pop(chat_id, None)
+        _pending_login.pop(chat_id, None)
         await tg_send(chat_id, "🔄 Percakapan di-reset. Mulai lagi yuk!")
     elif command in ("/beli", "/ai", "/cari"):
         search_text = args if args else text
@@ -983,11 +1299,28 @@ async def process_update(update: dict):
             return
         await handle_ai(chat_id, f"Tolong cek harga produk ini: {args}", user_profile)
     else:
-        if not user_profile:
-            await handle_start(chat_id, "")
+        # Cek pending registration/login steps
+        if chat_id in _pending_reg:
+            await process_reg_step(chat_id, text)
+            return
+        if chat_id in _pending_login:
+            await process_login_step(chat_id, text)
             return
         
-        is_url = bool(re.match(r'^https?://', text))
+        # Jika token 12 karakter uppercase → auto-verify
+        if re.match(r'^[A-Z0-9]{12}$', text.strip().upper()):
+            await handle_token_verification(chat_id, text.strip().upper())
+            return
+        
+        if not user_profile:
+            await tg_send(chat_id,
+                "👋 *Selamat datang di MyBagasi!*\n\n"
+                "• `/register` — Daftar akun baru\n"
+                "• `/login` — Login ke akun yang sudah ada\n"
+                "• `/start KODE` — Hubungkan dengan kode rahasia\n\n"
+                "Belum punya akun? Langsung daftar via `/register`!")
+            return
+        
         await handle_ai(chat_id, text, user_profile)
 
 # ── Polling Loop ───────────────────────────────────────────
