@@ -106,6 +106,19 @@ async def tg_split_send(chat_id: int, text: str, parse_mode: str = "Markdown"):
         await tg_send(chat_id, part, parse_mode)
         await asyncio.sleep(0.3)
 
+async def tg_send_photo(chat_id: int, photo_url: str, caption: str, reply_markup: dict | None = None) -> dict | None:
+    """Send a photo with caption."""
+    try:
+        payload = {"chat_id": chat_id, "photo": photo_url, "caption": caption, "parse_mode": "Markdown"}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(tg_url("sendPhoto"), json=payload)
+            return r.json()
+    except Exception as e:
+        log.error(f"tg_send_photo error: {e}")
+        return None
+
 # ── Supabase Auth Helpers ─────────────────────────────────
 
 async def lookup_user_by_token(token: str) -> dict | None:
@@ -374,7 +387,11 @@ async def scraper_scrape(url: str) -> dict:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(f"{SCRAPER_URL}/scrape", json={"url": url})
             if r.status_code == 200:
-                return r.json()
+                data = r.json()
+                # Pastikan image_url selalu tersedia dari images[0]
+                if "images" in data and data["images"]:
+                    data["image_url"] = data["images"][0]
+                return data
             return {"error": f"HTTP {r.status_code}", "url": url}
     except Exception as e:
         return {"error": str(e), "url": url}
@@ -585,7 +602,7 @@ def estimate_price(product_jpy: int) -> dict:
     total = base_idr + fee + SHIPPING_IDR + tax
     return {"base_idr": base_idr, "fee": fee, "shipping": SHIPPING_IDR, "tax": tax, "total": total, "rate": JPY_TO_IDR}
 
-async def execute_tool(tool_name: str, args: dict, user_id: str | None = None) -> str:
+async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, chat_id: int | None = None) -> str:
     """Execute a tool, save results to Supabase, and return result as JSON string."""
     
     # ─── scrape_product ───────────────────────────────────
@@ -609,6 +626,20 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None) -
                 result["_quotation_id"] = saved["id"]
                 result["_quotation_saved"] = True
                 log.info(f"Quotation saved: {saved['id']} for user {user_id[:8]}")
+        
+        # Kirim preview gambar jika ada
+        if chat_id and not result.get("error") and result.get("title"):
+            images = result.get("images", []) or []
+            image_url = images[0] if images else result.get("image_url", "")
+            if image_url:
+                marketplace = result.get("marketplace", "Jepang")
+                price_display = result.get("price_display", "")
+                title = (result.get("title") or "")[:60]
+                caption = f"📍 *{title}*\n"
+                if price_display:
+                    caption += f"💰 Harga: {price_display}\n"
+                caption += f"🏪 {marketplace}"
+                await tg_send_photo(chat_id, image_url, caption)
         
         return json.dumps(result)
 
@@ -768,7 +799,7 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
                     
                     asyncio.create_task(tg_typing(chat_id))
                     
-                    tool_result = await execute_tool(tool_name, tool_args, user_id)
+                    tool_result = await execute_tool(tool_name, tool_args, user_id, chat_id)
                     
                     # Track saved IDs in conversation context
                     try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from .models import ProductData
 from .mercari import scrape_mercari
@@ -9,6 +10,9 @@ from .rakuten import scrape_rakuten
 from .yahoo_auction import scrape_yahoo_auction
 from .generic import scrape_generic
 from .vision_extract import extract_product_via_screenshot_ai
+from .browser import scrape_with_browser as browser_scrape
+
+log = logging.getLogger("mybagasi_dispatcher")
 
 _ROUTES: list[tuple[str, object]] = [
     (r"(jp\.)?mercari\.com", scrape_mercari),
@@ -21,17 +25,60 @@ async def scrape_url(url: str) -> ProductData:
     for pattern, scraper in _ROUTES:
         if re.search(pattern, url):
             try:
-                primary = await scraper(url)  # type: ignore[operator]
+                primary = await scraper(url)
+                if not _needs_fallback(primary):
+                    return primary
+                # HTTP gagal → coba browser
+                browser_result = await _browser_scrape_with_fallback(url)
+                if browser_result:
+                    return browser_result
+                # Browser gagal → screenshot AI
                 return await _maybe_screenshot_ai_fallback(url, primary)
             except Exception:
-                # Fallback to generic parser when site-specific scraper fails
-                # (anti-bot, layout changes, temporary outage, etc).
+                # HTTP scraper exception → coba browser
+                browser_result = await _browser_scrape_with_fallback(url)
+                if browser_result:
+                    return browser_result
                 result = await scrape_generic(_canonicalize_for_fallback(url))
                 result = _mark_blocked_if_empty(result)
                 return await _maybe_screenshot_ai_fallback(url, result)
+    # No pattern match → try browser, then generic
+    browser_result = await _browser_scrape_with_fallback(url)
+    if browser_result:
+        return browser_result
     result = await scrape_generic(_canonicalize_for_fallback(url))
     result = _mark_blocked_if_empty(result)
     return await _maybe_screenshot_ai_fallback(url, result)
+
+
+async def _browser_scrape_with_fallback(url: str) -> ProductData | None:
+    """Try browser scraping, return ProductData if successful."""
+    try:
+        raw = await asyncio.wait_for(browser_scrape(url), timeout=25.0)
+        if raw and not raw.get("error") and raw.get("title") and raw.get("price_jpy"):
+            return ProductData(
+                title=(raw["title"] or "")[:200],
+                price_jpy=raw.get("price_jpy"),
+                price_display=f"¥{raw['price_jpy']:,}" if raw.get("price_jpy") else "",
+                images=[raw["image"]] if raw.get("image") else [],
+                description=(raw.get("description") or "")[:500],
+                marketplace=raw.get("marketplace", "Japan Marketplace"),
+                available=raw.get("available", True) or False,
+                url=url,
+                confidence="medium",
+                scrape_reason_code="BROWSER_OK",
+            )
+    except asyncio.TimeoutError:
+        log.warning(f"Browser scrape timeout: {url[:60]}")
+    except Exception as e:
+        log.warning(f"Browser scrape error: {e}")
+    return None
+
+
+def _needs_fallback(product: ProductData) -> bool:
+    """Check if product data is incomplete and needs a fallback."""
+    reason = (product.scrape_reason_code or "").upper()
+    return reason in ("BLOCKED", "PARSE_EMPTY", "NOT_FOUND") or not product.price_jpy
 
 
 def _canonicalize_for_fallback(url: str) -> str:
