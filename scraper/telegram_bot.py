@@ -67,12 +67,15 @@ MAX_HISTORY = 20
 def tg_url(method: str) -> str:
     return f"{TELEGRAM_API}/{method}"
 
-async def tg_send(chat_id: int, text: str, parse_mode: str = "Markdown") -> dict | None:
+async def tg_send(chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup: dict | None = None) -> dict | None:
     try:
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
                 tg_url("sendMessage"),
-                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+                json=payload,
             )
             return r.json()
     except Exception as e:
@@ -812,25 +815,44 @@ async def handle_start(chat_id: int, args: str):
     
     if not token:
         if existing:
+            kb = {
+                "inline_keyboard": [
+                    [{"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
+                    [{"text": "📋 Wishlist Saya", "callback_data": "/wishlist"}],
+                    [{"text": "📖 Bantuan", "callback_data": "/help"}],
+                ]
+            }
             await tg_send(chat_id,
                 f"👋 Halo *{existing['name']}*! Selamat datang kembali! 🎉\n\n"
-                f"Akun MyBagasi kamu sudah terhubung.\n\n"
+                f"Kamu sudah terhubung ke MyBagasi. Yuk mulai belanja!\n\n"
                 f"*Yang bisa kamu lakukan:*\n"
-                f"🔍 Cari produk — ketik `/beli onitsuka tiger`\n"
-                f"🔗 Cek harga — kirim link marketplace\n"
-                f"💳 Beli & bayar — langsung via chat\n"
-                f"📋 Wishlist — simpan & pantau harga\n"
-                f"📊 Data tersimpan — lihat di dashboard web\n\n"
-                f"*Perintah:* /beli /cek /status /wishlist /help")
+                f"🔍 *Cari produk* — langsung ketik nama barang (contoh: `onitsuka tiger`)\n"
+                f"🔗 *Cek harga* — kirim link marketplace Jepang\n"
+                f"💳 *Beli & bayar* — via chat, bayar pakai DjiwaApp\n"
+                f"📋 *Simpan wishlist* — bilang aja \"simpen ini\"\n\n"
+                f"Atau tap tombol di bawah 👇",
+                reply_markup=kb)
         else:
+            kb = {
+                "inline_keyboard": [
+                    [{"text": "🆕 Daftar Akun Baru", "callback_data": "/register"}],
+                    [{"text": "🔐 Login", "callback_data": "/login"}],
+                    [{"text": "📖 Tentang MyBagasi", "callback_data": "/about"}],
+                ]
+            }
             await tg_send(chat_id,
-                "👋 *Selamat datang di MyBagasi Bot!*\n\n"
-                "Pilih salah satu:\n\n"
-                "🆕 `/register` — Daftar akun baru (30 detik)\n"
-                "🔐 `/login` — Login ke akun yang sudah ada\n\n"
-                "Atau jika sudah punya kode rahasia:\n"
-                "📌 `/start KODE` — Hubungkan dengan kode\n\n"
-                "💡 *Baru pertama?* Langsung `/register` aja!")
+                "👋 *Halo! Selamat datang di MyBagasi Bot!* 🎉\n\n"
+                "Saya *Asisten Belanja Jepang* kamu 🤖\n"
+                "Aku bisa bantu kamu beli barang-barang keren dari *Jepang* — "
+                "mulai dari fashion, elektronik, barang koleksi, sampai merchandise limited edition!\n\n"
+                "✨ *Yang bisa aku lakukan:*\n"
+                "🔍 *Cari produk* di Mercari, Rakuten, Amazon JP & lainnya\n"
+                "💰 *Estimasi harga* all-in (produk + fee + ongkir + pajak)\n"
+                "💳 *Bayar aman* via DjiwaApp\n"
+                "📦 *Lacak pesanan* sampai ke rumah kamu\n\n"
+                "🚀 *Baru pertama?* Tinggal tap tombol *Daftar* di bawah — cuma 30 detik!\n"
+                "👇 *Pilih salah satu:*",
+                reply_markup=kb)
         return
 
     if existing:
@@ -1231,6 +1253,28 @@ async def handle_help(chat_id: int):
         "🌐 mybagasi.my.id/dashboard\n\n"
         "💡 Butuh bantuan? Chat @fakhriazzam")
 
+async def handle_about(chat_id: int):
+    """Show information about MyBagasi service."""
+    kb = {
+        "inline_keyboard": [
+            [{"text": "🆕 Daftar Akun Baru", "callback_data": "/register"}, {"text": "🔐 Login", "callback_data": "/login"}],
+        ]
+    }
+    await tg_send(chat_id,
+        "🇯🇵 *Apa itu MyBagasi?*\n\n"
+        "MyBagasi adalah *asisten belanja pribadi* yang membantu kamu "
+        "membeli produk-produk dari *Jepang* dengan mudah dan aman.\n\n"
+        "✨ *Kenapa MyBagasi?*\n"
+        "• 🛍️ Akses ke Mercari, Rakuten, Amazon JP, Yahoo Auction\n"
+        "• 💰 Estimasi harga *all-in* (produk + fee 15% + ongkir + pajak)\n"
+        "• 💳 Bayar pakai DjiwaApp (QRIS, transfer)\n"
+        "• 📦 Barang dikirim langsung ke alamat kamu\n"
+        "• 🤖 Chat AI — tinggal bilang barang yang kamu mau!\n\n"
+        "🌐 *Kunjungi website:* mybagasi.my.id\n"
+        "📊 *Cek dashboard:* mybagasi.my.id/dashboard\n\n"
+        "👤 *Punya pertanyaan?* Chat @fakhriazzam",
+        reply_markup=kb)
+
 async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
     if not DEEPSEEK_API_KEY:
         await tg_send(chat_id, "❌ AI Personal Shopper belum dikonfigurasi.")
@@ -1242,6 +1286,34 @@ async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
 # ── Message Router ─────────────────────────────────────────
 
 async def process_update(update: dict):
+    # Handle callback_query (inline button taps)
+    callback = update.get("callback_query")
+    if callback:
+        chat_id = callback["message"]["chat"]["id"]
+        data = callback.get("data", "")
+        # Answer callback to remove loading state
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(tg_url("answerCallbackQuery"), json={"callback_query_id": callback["id"]})
+        except:
+            pass
+        
+        # Route callback data like commands
+        data = data.strip()
+        log.info(f"← CALLBACK {chat_id}: {data}")
+        
+        if data == "/register":
+            await handle_register(chat_id)
+        elif data == "/login":
+            await handle_login(chat_id)
+        elif data == "/about":
+            await handle_about(chat_id)
+        elif data == "/wishlist":
+            await handle_wishlist(chat_id)
+        elif data == "/help":
+            await handle_help(chat_id)
+        return
+
     message = update.get("message")
     if not message:
         return
@@ -1338,7 +1410,7 @@ async def poll_forever():
             async with httpx.AsyncClient(timeout=POLL_TIMEOUT + 10) as client:
                 r = await client.get(
                     tg_url("getUpdates"),
-                    params={"offset": offset, "timeout": POLL_TIMEOUT, "allowed_updates": json.dumps(["message"])},
+                    params={"offset": offset, "timeout": POLL_TIMEOUT, "allowed_updates": json.dumps(["message", "callback_query"])},
                 )
                 data = r.json()
                 if data.get("ok") and data.get("result"):
