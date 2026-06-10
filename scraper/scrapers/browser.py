@@ -77,20 +77,106 @@ async def scrape_with_browser(url: str, timeout: int = 20) -> dict[str, Any] | N
         await page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
         await asyncio.sleep(2)  # Let JS render
 
-        # Extract data via page.evaluate
+        await asyncio.sleep(1)  # Extra wait for JS-rendered content
+        await page.wait_for_load_state("networkidle", timeout=timeout * 1000)
+
+        # Extract data via page.evaluate — comprehensive extraction for ANY page type
         data = await page.evaluate("""() => {
             const metaDesc = document.querySelector('meta[name="description"]');
             const ogImage = document.querySelector('meta[property="og:image"]');
             const ogTitle = document.querySelector('meta[property="og:title"]');
             const ogPrice = document.querySelector('meta[property="product:price:amount"]');
-            const ogUrl = document.querySelector('meta[property="og:url"]');
+
+            // ── Visible content extraction ──
+            // Get main heading (h1) — best candidate for product/catalog title
+            let h1Text = '';
+            const h1El = document.querySelector('h1');
+            if (h1El) h1Text = h1El.textContent.trim();
+
+            // Collect all h2/h3 for description context
+            const headings = [];
+            document.querySelectorAll('h2, h3').forEach(el => {
+                const t = el.textContent.trim();
+                if (t && t.length > 5) headings.push(t);
+            });
+
+            // ── Price extraction from visible text ──
+            // Find ANY price pattern in the page: ¥1,234, 1,234円, etc.
+            const bodyText = document.body ? document.body.innerText : '';
+            const pricePatterns = [
+                /[¥￥]\\s*\\d{1,3}(?:,\\d{3})+/g,
+                /\\d{1,3}(?:,\\d{3})+\\s*[円]/g,
+                /\\d{1,3}(?:,\\d{3})+\\s*YEN/gi,
+                /Price[\\s:]*[¥￥]?\\s*\\d{1,3}(?:,\\d{3})+/gi,
+                /現在[：:]?\\s*[¥￥]?\\s*\\d{1,3}(?:,\\d{3})+/g,
+                /即決[：:]?\\s*[¥￥]?\\s*\\d{1,3}(?:,\\d{3})+/g,
+                /出品価格[：:]?\\s*[¥￥]?\\s*\\d{1,3}(?:,\\d{3})+/g,
+            ];
+            let foundPrice = '';
+            for (const pat of pricePatterns) {
+                const m = bodyText.match(pat);
+                if (m) { foundPrice = m[0]; break; }
+            }
+
+            // ── Image extraction ──
+            const images = [];
+            const seenUrls = new Set();
+            // og:image first
+            if (ogImage?.content && !seenUrls.has(ogImage.content)) {
+                images.push(ogImage.content);
+                seenUrls.add(ogImage.content);
+            }
+            // Product images from common selectors
+            document.querySelectorAll(
+                'img[src*="product"], img[src*="item"], img[src*="goods"], ' +
+                'img[class*="Product"], img[class*="product"], img[class*="Item"], img[class*="item"], ' +
+                'img[class*="Thumbnail"], img[class*="thumbnail"], ' +
+                'li[class*="image"] img, [class*="gallery"] img, [class*="slide"] img'
+            ).forEach(img => {
+                const src = img.src || img.getAttribute('data-src') || '';
+                if (src && src.startsWith('http') && !seenUrls.has(src)) {
+                    images.push(src);
+                    seenUrls.add(src);
+                }
+            });
+            // Fallback: any large image (width > 100)
+            if (images.length < 3) {
+                document.querySelectorAll('img[src]').forEach(img => {
+                    const src = img.src || '';
+                    if (src.startsWith('http') && !seenUrls.has(src) &&
+                        img.width > 100 && img.naturalWidth > 100 &&
+                        !src.includes('logo') && !src.includes('banner') && !src.includes('icon') &&
+                        !src.includes('avatar') && !src.includes('favicon')) {
+                        images.push(src);
+                        seenUrls.add(src);
+                    }
+                });
+            }
+
+            // ── Description — take meta desc or first meaningful paragraph ──
+            let description = metaDesc?.content || '';
+            if (!description || description.length < 20) {
+                const paragraphs = document.querySelectorAll('p');
+                for (const p of paragraphs) {
+                    const t = p.textContent.trim();
+                    if (t.length > 30) { description = t; break; }
+                }
+            }
+
+            // ── Available check ──
+            const isAvailable = !bodyText.toLowerCase().includes('sold out') &&
+                                !bodyText.toLowerCase().includes('page not found') &&
+                                !bodyText.toLowerCase().includes('404');
 
             return {
-                title: ogTitle?.content || document.title || '',
-                description: metaDesc?.content || '',
-                image: ogImage?.content || '',
-                price: ogPrice?.content || '',
-                ogUrl: ogUrl?.content || '',
+                title: ogTitle?.content || h1Text || document.title || '',
+                description: description || headings.slice(0, 3).join(' · ') || '',
+                image: images[0] || '',
+                images: images.slice(0, 6),
+                price: foundPrice || '',
+                priceFromText: foundPrice || '',
+                bodyTextPreview: bodyText.slice(0, 2000).trim(),
+                isAvailable: isAvailable,
             };
         }""")
 
@@ -103,7 +189,9 @@ async def scrape_with_browser(url: str, timeout: int = 20) -> dict[str, Any] | N
                         '.price',
                         '.product-price',
                         '[class*="price"]',
-                        'span:has(> span:contains("¥"))',
+                        '.Pricing__Price',
+                        '.Price__value',
+                        '[class*="Price"]',
                     ];
                     for (const sel of selectors) {
                         const el = document.querySelector(sel);
@@ -111,19 +199,29 @@ async def scrape_with_browser(url: str, timeout: int = 20) -> dict[str, Any] | N
                     }
                     return '';
                 }""")
-                data["price"] = price_from_page or ""
+                data["price"] = price_from_page or data.get("priceFromText") or ""
             except Exception:
                 pass
+        
+        # If still no price, use whatever we found in body text
+        if not data.get("price") and data.get("priceFromText"):
+            data["price"] = data["priceFromText"]
+
+        images = data.get("images") or []
+        if not images and data.get("image"):
+            images = [data["image"]]
 
         return {
             "title": (data.get("title") or "").strip(),
             "description": (data.get("description") or "").strip(),
-            "image": (data.get("image") or "").strip(),
+            "image": images[0] if images else "",
+            "images": images,
             "price": (data.get("price") or "").strip(),
             "price_jpy": _parse_price(data.get("price", "")),
             "marketplace": _detect_marketplace(url),
-            "available": True,
+            "available": data.get("isAvailable", True) if isinstance(data.get("isAvailable"), bool) else True,
             "error": None,
+            "body_text": (data.get("bodyTextPreview") or "")[:500],
         }
     except Exception as e:
         log.warning(f"Browser scrape failed for {url[:60]}: {e}")
@@ -131,11 +229,13 @@ async def scrape_with_browser(url: str, timeout: int = 20) -> dict[str, Any] | N
             "title": "",
             "description": "",
             "image": "",
+            "images": [],
             "price": "",
             "price_jpy": None,
             "marketplace": _detect_marketplace(url),
             "available": False,
             "error": str(e),
+            "body_text": "",
         }
     finally:
         if page:

@@ -631,15 +631,23 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
         if chat_id and not result.get("error") and result.get("title"):
             images = result.get("images", []) or []
             image_url = images[0] if images else result.get("image_url", "")
+            marketplace = result.get("marketplace", "Jepang")
+            price_display = result.get("price_display", "")
+            title = (result.get("title") or "")[:60]
+            reason = (result.get("scrape_reason_code") or "").upper()
+            
             if image_url:
-                marketplace = result.get("marketplace", "Jepang")
-                price_display = result.get("price_display", "")
-                title = (result.get("title") or "")[:60]
                 caption = f"📍 *{title}*\n"
                 if price_display:
                     caption += f"💰 Harga: {price_display}\n"
                 caption += f"🏪 {marketplace}"
                 await tg_send_photo(chat_id, image_url, caption)
+            elif reason == "CATALOG_PAGE":
+                # Catalog page without images — still show product name
+                await tg_send(chat_id,
+                    f"📍 *{title}*\n"
+                    f"🏪 {marketplace}\n"
+                    f"📋 Halaman katalog — menampilkan berbagai listing produk ini.")
         
         return json.dumps(result)
 

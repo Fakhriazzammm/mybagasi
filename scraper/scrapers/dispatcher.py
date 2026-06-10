@@ -55,19 +55,24 @@ async def _browser_scrape_with_fallback(url: str) -> ProductData | None:
     """Try browser scraping, return ProductData if successful."""
     try:
         raw = await asyncio.wait_for(browser_scrape(url), timeout=25.0)
-        if raw and not raw.get("error") and raw.get("title") and raw.get("price_jpy"):
-            return ProductData(
-                title=(raw["title"] or "")[:200],
-                price_jpy=raw.get("price_jpy"),
-                price_display=f"¥{raw['price_jpy']:,}" if raw.get("price_jpy") else "",
-                images=[raw["image"]] if raw.get("image") else [],
-                description=(raw.get("description") or "")[:500],
-                marketplace=raw.get("marketplace", "Japan Marketplace"),
-                available=raw.get("available", True) or False,
-                url=url,
-                confidence="medium",
-                scrape_reason_code="BROWSER_OK",
-            )
+        if raw and not raw.get("error"):
+            has_title = raw.get("title")
+            has_images = raw.get("images") or (raw.get("image") and [raw["image"]]) or []
+            has_price = raw.get("price_jpy")
+            # Accept: has price, OR has title + images (good for catalog pages)
+            if has_price or (has_title and has_images):
+                return ProductData(
+                    title=(raw["title"] or "")[:200],
+                    price_jpy=raw.get("price_jpy"),
+                    price_display=f"¥{raw['price_jpy']:,}" if raw.get("price_jpy") else "",
+                    images=raw.get("images") or ([raw["image"]] if raw.get("image") else []),
+                    description=(raw.get("description") or raw.get("body_text") or "")[:500],
+                    marketplace=raw.get("marketplace", "Japan Marketplace"),
+                    available=raw.get("available", True) or False,
+                    url=url,
+                    confidence="medium",
+                    scrape_reason_code="BROWSER_OK",
+                )
     except asyncio.TimeoutError:
         log.warning(f"Browser scrape timeout: {url[:60]}")
     except Exception as e:
@@ -78,6 +83,9 @@ async def _browser_scrape_with_fallback(url: str) -> ProductData | None:
 def _needs_fallback(product: ProductData) -> bool:
     """Check if product data is incomplete and needs a fallback."""
     reason = (product.scrape_reason_code or "").upper()
+    # Catalog pages with images are good enough — return as-is
+    if reason == "CATALOG_PAGE" and product.images:
+        return False
     return reason in ("BLOCKED", "PARSE_EMPTY", "NOT_FOUND") or not product.price_jpy
 
 
@@ -141,7 +149,5 @@ def _needs_screenshot_ai(product: ProductData) -> bool:
     )
     return (
         reason in {"BLOCKED", "PARSE_EMPTY", "NOT_FOUND"}
-        or hard_404_signal
-        or suspicious_title_only
-        or low_signal
+        or (reason not in {"CATALOG_PAGE"} and (hard_404_signal or suspicious_title_only or low_signal))
     )

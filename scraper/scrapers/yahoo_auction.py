@@ -12,6 +12,10 @@ from .models import BROWSER_HEADERS, ProductData, parse_jpy
 
 
 async def scrape_yahoo_auction(url: str) -> ProductData:
+    # ── Catalog page detection (catalog/detail/) ──
+    if "/catalog/" in url:
+        return await _scrape_catalog_page(url)  # now async function
+
     async with httpx.AsyncClient(
         headers=BROWSER_HEADERS, follow_redirects=True, timeout=20
     ) as client:
@@ -27,6 +31,84 @@ async def scrape_yahoo_auction(url: str) -> ProductData:
 
     # ── 2) DOM fallback ──
     return _extract_from_dom(soup, url)
+
+
+async def _scrape_catalog_page(url: str) -> ProductData:
+    """Handle Yahoo Auctions catalog pages (catalog/detail/...).
+
+    These pages show a brand/product category with multiple listings.
+    We extract the product name from the title and return whatever we can.
+    """
+
+    title = ""
+    images: list[str] = []
+    description = ""
+
+    try:
+        async with httpx.AsyncClient(headers=BROWSER_HEADERS, follow_redirects=True, timeout=15) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "lxml")
+
+                # Extract title from <title> tag
+                title_tag = soup.find("title")
+                if title_tag:
+                    title = title_tag.get_text(strip=True)
+                    # Clean up Yahoo Auction suffixes
+                    for suffix in [" - ヤフオク!", " - Yahoo! Auctions", " | Yahoo!オークション", " - Yahoo! JAPAN"]:
+                        if title.endswith(suffix):
+                            title = title[:-len(suffix)].strip()
+                            break
+
+                # Try h1 if title is empty or generic
+                if not title or title.lower() in ("catalog", "yahoo auctions", ""):
+                    h1 = soup.find("h1")
+                    if h1:
+                        title = h1.get_text(strip=True)
+
+                # Extract images
+                og_img = soup.find("meta", attrs={"property": "og:image"})
+                if og_img and og_img.get("content"):
+                    images.append(og_img["content"])
+
+                # Product/catalog images
+                for img in soup.select("img[src]"):
+                    src = (img.get("src") or "").strip()
+                    if (
+                        src.startswith("http")
+                        and "logo" not in src.lower()
+                        and "banner" not in src.lower()
+                        and "icon" not in src.lower()
+                        and "avatar" not in src.lower()
+                    ):
+                        images.append(src)
+                    if len(images) >= 6:
+                        break
+
+                images = list(dict.fromkeys(images))  # dedupe, preserve order
+
+                # Description — meta desc or visible text snippet
+                meta_desc = soup.find("meta", attrs={"name": "description"})
+                if meta_desc and meta_desc.get("content"):
+                    description = meta_desc["content"][:400]
+
+    except Exception:
+        pass
+
+    return ProductData(
+        title=title or "Yahoo Auction Catalog",
+        price_jpy=None,
+        price_display="",
+        condition=None,
+        images=images,
+        description=description or "Halaman katalog produk Yahoo Auction dengan banyak listing berbeda-beda."[:400],
+        seller=None,
+        marketplace="yahoo_auction",
+        available=True,
+        url=url,
+        confidence="catalog",
+        scrape_reason_code="CATALOG_PAGE",
+    )
 
 
 def _extract_product_json_ld(soup: BeautifulSoup) -> Optional[ProductData]:
