@@ -43,12 +43,13 @@ serve(async (req) => {
     
     const { data: profile } = await supabase
       .from("profiles")
-      .select("id, telegram_token")
+      .select("id, username, telegram_token")
       .eq("id", data.user.id)
       .single();
 
     return new Response(JSON.stringify({
       user_id: data.user.id,
+      username: profile?.username,
       telegram_token: profile?.telegram_token,
       email: data.user.email,
     }), { headers: { "Content-Type": "application/json" } });

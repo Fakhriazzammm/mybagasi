@@ -17,6 +17,10 @@ from scrapers.models import ProductData
 from scrapers.search_web import search_products_by_keyword
 from scrapers.vision_extract import extract_product_via_screenshot_ai
 from mayar_routes import router as mayar_router
+from cart_routes import router as cart_router
+from bills_routes import router as bills_router
+from linking_routes import router as linking_router
+from memory_routes import router as memory_router
 
 app = FastAPI(title="MyBagasi Backend", version="1.0.0")
 
@@ -34,6 +38,10 @@ app.add_middleware(
 )
 
 app.include_router(mayar_router)
+app.include_router(cart_router)
+app.include_router(bills_router)
+app.include_router(linking_router)
+app.include_router(memory_router)
 
 
 class ScrapeRequest(BaseModel):

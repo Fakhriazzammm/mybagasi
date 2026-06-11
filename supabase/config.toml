@@ -161,6 +161,22 @@ enabled = true
 policy = "oneshot"
 inspector_port = 8083
 
+# Bot Edge Functions — no JWT required, auth via x-bot-secret header
+[functions.checkout-cart]
+verify_jwt = false
+
+[functions.add-to-cart]
+verify_jwt = false
+
+[functions.get-cart]
+verify_jwt = false
+
+[functions.register-user]
+verify_jwt = false
+
+[functions.get-profile]
+verify_jwt = false
+
 [analytics]
 enabled = false
 port = 54327

@@ -82,6 +82,17 @@ async def create_invoice(request: Request):
     # Apply defaults for optional fields
     body.setdefault("email", _DEFAULT_EMAIL)
     body.setdefault("mobile", _DEFAULT_MOBILE)
+    body.setdefault("description", body.get("name", "Invoice"))
+    if not body.get("items"):
+        body["items"] = [
+            {
+                "name": body.get("name", "Product"),
+                "description": body.get("description", ""),
+                "quantity": 1,
+                "price": body.get("amount", 0),
+                "rate": body.get("amount", 0),
+            }
+        ]
     if not body.get("redirectUrl"):
         body["redirectUrl"] = f"{_APP_BASE}/payment/status"
     if not body.get("expiredAt"):
@@ -94,6 +105,48 @@ async def create_invoice(request: Request):
         )
     _raise(resp)
     return resp.json()
+
+
+# GET endpoint for web_extract tool (agent without curl/terminal)
+@router.get("/invoice/create")
+async def create_invoice_get(
+    name: str,
+    amount: int,
+    email: str | None = None,
+    mobile: str | None = None,
+):
+    _require_config()
+    expires = datetime.now(timezone.utc) + timedelta(hours=24)
+    body = {
+        "name": name,
+        "description": name,
+        "items": [
+            {
+                "name": name,
+                "description": name,
+                "quantity": 1,
+                "price": amount,
+                "rate": amount,
+            }
+        ],
+        "email": email or _DEFAULT_EMAIL,
+        "mobile": mobile or _DEFAULT_MOBILE,
+        "redirectUrl": f"{_APP_BASE}/payment/status",
+        "expiredAt": expires.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            f"{_BASE}/invoice/create", headers=_headers(), json=body
+        )
+    _raise(resp)
+    data = resp.json()
+    # Extract invoice URL for easy access
+    _invoice_url = None
+    if isinstance(data, dict):
+        _data = data.get("data", {})
+        if isinstance(_data, dict):
+            _invoice_url = _data.get("url") or _data.get("link") or _data.get("invoice_url")
+    return {"_invoice_url": _invoice_url, "response": data}
 
 
 @router.get("/invoice/{invoice_id}")

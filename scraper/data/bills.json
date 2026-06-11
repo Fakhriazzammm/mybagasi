@@ -1,0 +1,40 @@
+[
+  {
+    "id": "1cdf6d2e-b5ff-4a95-83e5-537ac9ed0d81",
+    "telegram_id": "323151437",
+    "user_id": "",
+    "mayar_invoice_id": "2a3a3b8f-84fb-4a1e-a5dd-3bb65a5b6147",
+    "invoice_url": "https://zantara.myr.id/invoices/7t88jc9fha",
+    "status": "unpaid",
+    "total_idr": 275000,
+    "items": [
+      {
+        "name": "Muji Cleansing Oil",
+        "qty": 2,
+        "price_jpy": 1200
+      }
+    ],
+    "created_at": "2026-06-11T06:29:39.304106+00:00",
+    "expires_at": "2026-06-12T06:29:39.304117+00:00",
+    "paid_at": null
+  },
+  {
+    "id": "37ac3499-0062-462d-961c-f0c38089dbf4",
+    "telegram_id": "323151437",
+    "user_id": "test-uuid",
+    "mayar_invoice_id": "inv-001",
+    "invoice_url": "https://zantara.myr.id/invoices/test123",
+    "status": "unpaid",
+    "total_idr": 326000,
+    "items": [
+      {
+        "name": "Nike Sandal",
+        "qty": 1,
+        "price_jpy": 820
+      }
+    ],
+    "created_at": "2026-06-11T06:28:40.334385+00:00",
+    "expires_at": "2026-06-12T06:28:40.334399+00:00",
+    "paid_at": null
+  }
+]
