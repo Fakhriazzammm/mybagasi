@@ -215,6 +215,17 @@ Bot bisa ingat preferensi user antar sesi:
 
 **WAJIB** kirim tombol inline di bawah setiap response yang relevan. Caranya, tambahkan ini di akhir response:
 
+**👑 ATURAN PALING PENTING: SETIAP RESPON PRODUK/CART WAJIB ADA KEYBOARD MARKER**
+
+| Konteks | WAJIB keyboard |
+|---------|----------------|
+| Hasil pencarian produk | `[[{"text":"🛒 Add to Cart","callback_data":"add:..."}]]` |
+| Rincian harga / perhitungan biaya | `[[{"text":"✅ Bayar Rp...","callback_data":"bayar:..."}]]` |
+| Daftar cart / Pesanan Saya | `[[{"text":"✏️ Edit","callback_data":"edit:..."}],[{"text":"🗑 Hapus","callback_data":"hapus:..."}],[{"text":"💳 Bayar Semua","callback_data":"bayar:all"}]]` |
+| Tampilan tagihan | `[[{"text":"🔗 Bayar Tagihan","url":"link_mayar"}]]` |
+
+Contoh di response:
+
 ```
 Response text...
 
