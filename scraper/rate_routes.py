@@ -28,8 +28,9 @@ SHIPPING_RATES: dict[str, dict[str, Any]] = {
 
 # ── Constants ──────────────────────────────────────────────
 
-ADMIN_FEE = 25000  # Rp25.000 flat admin fee
-JASA_PERSEN = 0.10  # 10% jasa fee
+ADMIN_FEE = 25000  # Rp25.000 flat admin fee (optional, can be 0)
+JASA_PERSEN = 0.10  # 10% jasa fee (default, configurable from DB)
+PAJAK_PERSEN = 0.11  # Pajak 11%
 HARDCODED_JPY_RATE = 105  # Last-resort fallback
 
 JPY_API_URL = "https://api.exchangerate-api.com/v4/latest/JPY"
@@ -218,8 +219,8 @@ async def rate_calculate(
       - price_idr  = price_jpy * rate_jpy
       - jasa       = price_idr * 10%
       - ongkir     = shipping cost per category
-      - fee_admin  = Rp25.000
-      - total_idr  = price_idr + jasa + ongkir + fee_admin
+      - pajak      = (price_idr + jasa) * 11%
+      - total_idr  = price_idr + jasa + ongkir + pajak
       - total_jpy  = total_idr / rate_jpy
     """
     rate_data = await _get_jpy_rate()
@@ -229,8 +230,8 @@ async def rate_calculate(
     jasa = round(price_idr * JASA_PERSEN)
     ongkir_info = _calc_shipping_cost(category)
     ongkir = ongkir_info["shipping_cost_idr"]
-    fee_admin = ADMIN_FEE
-    total_idr = price_idr + jasa + ongkir + fee_admin
+    pajak = round((price_idr + jasa) * PAJAK_PERSEN)
+    total_idr = price_idr + jasa + ongkir + pajak
     total_jpy = round(total_idr / rate, 2) if rate > 0 else 0
 
     return {
@@ -243,7 +244,7 @@ async def rate_calculate(
             "price_idr": price_idr,
             "jasa_10_persen": jasa,
             "ongkir": ongkir,
-            "fee_admin": fee_admin,
+            "pajak": pajak,
             "total_idr": total_idr,
             "total_jpy": total_jpy,
             "shipping_category": ongkir_info["category"],

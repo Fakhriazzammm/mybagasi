@@ -16,8 +16,9 @@ INSERT INTO public.pricing_config (key, value) VALUES
     {"min": 5000000, "max": 9999999, "profit": 1000000},
     {"min": 10000000, "max": 999999999, "profit": 2000000}
 ]}'),
-('shipping_cost', '{"cost": 250000, "description": "Ongkir Jepang ke Indonesia"}'),
-('tax_rate', '{"rate": 0.08, "description": "Pajak & bea cukai 8%"}')
+('shipping_cost', '{"cost": 250000, "description": "Ongkir Jepang ke Indonesia (fallback)"}'),
+('tax_rate', '{"rate": 0.11, "description": "Pajak & bea cukai 11%"}'),
+('distribution_ratio', '{"fee": 33, "shipping": 34, "tax": 33, "description": "Distribusi profit ke fee/ongkir/pajak (%)"}')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
 
 -- Enable RLS

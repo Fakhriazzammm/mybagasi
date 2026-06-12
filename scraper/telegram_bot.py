@@ -324,7 +324,8 @@ async def _ensure_pricing_table():
             {"min": 10000000, "max": 999999999, "profit": 2000000}
         ]}},
         {"key": "shipping_cost", "value": {"cost": 250000, "description": "Ongkir Jepang ke Indonesia"}},
-        {"key": "tax_rate", "value": {"rate": 0.08, "description": "Pajak & bea cukai 8%"}},
+        {"key": "tax_rate", "value": {"rate": 0.11, "description": "Pajak & bea cukai 11%"}},
+        {"key": "distribution_ratio", "value": {"fee": 33, "shipping": 34, "tax": 33, "description": "Distribusi profit ke fee/ongkir/pajak (%)"}},
     ]
     async with httpx.AsyncClient(timeout=10) as client:
         for s in seed:
@@ -399,19 +400,49 @@ async def _fetch_live_rate() -> int:
             log.warning(f"Rate fetch failed from {url}: {e}")
     return 105
 
+# ── Shipping rates by category (sync with rate_routes.py) ──
+_SHIPPING_RATES = {
+    "skincare": {"base_kg": 0.3, "price_per_kg": 350000, "note": "Kosmetik/cairan"},
+    "fashion": {"base_kg": 0.5, "price_per_kg": 250000, "note": "Pakaian, sepatu"},
+    "elektronik": {"base_kg": 0.5, "price_per_kg": 300000, "note": "Elektronik kecil"},
+    "buku": {"base_kg": 0.3, "price_per_kg": 200000, "note": "Buku/majalah"},
+    "food": {"base_kg": 0.5, "price_per_kg": 300000, "note": "Makanan/minuman"},
+    "general": {"base_kg": 0.5, "price_per_kg": 250000, "note": "Lainnya"},
+}
+
+async def get_shipping_by_category(category: str = "general") -> dict:
+    """Get dynamic shipping cost for a product category."""
+    cat = category.lower().strip()
+    cat_data = _SHIPPING_RATES.get(cat, _SHIPPING_RATES["general"])
+    cost = int(cat_data["base_kg"] * cat_data["price_per_kg"])
+    return {
+        "cost": cost,
+        "category": cat if cat in _SHIPPING_RATES else "general",
+        "note": cat_data["note"],
+        "base_kg": cat_data["base_kg"],
+        "price_per_kg": cat_data["price_per_kg"],
+    }
+
 async def get_shipping_cost() -> int:
+    """Legacy: flat shipping cost (used as fallback)."""
     await refresh_pricing_cache()
     return _PRICING_CACHE_DATA.get("shipping_cost", {}).get("cost", 250000)
 
 async def get_tax_rate() -> float:
     await refresh_pricing_cache()
-    return _PRICING_CACHE_DATA.get("tax_rate", {}).get("rate", 0.08)
+    return _PRICING_CACHE_DATA.get("tax_rate", {}).get("rate", 0.11)
 
 async def get_profit_tiers() -> list:
     await refresh_pricing_cache()
     return _PRICING_CACHE_DATA.get("profit_tiers", {}).get("tiers", [])
 
-# Hardcoded fallback tiers (used when DB table not available)
+async def get_distribution_ratio() -> dict:
+    """Get profit distribution ratio (fee:shipping:tax)."""
+    await refresh_pricing_cache()
+    default = {"fee": 33, "shipping": 34, "tax": 33}
+    return _PRICING_CACHE_DATA.get("distribution_ratio", default)
+
+# Hardcoded fallback tiers
 _FALLBACK_TIERS = [
     {"min": 0, "max": 999999, "profit": 100000},
     {"min": 1000000, "max": 2999999, "profit": 300000},
@@ -423,7 +454,7 @@ _FALLBACK_TIERS = [
 async def calculate_profit(price_idr: int) -> int:
     tiers = await get_profit_tiers()
     if not tiers:
-        tiers = _FALLBACK_TIERS  # fallback jika DB tidak tersedia
+        tiers = _FALLBACK_TIERS
     for tier in tiers:
         if tier["min"] <= price_idr <= tier["max"]:
             return tier["profit"]
@@ -431,23 +462,72 @@ async def calculate_profit(price_idr: int) -> int:
         return tiers[-1]["profit"]
     return 100000
 
-async def estimate_price_v2(price_jpy: int) -> dict:
+async def estimate_price_v2(price_jpy: int, category: str = "general") -> dict:
+    """Auto-distribute target profit across fee jasa, ongkir markup, and pajak markup.
+
+    Sistem baru:
+    - Target profit dari tier (HIDDEN — tidak ditampilkan ke user)
+    - Profit otomatis terdistribusi 'rata' ke fee jasa, ongkir, dan pajak
+    - Ongkir dinamis berdasarkan kategori produk
+    - Tidak ada baris 'Profit' — profit tersembunyi di fee+ongkir+pajak
+    """
     rate = await get_exchange_rate()
-    shipping = await get_shipping_cost()
-    tax_rate = await get_tax_rate()
     base_idr = price_jpy * rate
-    profit = await calculate_profit(base_idr)
-    tax = round((base_idr + profit) * tax_rate)
-    total = base_idr + profit + shipping + tax
+    target_profit = await calculate_profit(base_idr)
+    
+    # Dapatkan rasio distribusi dari DB (configurable via /admin)
+    ratio = await get_distribution_ratio()
+    total_ratio = ratio.get("fee", 33) + ratio.get("shipping", 34) + ratio.get("tax", 33)
+    if total_ratio <= 0:
+        total_ratio = 100
+    
+    # Distribusi profit ke 3 komponen
+    fee_jasa = round(target_profit * ratio.get("fee", 33) / total_ratio)
+    ongkir_markup = round(target_profit * ratio.get("shipping", 34) / total_ratio)
+    pajak_markup = round(target_profit * ratio.get("tax", 33) / total_ratio)
+    
+    # Handle sisa pembulatan (pastikan total profit = target)
+    remainder = target_profit - (fee_jasa + ongkir_markup + pajak_markup)
+    # Sisa masuk ke ongkir markup (paling flexible)
+    ongkir_markup += remainder
+    
+    # Ongkir real dari kategori
+    shipping_info = await get_shipping_by_category(category)
+    real_ongkir = shipping_info["cost"]
+    ongkir_display = real_ongkir + max(0, ongkir_markup)
+    
+    # Pajak: standard + markup
+    pajak_persen = await get_tax_rate()
+    pajak_standard = round((base_idr + fee_jasa) * pajak_persen)
+    pajak_display = pajak_standard + max(0, pajak_markup)
+    
+    total = base_idr + fee_jasa + ongkir_display + pajak_display
+    fee_persen = round(fee_jasa / base_idr * 100, 1) if base_idr > 0 else 0
+    
     return {
-        "base_idr": base_idr, "profit": profit,
-        "shipping": shipping, "tax": tax, "total": total,
-        "rate": rate, "tax_rate": tax_rate,
+        "base_idr": base_idr,
+        "fee_jasa": fee_jasa,
+        "fee_persen": fee_persen,
+        "shipping": ongkir_display,
+        "shipping_real": real_ongkir,
+        "shipping_markup": ongkir_markup,
+        "shipping_category": shipping_info["category"],
+        "shipping_note": shipping_info["note"],
+        "pajak": pajak_display,
+        "pajak_standard": pajak_standard,
+        "pajak_markup": pajak_markup,
+        "pajak_persen": pajak_persen,
+        "total": total,
+        "rate": rate,
+        # Hidden internal fields (not displayed)
+        "_target_profit": target_profit,
+        "_distribution": {"fee": fee_jasa, "shipping_markup": ongkir_markup, "tax_markup": pajak_markup},
     }
 
 async def save_quotation(user_id: str, product: str, price_jpy: int, source: str,
-                         url: str | None = None, exchange_rate: int = 0) -> dict | None:
-    est = await estimate_price_v2(price_jpy)
+                         url: str | None = None, exchange_rate: int = 0,
+                         category: str = "general") -> dict | None:
+    est = await estimate_price_v2(price_jpy, category)
     data = {
         "user_id": user_id,
         "product": product[:200],
@@ -455,9 +535,9 @@ async def save_quotation(user_id: str, product: str, price_jpy: int, source: str
         "source": source,
         "price_jpy": price_jpy,
         "exchange_rate": est["rate"],
-        "service_fee": est["profit"],
+        "service_fee": est["fee_jasa"],
         "shipping_cost": est["shipping"],
-        "tax_customs": est["tax"],
+        "tax_customs": est["pajak"],
         "membership_discount": 0,
         "points_used": 0,
         "total": est["total"],
@@ -467,8 +547,9 @@ async def save_quotation(user_id: str, product: str, price_jpy: int, source: str
 
 async def save_order(user_id: str, product: str, price_jpy: int, total: int,
                      source: str = "telegram_bot", quotation_id: str | None = None,
-                     customer_name: str = "", notes: str = "") -> dict | None:
-    est = await estimate_price_v2(price_jpy)
+                     customer_name: str = "", notes: str = "",
+                     category: str = "general") -> dict | None:
+    est = await estimate_price_v2(price_jpy, category)
     data = {
         "user_id": user_id,
         "quotation_id": quotation_id or None,
@@ -476,9 +557,9 @@ async def save_order(user_id: str, product: str, price_jpy: int, total: int,
         "source": source,
         "price_jpy": price_jpy,
         "exchange_rate": est["rate"],
-        "service_fee": est["profit"],
+        "service_fee": est["fee_jasa"],
         "shipping_cost": est["shipping"],
-        "tax_customs": est["tax"],
+        "tax_customs": est["pajak"],
         "membership_discount": 0,
         "points_used": 0,
         "total": est["total"],
@@ -596,14 +677,23 @@ TUGAS KAMU:
 - Cari **harga resmi/retail** dari **Amazon JP, Rakuten, toko official** (baru, original)
 - ⛔ JANGAN GUNAKAN Yahoo Auction, Yahoo Shopping, atau PayPay Flea Market
 - Jika hasil pencarian hanya dari Yahoo/second, KATAKAN "Tidak ditemukan produk baru dari toko resmi"
-- Memberikan estimasi harga all-in (harga produk, fee jasa 15%, ongkir Rp250.000, pajak 8%)
+- Memberikan estimasi harga all-in (harga produk + fee jasa + ongkir + pajak)
 - Memproses pembayaran via Mayar
 
-KONVERSI:
-- Kurs: 1 JPY = Rp 105
-- Fee jasa MyBagasi: 15% dari harga produk (IDR)
-- Ongkir Jepang → Indonesia: Rp 250.000
-- Pajak & bea cukai: 8% dari (harga produk + fee jasa)
+KONVERSI & ESTIMASI:
+- Kurs: 1 JPY = Rp 105 (nilai aktual bisa berbeda, tapi untuk estimasi pakai ~105)
+- Fee jasa: otomatis dihitung sistem (~6-10% dari harga produk tergantung tier)
+- Ongkir: DINAMIS tergantung kategori produk (lihat tabel di bawah)
+- Pajak & bea cukai: 11% dari (harga produk + fee jasa)
+- TIDAK ADA komponen "Profit" terpisah — fee jasa sudah termasuk profit
+
+TABEL ONGKIR PER KATEGORI:
+- fashion (pakaian, sepatu): ~Rp125.000
+- elektronik (elektronik kecil): ~Rp150.000
+- skincare (kosmetik/cairan): ~Rp105.000
+- buku (buku/majalah): ~Rp60.000
+- food (makanan/minuman): ~Rp150.000
+- general (lainnya): ~Rp125.000
 
 FORMAT JAWABAN:
 
@@ -615,8 +705,8 @@ Untuk hasil scrape/search berhasil, gunakan format jelas per produk:
 
 Estimasi Biaya:
 • Harga Produk: Rp ...
-• Fee Jasa (15%): Rp ...
-• Ongkir: Rp 250.000
+• Fee Jasa: Rp ...
+• Ongkir: Rp ... (kategori)
 • Pajak: Rp ...
 • Total All-in: Rp ...
 
@@ -628,7 +718,7 @@ Jika ada foto produk, tulis:
 ---PHOTO:URL_FOTO_PRODUK---
 di atas nama produk.
 
-LARANGAN: JANGAN PERNAH menambahkan ---KEYBOARD---, ---END KEYBOARD---, [[{"text":...}]] atau apapun yang berkaitan dengan tombol/keyboard. Tombol akan ditambahkan OTOMATIS oleh sistem.
+LARANGAN: JANGAN PERNAH menambahkan ---KEYBOARD---, ---END KEYBOARD---, [{"text":...}]] atau apapun yang berkaitan dengan tombol/keyboard. Tombol akan ditambahkan OTOMATIS oleh sistem.
 
 CONTOH HASIL MULTI PRODUK:
 
@@ -640,10 +730,10 @@ CONTOH HASIL MULTI PRODUK:
 
 Estimasi Biaya:
 • Harga Produk: Rp1.470.000
-• Fee Jasa 15%: Rp220.500
-• Ongkir: Rp250.000
-• Pajak 8%: Rp135.240
-• Total All-in: Rp2.075.740
+• Fee Jasa: Rp100.000
+• Ongkir: Rp125.000 (fashion)
+• Pajak: Rp195.000
+• Total All-in: Rp1.890.000
 
 2 — *Adizero EVO SL*
 
@@ -653,10 +743,10 @@ Estimasi Biaya:
 
 Estimasi Biaya:
 • Harga Produk: Rp2.100.000
-• Fee Jasa 15%: Rp315.000
-• Ongkir: Rp250.000
-• Pajak 8%: Rp193.200
-• Total All-in: Rp2.858.200
+• Fee Jasa: Rp100.000
+• Ongkir: Rp125.000 (fashion)
+• Pajak: Rp255.000
+• Total All-in: Rp2.580.000
 
 """
 
@@ -781,8 +871,8 @@ async def call_deepseek(messages: list[dict], with_tools: bool = True) -> dict:
         log.error(f"DeepSeek call error: {e}")
         return {"error": str(e)}
 
-async def estimate_price(product_jpy: int) -> dict:
-    return await estimate_price_v2(product_jpy)
+async def estimate_price(product_jpy: int, category: str = "general") -> dict:
+    return await estimate_price_v2(product_jpy, category)
 
 async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, chat_id: int | None = None) -> str:
     """Execute a tool, save results to Supabase, and return result as JSON string."""
@@ -1510,7 +1600,7 @@ async def handle_about(chat_id: int):
         "membeli produk-produk dari *Jepang* dengan mudah dan aman.\n\n"
         "✨ *Kenapa MyBagasi?*\n"
         "• 🛍️ Akses ke Amazon JP, Rakuten, toko official Jepang\n"
-        "• 💰 Estimasi harga *all-in* (produk + fee 15% + ongkir + pajak)\n"
+        "• 💰 Estimasi harga *all-in* (produk + fee + ongkir + pajak)\n"
         "• 💳 Bayar pakai Zantara Pay (QRIS, transfer)\n"
         "• 📦 Barang dikirim langsung ke alamat kamu\n"
         "• 🤖 Chat AI — tinggal bilang barang yang kamu mau!\n\n"

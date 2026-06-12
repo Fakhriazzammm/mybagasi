@@ -43,3 +43,4 @@ scraper/.venv/
 .claude/worktrees/ecstatic-bassi-5a4a80/
 .claude/worktrees/gallant-brahmagupta-a241be/
 temp/
+scraper/data/cart.json
