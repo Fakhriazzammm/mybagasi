@@ -39,21 +39,25 @@ ALTER TABLE cart_items ENABLE ROW LEVEL SECURITY;
 
 -- 5. RLS Policies
 -- Users can only see their own cart
+DROP POLICY IF EXISTS "Users can view own cart items" ON cart_items;
 CREATE POLICY "Users can view own cart items"
     ON cart_items FOR SELECT
     USING (auth.uid() = user_id);
 
 -- Users can insert their own cart items
+DROP POLICY IF EXISTS "Users can insert own cart items" ON cart_items;
 CREATE POLICY "Users can insert own cart items"
     ON cart_items FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
 -- Users can update their own cart items
+DROP POLICY IF EXISTS "Users can update own cart items" ON cart_items;
 CREATE POLICY "Users can update own cart items"
     ON cart_items FOR UPDATE
     USING (auth.uid() = user_id);
 
 -- Users can delete their own cart items
+DROP POLICY IF EXISTS "Users can delete own cart items" ON cart_items;
 CREATE POLICY "Users can delete own cart items"
     ON cart_items FOR DELETE
     USING (auth.uid() = user_id);
