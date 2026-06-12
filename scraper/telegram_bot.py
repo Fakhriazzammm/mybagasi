@@ -1205,44 +1205,29 @@ async def process_reg_step(chat_id: int, text: str):
             return True
 
         token = profile["telegram_token"]
-        await tg_send(chat_id,
-            f"✅ *Akun MyBagasi berhasil dibuat!*\n\n"
-            f"Halo *{state['name']}*! 🎉\n\n"
-            f"*Kode Rahasia kamu:*\n"
-            f"`{token}`\n\n"
-            f"📋 *Simpan kode ini* — kamu bisa pakai untuk:\n"
-            f"• Menghubungkan Telegram lain\n"
-            f"• Verifikasi ulang akun\n\n"
-            f"🔗 Kunjungi profilmu: mybagasi.my.id/profile\n\n"
-            f"📌 *Sekarang ketik kode di atas* untuk verifikasi dan mulai belanja!")
-        _pending_reg[chat_id] = {"step": "verify", "user_id": user_id, "token": token, "name": state["name"]}
-        return True
-
-    elif step == "verify":
-        input_token = text.strip().upper()
-        expected_token = state.get("token", "")
-        if input_token == expected_token:
-            success = await link_telegram(state["user_id"], chat_id)
-            if success:
-                conversations[chat_id] = {"messages": [], "context": {"user_id": state["user_id"]}}
-                await tg_send(chat_id,
-                    f"✅ *Verifikasi Berhasil!*\n\n"
-                    f"Halo *{state['name']}*! Selamat berbelanja! 🎉\n\n"
-                    f"*Yang bisa kamu lakukan:*\n"
-                    f"🔍 Kirim *kata kunci* — cari produk Jepang\n"
-                    f"🔗 Kirim *link marketplace* — cek harga\n"
-                    f"💳 Bayar via chat — checkout langsung\n"
-                    f"📋 `/wishlist` — lihat wishlist\n"
-                    f"📊 Dashboard: mybagasi.my.id/dashboard\n\n"
-                    f"💡 Contoh: ketik `/beli onitsuka tiger`")
-                log.info(f"User registered via bot: {state['name']} ({state['user_id'][:8]})")
-            else:
-                await tg_send(chat_id, "❌ Gagal menghubungkan. Coba `/start` dengan kode rahasia.")
+        # Auto-link Telegram langsung — tanpa perlu ketik ulang kode
+        link_success = await link_telegram(user_id, chat_id)
+        _pending_reg.pop(chat_id, None)
+        
+        if link_success:
+            conversations[chat_id] = {"messages": [], "context": {"user_id": user_id}}
+            await tg_send(chat_id,
+                f"✅ *Akun MyBagasi berhasil dibuat!*\n\n"
+                f"Selamat datang, *{state['name']}*! 🎉\n\n"
+                f"*Kamu sudah bisa langsung mulai belanja:*\n"
+                f"🔍 Kirim *kata kunci* — cari produk Jepang\n"
+                f"🔗 Kirim *link marketplace* — cek harga\n"
+                f"💳 Bayar via chat — checkout langsung\n"
+                f"📋 `/wishlist` — lihat wishlist\n"
+                f"📊 Dashboard: mybagasi.my.id/dashboard\n\n"
+                f"💡 Contoh: ketik `onitsuka tiger`")
+            log.info(f"User registered via bot: {state['name']} ({user_id[:8]})")
         else:
             await tg_send(chat_id,
-                f"❌ Kode salah. Coba lagi.\n\n"
-                f"Kode rahasia kamu: `{expected_token}`")
-        _pending_reg.pop(chat_id, None)
+                f"✅ Akun dibuat tapi gagal auto-link.\n\n"
+                f"Kode rahasia kamu: `{token}`\n"
+                f"Ketik `/start {token}` untuk hubungkan.")
+        
         return True
 
     return False
