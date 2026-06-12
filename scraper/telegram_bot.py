@@ -1315,6 +1315,51 @@ async def handle_status(chat_id: int):
     
     await tg_send(chat_id, msg)
 
+async def handle_pesanan(chat_id: int):
+    """Handle /pesanan — show user's orders from Supabase orders table."""
+    user = await lookup_user_by_telegram_id(chat_id)
+    if not user:
+        await tg_send(chat_id, "⚠️ Kamu harus daftar/login dulu. Ketik `/register` atau `/login`.")
+        return
+
+    uid = user["id"]
+    orders = await fetch_user_orders(uid, 10)
+
+    if not orders:
+        await tg_send(chat_id,
+            "📦 *Pesanan* — Belum ada pesanan\n\n"
+            "Yuk belanja dulu! Ketik `/beli <produk>`\n"
+            "atau kirim link produk yang mau dibeli.")
+        return
+
+    msg = f"📦 *Pesanan ({len(orders)})*\n\n"
+    for o in orders:
+        status_emoji = {
+            "draft": "📄",
+            "waiting_payment": "🟡",
+            "confirmed": "✅",
+            "processing": "🔧",
+            "shipped": "🚚",
+            "delivered": "📬",
+            "cancelled": "❌",
+        }.get(o.get("status", ""), "❓")
+
+        product = o.get("product", "")[:40]
+        total = o.get("total", 0)
+        created = ""
+        if o.get("created_at"):
+            created = o["created_at"][:10]
+
+        msg += f"{status_emoji} *{o['status'].replace('_',' ').title()}*\n"
+        msg += f"   {product}\n"
+        msg += f"   💰 Rp {total:,}"
+        if created:
+            msg += f"  📅 {created}"
+        msg += "\n\n"
+
+    msg += "📊 Lihat lengkap: mybagasi.my.id/dashboard/orders"
+    await tg_send(chat_id, msg)
+
 async def handle_tagihan(chat_id: int):
     """Handle /tagihan — show user's bills from Supabase bills table."""
     user = await lookup_user_by_telegram_id(chat_id)
@@ -1843,6 +1888,8 @@ async def process_update(update: dict):
             await handle_wishlist(chat_id)
         elif data == "/status":
             await handle_status(chat_id)
+        elif data == "/pesanan":
+            await handle_pesanan(chat_id)
         elif data == "/tagihan":
             await handle_tagihan(chat_id)
         elif data == "/help":
@@ -1878,6 +1925,8 @@ async def process_update(update: dict):
         await handle_start(chat_id, args)
     elif command == "/status":
         await handle_status(chat_id)
+    elif command == "/pesanan":
+        await handle_pesanan(chat_id)
     elif command == "/tagihan":
         await handle_tagihan(chat_id)
     elif command == "/unlink":
@@ -1921,8 +1970,10 @@ async def process_update(update: dict):
             await tg_send(chat_id, "⚠️ Kamu harus daftar dulu. Ketik /register")
             return
         await tg_send(chat_id, "📝 Ketik nama produk yang mau dicari, misal: `onitsuka tiger`")
-    elif any(kw in text for kw in ["Akun Saya", "Pesanan"]):
+    elif any(kw in text for kw in ["Akun Saya"]):
         await handle_status(chat_id)
+    elif "Pesanan" in text:
+        await handle_pesanan(chat_id)
     elif "Tagihan" in text:
         await handle_tagihan(chat_id)
     elif "Wishlist" in text or "Wishlist" in text:
