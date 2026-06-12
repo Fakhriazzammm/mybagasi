@@ -39,9 +39,7 @@ function FeaturedProduct({
   item: { id: string; name: string; images: string[]; price_jpy?: number | null; price_idr?: number | null };
 }) {
   const imgSrc = item.images?.[0]
-    ? item.images[0].startsWith("/") || item.images[0].startsWith("http")
-      ? item.images[0]
-      : "/" + item.images[0]
+    ? encodeURI(item.images[0].startsWith("http") ? item.images[0] : item.images[0].startsWith("/") ? item.images[0] : "/" + item.images[0])
     : null;
 
   const priceDisplay = item.price_jpy

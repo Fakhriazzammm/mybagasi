@@ -15,7 +15,7 @@ const FALLBACK_IMG =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' fill='%23e2e8f0'%3E%3Crect width='200' height='200'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%2394a3b8' font-size='32'%3E📦%3C/text%3E%3C/svg%3E";
 
 export function ProductCard({ item, showPrice = true }: ProductCardProps) {
-  const imgSrc = item.images?.[0] || FALLBACK_IMG;
+  const imgSrc = item.images?.[0] ? encodeURI(item.images[0]) : FALLBACK_IMG;
 
   const hasJpy = item.price_jpy != null && item.price_jpy > 0;
   const hasIdr = item.price_idr != null && item.price_idr > 0;
