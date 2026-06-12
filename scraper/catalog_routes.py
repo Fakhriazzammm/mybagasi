@@ -198,7 +198,7 @@ async def _ilike_search(
             # Count request
             count_headers = _sb_headers({"Prefer": "count=exact"})
             resp = await client.get(base_url, headers=count_headers, params=params)
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 206):
                 return [], 0
             items = resp.json()
             # Parse content-range for exact count
@@ -244,7 +244,7 @@ async def catalog_category(
         async with httpx.AsyncClient(timeout=15) as client:
             item_headers = _sb_headers({"Prefer": "count=exact"})
             resp = await client.get(base_url, headers=item_headers, params=params)
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 206):
                 raise HTTPException(
                     status_code=502,
                     detail=f"Supabase query failed: {resp.status_code} {resp.text[:300]}",

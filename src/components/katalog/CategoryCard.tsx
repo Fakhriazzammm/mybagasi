@@ -1,10 +1,11 @@
+import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 interface CategoryCardProps {
   emoji?: string;
   name: string;
   count: number;
-  onClick?: () => void;
+  to?: string;
 }
 
 const EMOJI_MAP: Record<string, string> = {
@@ -18,20 +19,11 @@ const EMOJI_MAP: Record<string, string> = {
   "Donqi Items": "🛍️",
 };
 
-export function CategoryCard({ name, count, onClick }: CategoryCardProps) {
+export function CategoryCard({ name, count, to }: CategoryCardProps) {
   const emoji = EMOJI_MAP[name] ?? "📦";
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex flex-col items-center gap-1.5 rounded-xl border border-border/50",
-        "bg-card p-3 transition-all duration-150",
-        "hover:border-primary/40 hover:bg-primary-soft/30 hover:shadow-sm",
-        "active:scale-[0.97] w-full"
-      )}
-    >
+  const content = (
+    <>
       <span className="text-2xl leading-none">{emoji}</span>
       <span className="text-sm font-medium text-center leading-tight line-clamp-1">
         {name}
@@ -39,6 +31,35 @@ export function CategoryCard({ name, count, onClick }: CategoryCardProps) {
       <span className="text-[10px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">
         {count} item{count !== 1 ? "s" : ""}
       </span>
-    </button>
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        className={cn(
+          "flex flex-col items-center gap-1.5 rounded-xl border border-border/50",
+          "bg-card p-3 transition-all duration-150",
+          "hover:border-primary/40 hover:bg-primary-soft/30 hover:shadow-sm",
+          "active:scale-[0.97] w-full"
+        )}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-center gap-1.5 rounded-xl border border-border/50",
+        "bg-card p-3 transition-all duration-150",
+        "hover:border-primary/40 hover:bg-primary-soft/30 hover:shadow-sm",
+        "active:scale-[0.97] w-full"
+      )}
+    >
+      {content}
+    </div>
   );
 }

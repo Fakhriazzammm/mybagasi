@@ -79,6 +79,7 @@ function CategoryGrid({
             key={cat.name}
             name={cat.name}
             count={cat.count}
+            to={`/katalog/${encodeURIComponent(cat.name)}`}
           />
         ))}
       </div>
