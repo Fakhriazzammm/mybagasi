@@ -994,12 +994,20 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
 
     # ─── create_payment ───────────────────────────────────
     elif tool_name == "create_payment":
+        # Build custom_fields for bill tracking (will be saved to Supabase bills table)
+        custom_fields = []
+        if user_id:
+            custom_fields.append({"key": "user_id", "value": user_id})
+        if chat_id:
+            custom_fields.append({"key": "telegram_id", "value": str(chat_id)})
+
         invoice_data = {
             "name": args.get("customer_name", ""),
             "email": args.get("customer_email", "contact@djiwatentram.com"),
             "mobile": args.get("customer_mobile", "081234567890"),
             "description": args.get("order_description", "Pembelian MyBagasi"),
             "items": args.get("items", []),
+            "custom_field": custom_fields,
         }
         log.info(f"Tool: create_payment for {invoice_data['name']}")
         result = await create_payment_invoice(invoice_data)
