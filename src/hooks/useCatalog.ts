@@ -50,7 +50,10 @@ async function fetchJson<T>(path: string): Promise<T> {
 export function useFeaturedProducts() {
   return useQuery<CatalogItem[]>({
     queryKey: ["catalog", "featured"],
-    queryFn: () => fetchJson<CatalogItem[]>("/catalog/featured"),
+    queryFn: () =>
+      fetchJson<{ items: CatalogItem[] }>("/catalog/featured").then(
+        (d) => d.items,
+      ),
     staleTime: 1000 * 60 * 5,
     retry: 2,
   });
@@ -59,7 +62,10 @@ export function useFeaturedProducts() {
 export function useCatalogCategories() {
   return useQuery<CatalogCategory[]>({
     queryKey: ["catalog", "categories"],
-    queryFn: () => fetchJson<CatalogCategory[]>("/catalog/categories"),
+    queryFn: () =>
+      fetchJson<{ categories: CatalogCategory[] }>(
+        "/catalog/categories",
+      ).then((d) => d.categories),
     staleTime: 1000 * 60 * 5,
     retry: 2,
   });
@@ -72,7 +78,9 @@ export function useCatalogSearch(keyword: string, category?: string) {
       const params = new URLSearchParams();
       if (keyword) params.set("keyword", keyword);
       if (category) params.set("category", category);
-      return fetchJson<CatalogItem[]>(`/catalog/search?${params.toString()}`);
+      return fetchJson<{ items: CatalogItem[] }>(
+        `/catalog/search?${params.toString()}`,
+      ).then((d) => d.items);
     },
     enabled: keyword.length > 0,
     staleTime: 1000 * 60 * 2,
