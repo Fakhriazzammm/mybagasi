@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, MessageCircle, User, LogOut, LayoutDashboard } from "lucide-react";
+import { Menu, X, MessageCircle, User, LogOut, LayoutDashboard, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./Logo";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCartCount } from "@/hooks/useCart";
 
 const links = [
   { to: "/", label: "Beranda" },
@@ -19,6 +20,7 @@ export const Navbar = () => {
   const { profile, signOut, getDashboardRoute } = useAuth();
 
   const dashRoute = getDashboardRoute();
+  const { data: cartCount = 0 } = useCartCount();
 
   return (
     <header className="sticky top-0 z-40 w-full backdrop-blur-xl bg-background/70 border-b border-border/60">
@@ -52,6 +54,18 @@ export const Navbar = () => {
                   {profile.name?.split(' ')[0] || 'Profil'}
                 </Link>
               </Button>
+              {profile && (
+                <Button variant="ghost" size="sm" asChild className="relative">
+                  <Link to="/cart">
+                    <ShoppingCart className="h-4 w-4" />
+                    {cartCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 h-4 min-w-[16px] flex items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground px-1">
+                        {cartCount > 99 ? '99+' : cartCount}
+                      </span>
+                    )}
+                  </Link>
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={() => signOut()}>
                 <LogOut className="h-4 w-4" />
               </Button>
@@ -97,6 +111,13 @@ export const Navbar = () => {
                     className="px-4 py-3 rounded-2xl text-sm font-medium hover:bg-secondary flex items-center gap-2"
                   >
                     <LayoutDashboard className="h-4 w-4" /> Dashboard
+                  </Link>
+                  <Link
+                    to="/cart"
+                    onClick={() => setOpen(false)}
+                    className="px-4 py-3 rounded-2xl text-sm font-medium hover:bg-secondary flex items-center gap-2"
+                  >
+                    <ShoppingCart className="h-4 w-4" /> Keranjang{cartCount > 0 ? ` (${cartCount})` : ''}
                   </Link>
                   <Link
                     to="/profile"

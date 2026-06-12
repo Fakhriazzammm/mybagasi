@@ -5,8 +5,9 @@ import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { ProductCard } from "@/components/katalog/ProductCard";
 import { CatalogSkeleton } from "@/components/katalog/CatalogSkeleton";
-import { useCatalogCategory } from "@/hooks/useCatalog";
+import { useCatalogCategory, type CatalogItem } from "@/hooks/useCatalog";
 import { Button } from "@/components/ui/button";
+import ProductDetailModal from "@/components/katalog/ProductDetailModal";
 
 const LIMIT = 50;
 
@@ -14,6 +15,7 @@ export default function CategoryPage() {
   const { category } = useParams<{ category: string }>();
   const [activeSub, setActiveSub] = useState<string | undefined>(undefined);
   const [offset, setOffset] = useState(0);
+  const [selectedProduct, setSelectedProduct] = useState<CatalogItem | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useCatalogCategory(
     category || "",
@@ -118,7 +120,7 @@ export default function CategoryPage() {
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {data!.items.map((item) => (
-                <ProductCard key={item.id} item={item} />
+                <ProductCard key={item.id} item={item} onBeli={setSelectedProduct} />
               ))}
             </div>
 
@@ -134,6 +136,14 @@ export default function CategoryPage() {
               </div>
             )}
           </>
+        )}
+
+        {selectedProduct && (
+          <ProductDetailModal
+            item={selectedProduct}
+            open={!!selectedProduct}
+            onClose={() => setSelectedProduct(null)}
+          />
         )}
       </main>
       <Footer />

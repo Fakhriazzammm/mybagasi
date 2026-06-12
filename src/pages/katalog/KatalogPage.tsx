@@ -15,6 +15,7 @@ import {
 import { CategoryCard } from "@/components/katalog/CategoryCard";
 import { ProductCard } from "@/components/katalog/ProductCard";
 import { CatalogSkeleton } from "@/components/katalog/CatalogSkeleton";
+import ProductDetailModal from "@/components/katalog/ProductDetailModal";
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -89,8 +90,10 @@ function CategoryGrid({
 
 function FeaturedSection({
   items,
+  onBeli,
 }: {
   items: CatalogItem[];
+  onBeli?: (item: CatalogItem) => void;
 }) {
   if (!items.length) return null;
 
@@ -101,7 +104,7 @@ function FeaturedSection({
       </h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {items.map((item) => (
-          <ProductCard key={item.id} item={item} />
+          <ProductCard key={item.id} item={item} onBeli={onBeli} />
         ))}
       </div>
     </section>
@@ -180,6 +183,7 @@ function CTASection() {
 
 const KatalogPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<CatalogItem | null>(null);
 
   const {
     data: featured,
@@ -255,12 +259,20 @@ const KatalogPage = () => {
 
             {/* Featured */}
             {featured && featured.length > 0 && (
-              <FeaturedSection items={featured} />
+              <FeaturedSection items={featured} onBeli={(item) => setSelectedProduct(item)} />
             )}
 
             {/* CTA */}
             <CTASection />
           </>
+        )}
+
+        {selectedProduct && (
+          <ProductDetailModal
+            item={selectedProduct}
+            open={!!selectedProduct}
+            onClose={() => setSelectedProduct(null)}
+          />
         )}
       </main>
 

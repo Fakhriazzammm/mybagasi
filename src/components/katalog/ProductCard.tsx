@@ -14,17 +14,21 @@ interface ProductCardProps {
 const FALLBACK_IMG =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' fill='%23e2e8f0'%3E%3Crect width='200' height='200'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%2394a3b8' font-size='32'%3E📦%3C/text%3E%3C/svg%3E";
 
-export function ProductCard({ item, showPrice = true }: ProductCardProps) {
+export function ProductCard({ item, showPrice = true, onBeli }: ProductCardProps) {
   const imgSrc = item.images?.[0] ? encodeURI(item.images[0]) : FALLBACK_IMG;
 
   const hasJpy = item.price_jpy != null && item.price_jpy > 0;
   const hasIdr = item.price_idr != null && item.price_idr > 0;
 
+  const handleClick = () => {
+    onBeli?.(item);
+  };
+
   return (
-    <div className="group flex flex-col rounded-xl border border-border/50 bg-card overflow-hidden transition-all duration-150 hover:border-primary/30 hover:shadow-sm">
+    <div className="group flex flex-col rounded-xl border border-border/50 bg-card overflow-hidden transition-all duration-150 hover:border-primary/30 hover:shadow-sm cursor-pointer">
       {/* Image */}
-      <Link
-        to={`/aipersonalshopper?catalog_id=${item.id}`}
+      <div
+        onClick={handleClick}
         className="aspect-square overflow-hidden bg-muted/30"
       >
         <img
@@ -36,7 +40,7 @@ export function ProductCard({ item, showPrice = true }: ProductCardProps) {
             (e.target as HTMLImageElement).src = FALLBACK_IMG;
           }}
         />
-      </Link>
+      </div>
 
       {/* Body */}
       <div className="flex flex-1 flex-col gap-1.5 p-3">
@@ -49,12 +53,12 @@ export function ProductCard({ item, showPrice = true }: ProductCardProps) {
         )}
 
         {/* Name */}
-        <Link
-          to={`/aipersonalshopper?catalog_id=${item.id}`}
-          className="text-sm font-medium leading-snug line-clamp-2 hover:text-primary transition-colors"
+        <div
+          onClick={handleClick}
+          className="text-sm font-medium leading-snug line-clamp-2 hover:text-primary transition-colors cursor-pointer"
         >
           {item.name}
-        </Link>
+        </div>
 
         {/* Price */}
         {showPrice && (
@@ -85,11 +89,9 @@ export function ProductCard({ item, showPrice = true }: ProductCardProps) {
           variant="hero"
           size="sm"
           className="mt-2 w-full gap-1.5 text-xs"
-          asChild
+          onClick={handleClick}
         >
-          <Link to={`/aipersonalshopper?catalog_id=${item.id}`}>
-            🛒 Beli via AI
-          </Link>
+          🛒 Beli via AI
         </Button>
       </div>
     </div>
