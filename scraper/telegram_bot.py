@@ -1168,8 +1168,9 @@ async def handle_start(chat_id: int, args: str):
             reply_kb = {
                 "keyboard": [
                     [{"text": "🔍 Cari Produk"}],
-                    [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan Saya"}],
-                    [{"text": "📋 Wishlist"}, {"text": "❓ Bantuan"}],
+                    [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
+                    [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
+                    [{"text": "❓ Bantuan"}],
                 ],
                 "resize_keyboard": True,
                 "one_time_keyboard": False,
@@ -1830,7 +1831,7 @@ async def process_update(update: dict):
             await tg_send(chat_id, "⚠️ Kamu harus daftar dulu. Ketik /register")
             return
         await tg_send(chat_id, "📝 Ketik nama produk yang mau dicari, misal: `onitsuka tiger`")
-    elif text in ("👤 Akun Saya", "📦 Pesanan Saya"):
+    elif text in ("👤 Akun Saya", "📦 Pesanan", "🧾 Tagihan"):
         await handle_status(chat_id)
     elif text in ("📋 Wishlist",):
         await handle_wishlist(chat_id)
