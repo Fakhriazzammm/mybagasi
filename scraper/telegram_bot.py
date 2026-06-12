@@ -101,15 +101,25 @@ async def tg_edit(chat_id: int, message_id: int, text: str, parse_mode: str = "M
         log.error(f"tg_edit error: {e}")
         return None
 
-async def status_timer(chat_id: int, message_id: int, start_time: float):
-    """Update status message with elapsed seconds every 3s."""
+async def status_timer(chat_id: int, message_id: int, start_time: float, status_ref: list[str] | None = None):
+    """Update status message with elapsed seconds and dynamic status text every 2s."""
     while True:
         elapsed = int(time.time() - start_time)
         if elapsed > 120:
-            break
-        text = f"🔍 *Mencari produk...* ⏳ `{elapsed}s`"
+            # More than 2 minutes — show timeout warning
+            text = f"⏳ *Masih diproses...* ⏰ `{elapsed}s`"
+            if status_ref and status_ref[0]:
+                text = f"{status_ref[0]} ⏰ `{elapsed}s`"
+            await tg_edit(chat_id, message_id, text)
+            await asyncio.sleep(2)
+            continue
+        # Gunakan status dinamis jika ada
+        if status_ref and status_ref[0]:
+            text = f"{status_ref[0]} ⏳ `{elapsed}s`"
+        else:
+            text = f"🔍 *Mencari produk...* ⏳ `{elapsed}s`"
         await tg_edit(chat_id, message_id, text)
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
 
 async def tg_split_send(chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup: dict | None = None):
     if len(text) <= 4000:
@@ -823,8 +833,28 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
     
     msgs.extend(conv["messages"])
     
+    # ── Status timer dengan dynamic status ──
+    result = await tg_send(chat_id, "⏳ *Memproses...*")
+    status_msg_id = result["result"]["message_id"] if result and result.get("ok") else None
+    start_time = time.time()
+    status_ref = [""]  # mutable list untuk dynamic status
+    
+    # Start timer background task
+    timer_task = None
+    if status_msg_id:
+        timer_task = asyncio.create_task(status_timer(chat_id, status_msg_id, start_time, status_ref))
+    
     max_turns = 5
     for turn in range(max_turns):
+        # Update status sesuai turn
+        status_texts = {
+            0: "🔍 *Mencari produk...*",
+            1: "🔄 *Mengecek harga & ketersediaan...*",
+            2: "📊 *Menghitung estimasi biaya...*",
+            3: "✍️ *Menyusun hasil...*",
+        }
+        status_ref[0] = status_texts.get(turn, "⏳ *Memproses...*")
+        
         result = await call_deepseek(msgs, with_tools=True)
         
         if "error" in result:
