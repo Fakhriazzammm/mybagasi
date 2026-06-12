@@ -15,20 +15,13 @@ from .models import ProductData
 
 
 SEARCH_DOMAINS = [
-    "mercari.com",
-    "jp.mercari.com",
     "rakuten.co.jp",
     "amazon.co.jp",
-    "auctions.yahoo.co.jp",
-    "paypayfleamarket.yahoo.co.jp",
     "zozo.jp",
 ]
 
 MARKETPLACE_SEARCH_URLS = [
-    "https://jp.mercari.com/search?keyword={q}",
-    "https://www.mercari.com/us/search/?keyword={q}",
     "https://search.rakuten.co.jp/search/mall/{q}/",
-    "https://auctions.yahoo.co.jp/search/search?p={q}",
     "https://www.amazon.co.jp/s?k={q}",
 ]
 
@@ -315,14 +308,9 @@ async def _collect_candidates_from_marketplace_search(query: str) -> list[str]:
         for template in MARKETPLACE_SEARCH_URLS:
             try:
                 url = template.format(q=encoded_query)
-                await _wait_rate_limit(url)  # Apply rate limiting for search queries too
+                await _wait_rate_limit(url)
                 resp = await client.get(url)
-                # Yahoo Auction returns 404 but still has valid content with product links
-                # So we don't raise_for_status for it
-                if "auctions.yahoo.co.jp" not in url:
-                    resp.raise_for_status()
-                elif resp.status_code >= 500:
-                    continue  # Only skip on 5xx errors for Yahoo Auction
+                resp.raise_for_status()
             except Exception as e:
                 # Silently continue on error (marketplace might be down or blocking)
                 continue
@@ -343,22 +331,12 @@ async def _collect_candidates_from_marketplace_search(query: str) -> list[str]:
 
 def _extract_ecommerce_links_from_html(html: str) -> list[str]:
     patterns = [
-        # Mercari JP & US
-        r"https://jp\.mercari\.com/item/[A-Za-z0-9]+",
-        r"https://www\.mercari\.com/us/item/[A-Za-z0-9]+/?",
-        r"https://jp\.mercari\.com/en/item/[A-Za-z0-9]+",
         # Rakuten (both formats)
         r"https://item\.rakuten\.co\.jp/[\w-]+/[\w-]+/?",
         r"https://product\.rakuten\.co\.jp/product/[\w-]+/",
-        # Yahoo Auctions (both /jp/auction/ and /catalog/detail/ formats)
-        r"https://auctions\.yahoo\.co\.jp/jp/auction/[A-Za-z0-9]+",
-        r"https://auctions\.yahoo\.co\.jp/catalog/detail/[A-Za-z0-9]+",
-        r"https://page\.auctions\.yahoo\.co\.jp/jp/auction/[A-Za-z0-9]+",
         # Amazon (DP pages)
         r"https://www\.amazon\.co\.jp/[\w-]+/dp/[A-Z0-9]{10}(?:/|\?|$)",
         r"https://www\.amazon\.co\.jp/dp/[A-Z0-9]{10}(?:/|\?|$)",
-        # PayPay Fleamarket
-        r"https://paypayfleamarket\.yahoo\.co\.jp/item/[A-Za-z0-9]+",
     ]
     links: list[str] = []
     for pattern in patterns:

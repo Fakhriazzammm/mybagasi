@@ -23,6 +23,7 @@ import logging
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -88,6 +89,27 @@ async def tg_typing(chat_id: int):
             await client.post(tg_url("sendChatAction"), json={"chat_id": chat_id, "action": "typing"})
     except:
         pass
+
+async def tg_edit(chat_id: int, message_id: int, text: str, parse_mode: str = "Markdown") -> dict | None:
+    """Edit a message via Telegram API."""
+    try:
+        payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": parse_mode}
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(tg_url("editMessageText"), json=payload)
+            return r.json()
+    except Exception as e:
+        log.error(f"tg_edit error: {e}")
+        return None
+
+async def status_timer(chat_id: int, message_id: int, start_time: float):
+    """Update status message with elapsed seconds every 3s."""
+    while True:
+        elapsed = int(time.time() - start_time)
+        if elapsed > 120:
+            break
+        text = f"🔍 *Mencari produk...* ⏳ `{elapsed}s`"
+        await tg_edit(chat_id, message_id, text)
+        await asyncio.sleep(3)
 
 async def tg_split_send(chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup: dict | None = None):
     if len(text) <= 4000:
@@ -423,7 +445,10 @@ async def create_payment_invoice(data: dict) -> dict:
 SYSTEM_PROMPT = """Kamu adalah MyBagasi AI, asisten personal shopper untuk produk-produk dari Jepang.
 
 TUGAS KAMU:
-- Membantu pelanggan Indonesia membeli produk dari marketplace Jepang (Mercari, Rakuten, Amazon JP, Yahoo Auction, dll)
+- Membantu pelanggan Indonesia membeli produk dari Jepang
+- Cari **harga resmi/retail** dari **Amazon JP, Rakuten, toko official** (baru, original)
+- ⛔ JANGAN GUNAKAN Yahoo Auction, Yahoo Shopping, atau PayPay Flea Market
+- Jika hasil pencarian hanya dari Yahoo/second, KATAKAN "Tidak ditemukan produk baru dari toko resmi"
 - Memberikan estimasi harga all-in (harga produk, fee jasa 15%, ongkir Rp250.000, pajak 8%)
 - Memproses pembayaran via Mayar
 
@@ -466,12 +491,12 @@ CONTOH HASIL MULTI PRODUK:
 
 🔗 [Lihat di Amazon JP](url)
 
-💰 RINCIAN BIAYA:
-Harga produk       ¥14.000    (Rp1.568.000)
-Fee jasa 15%       ¥2.100     (Rp235.200)
-Ongkir                         (Rp250.000)
-Pajak 8%           ¥1.288     (Rp144.256)
-💳 TOTAL ALL-IN    ¥17.388    (Rp2.197.456)
+Estimasi Biaya:
+• Harga Produk: Rp1.568.000
+• Fee Jasa 15%: Rp235.200
+• Ongkir: Rp250.000
+• Pajak 8%: Rp144.256
+• Total All-in: Rp2.197.456
 
 2 — *Adizero EVO SL*
 
@@ -479,10 +504,12 @@ Pajak 8%           ¥1.288     (Rp144.256)
 
 🔗 [Lihat di Amazon JP](url)
 
-💰 RINCIAN BIAYA:
-Harga produk       ¥20.000    (Rp2.240.000)
-...
-💳 TOTAL ALL-IN    ¥22.000    (Rp2.839.000)
+Estimasi Biaya:
+• Harga Produk: Rp2.240.000
+• Fee Jasa 15%: Rp336.000
+• Ongkir: Rp250.000
+• Pajak 8%: Rp206.080
+• Total All-in: Rp3.032.080
 
 """
 
@@ -491,7 +518,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "scrape_product",
-            "description": "Scrape detail produk dari URL marketplace Jepang (Mercari, Rakuten, Amazon JP, Yahoo Auction). Panggil ini jika user memberikan link produk. Data akan otomatis tersimpan.",
+            "description": "Scrape detail produk dari URL marketplace Jepang (Rakuten, Amazon JP, toko official). Panggil ini jika user memberikan link produk. Data akan otomatis tersimpan.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -505,7 +532,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_products",
-            "description": "Cari produk di marketplace Jepang berdasarkan kata kunci. Hasil pencarian akan tersimpan otomatis. Panggil jika user mencari produk tanpa link.",
+            "description": "Cari produk BARU di Amazon JP, Rakuten, atau toko official Jepang berdasarkan kata kunci. Hasil pencarian akan tersimpan otomatis. Panggil jika user mencari produk tanpa link.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -803,6 +830,11 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
         if "error" in result:
             error_msg = f"Maaf, AI sedang bermasalah. Coba lagi ya."
             conv["messages"].append({"role": "assistant", "content": error_msg})
+            # Stop timer
+            if timer_task:
+                timer_task.cancel()
+            if status_msg_id:
+                await tg_edit(chat_id, status_msg_id, "❌ *Gagal* — coba lagi nanti")
             return error_msg
         
         choice = result["choices"][0]["message"]
@@ -848,10 +880,23 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
             ai_text = "Maaf, saya tidak bisa memproses permintaan itu. Coba kirim link produk atau kata kunci yang lebih spesifik."
             conv["messages"].append({"role": "assistant", "content": ai_text})
         
+        # Stop timer — selesai
+        if timer_task:
+            timer_task.cancel()
+        if status_msg_id:
+            await tg_edit(chat_id, status_msg_id, f"✅ *Selesai!* (`{int(time.time() - start_time)}s`)")
+        
         return ai_text
     
     fallback = "Percakapan terlalu panjang. Coba mulai lagi dengan /reset ya."
     conv["messages"].append({"role": "assistant", "content": fallback})
+    
+    # Stop timer
+    if timer_task:
+        timer_task.cancel()
+    if status_msg_id:
+        await tg_edit(chat_id, status_msg_id, f"⏰ *Time out* (`{int(time.time() - start_time)}s`)")
+    
     return fallback
 
 def reset_conversation(chat_id: int):
@@ -897,7 +942,7 @@ async def handle_start(chat_id: int, args: str):
                 "Aku bisa bantu kamu beli barang-barang keren dari *Jepang* — "
                 "mulai dari fashion, elektronik, barang koleksi, sampai merchandise limited edition!\n\n"
                 "✨ *Yang bisa aku lakukan:*\n"
-                "🔍 *Cari produk* di Mercari, Rakuten, Amazon JP & lainnya\n"
+                "🔍 *Cari produk* di Amazon JP, Rakuten & toko official Jepang\n"
                 "💰 *Estimasi harga* all-in (produk + fee + ongkir + pajak)\n"
                 "💳 *Bayar aman* via Zantara Pay\n"
                 "📦 *Lacak pesanan* sampai ke rumah kamu\n\n"
@@ -987,7 +1032,7 @@ async def handle_wishlist(chat_id: int):
     """Handle /wishlist — show user's saved wishlist items."""
     user = await lookup_user_by_telegram_id(chat_id)
     if not user:
-        await tg_send(chat_id, "⚠️ Hubungkan akun dulu dengan `/start KODE`")
+        await tg_send(chat_id, "⚠️ Kamu harus daftar/login dulu. Ketik `/register` atau `/login`.")
         return
     
     uid = user["id"]
@@ -1316,7 +1361,7 @@ async def handle_about(chat_id: int):
         "MyBagasi adalah *asisten belanja pribadi* yang membantu kamu "
         "membeli produk-produk dari *Jepang* dengan mudah dan aman.\n\n"
         "✨ *Kenapa MyBagasi?*\n"
-        "• 🛍️ Akses ke Mercari, Rakuten, Amazon JP, Yahoo Auction\n"
+        "• 🛍️ Akses ke Amazon JP, Rakuten, toko official Jepang\n"
         "• 💰 Estimasi harga *all-in* (produk + fee 15% + ongkir + pajak)\n"
         "• 💳 Bayar pakai Zantara Pay (QRIS, transfer)\n"
         "• 📦 Barang dikirim langsung ke alamat kamu\n"
@@ -1326,10 +1371,11 @@ async def handle_about(chat_id: int):
         "👤 *Punya pertanyaan?* Chat @fakhriazzam",
         reply_markup=kb)
 
-def detect_product_buttons(text: str) -> dict | None:
+def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None:
     """Auto-detect products in AI response and generate inline keyboard.
     
     Detects numbered products (1 — Nama Produk, 2 — Nama Produk) or single product.
+    multi_button=True: all product buttons in 1 keyboard (for 1-message multi-product).
     Returns reply_markup dict or None if no products detected.
     """
     lines = text.strip().split('\n')
@@ -1483,16 +1529,21 @@ async def process_update(update: dict):
         search_text = args if args else text
         if not user_profile:
             await tg_send(chat_id,
-                "⚠️ Kamu harus menghubungkan akun MyBagasi dulu.\n"
-                "Gunakan `/start KODE` dari halaman Profile.")
+                "⚠️ *Kamu harus daftar atau login dulu* untuk pakai fitur ini.\n\n"
+                "• `/register` — Daftar akun baru (30 detik)\n"
+                "• `/login` — Login ke akun yang sudah ada\n"
+                "• `/start KODE` — Hubungkan akun via kode")
             return
         await handle_ai(chat_id, search_text, user_profile)
     elif command == "/cek":
         if not args:
-            await tg_send(chat_id, "📎 Kirim link marketplace setelah /cek\nContoh: `/cek https://jp.mercari.com/...`")
+            await tg_send(chat_id, "📎 Kirim link marketplace setelah /cek\nContoh: `/cek https://www.amazon.co.jp/...`")
             return
         if not user_profile:
-            await tg_send(chat_id, "⚠️ Hubungkan akun dulu dengan `/start KODE`")
+            await tg_send(chat_id,
+                "⚠️ *Kamu harus daftar atau login dulu* untuk pakai fitur ini.\n\n"
+                "• `/register` — Daftar akun baru (30 detik)\n"
+                "• `/login` — Login ke akun yang sudah ada")
             return
         await handle_ai(chat_id, f"Tolong cek harga produk ini: {args}", user_profile)
     else:
