@@ -502,11 +502,11 @@ CONTOH HASIL MULTI PRODUK:
 🔗 [Lihat di Amazon JP](url)
 
 Estimasi Biaya:
-• Harga Produk: Rp1.568.000
-• Fee Jasa 15%: Rp235.200
+• Harga Produk: Rp1.470.000
+• Fee Jasa 15%: Rp220.500
 • Ongkir: Rp250.000
-• Pajak 8%: Rp144.256
-• Total All-in: Rp2.197.456
+• Pajak 8%: Rp135.240
+• Total All-in: Rp2.075.740
 
 2 — *Adizero EVO SL*
 
@@ -515,11 +515,11 @@ Estimasi Biaya:
 🔗 [Lihat di Amazon JP](url)
 
 Estimasi Biaya:
-• Harga Produk: Rp2.240.000
-• Fee Jasa 15%: Rp336.000
+• Harga Produk: Rp2.100.000
+• Fee Jasa 15%: Rp315.000
 • Ongkir: Rp250.000
-• Pajak 8%: Rp206.080
-• Total All-in: Rp3.032.080
+• Pajak 8%: Rp193.200
+• Total All-in: Rp2.858.200
 
 """
 
