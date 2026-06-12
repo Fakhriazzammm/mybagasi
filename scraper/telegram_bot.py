@@ -1826,22 +1826,22 @@ async def process_update(update: dict):
                 "• `/login` — Login ke akun yang sudah ada")
             return
         await handle_ai(chat_id, f"Tolong cek harga produk ini: {args}", user_profile)
-    elif text in ("🔍 Cari Produk",):
+    elif "Cari Produk" in text:
         if not user_profile:
             await tg_send(chat_id, "⚠️ Kamu harus daftar dulu. Ketik /register")
             return
         await tg_send(chat_id, "📝 Ketik nama produk yang mau dicari, misal: `onitsuka tiger`")
-    elif text in ("👤 Akun Saya", "📦 Pesanan", "🧾 Tagihan"):
+    elif any(kw in text for kw in ["Akun Saya", "Pesanan", "Tagihan"]):
         await handle_status(chat_id)
-    elif text in ("📋 Wishlist",):
+    elif "Wishlist" in text or "Wishlist" in text:
         await handle_wishlist(chat_id)
-    elif text in ("❓ Bantuan",):
+    elif "Bantuan" in text:
         await handle_help(chat_id)
-    elif text in ("🆕 Daftar Akun Baru",):
+    elif "Daftar" in text:
         await handle_register(chat_id)
-    elif text in ("🔐 Login",):
+    elif "Login" in text or "Masuk" in text:
         await handle_login(chat_id)
-    elif text in ("📖 Tentang MyBagasi",):
+    elif "Tentang" in text:
         await handle_about(chat_id)
     else:
         # Cek pending registration/login steps

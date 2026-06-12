@@ -44,3 +44,4 @@ scraper/.venv/
 .claude/worktrees/gallant-brahmagupta-a241be/
 temp/
 scraper/data/cart.json
+.vercel
