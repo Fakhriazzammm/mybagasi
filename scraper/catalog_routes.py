@@ -5,6 +5,7 @@ from the Supabase `catalog_items` table.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any
@@ -30,6 +31,31 @@ if os.path.isfile(_access_token_path):
         pass
 
 TABLE = "catalog_items"
+
+
+def _parse_json_field(value: Any) -> Any:
+    """Parse a JSON string field (e.g. images, tags) into a proper list/dict.
+    Supabase REST API returns JSONB columns as JSON strings rather than parsed values."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return value
+    return value
+
+
+def _parse_item(item: dict) -> dict:
+    """Parse all JSONB fields in a catalog item from string to proper types."""
+    result = dict(item)
+    for field in ("images", "tags", "metadata"):
+        if field in result:
+            result[field] = _parse_json_field(result[field])
+    return result
+
+
+def _parse_items(items: list[dict]) -> list[dict]:
+    """Parse all items in a list."""
+    return [_parse_item(item) for item in items]
 
 
 def _extract_ref(url: str) -> str:
@@ -138,7 +164,7 @@ async def _fts_search(
             if resp_d.status_code >= 400:
                 return [], 0
             items = resp_d.json()
-            return items, total
+            return _parse_items(items), total
     except Exception:
         return [], 0
 
@@ -181,7 +207,7 @@ async def _ilike_search(
                 total = int(cr.split("/")[-1])
             except (ValueError, IndexError):
                 total = len(items)
-            return items, total
+            return _parse_items(items), total
     except Exception:
         return [], 0
 
@@ -240,7 +266,7 @@ async def catalog_category(
 
     return {
         "category": name,
-        "items": items,
+        "items": _parse_items(items),
         "total": total,
         "sub_categories": sub_cats,
     }
@@ -396,12 +422,12 @@ async def catalog_featured():
     if _SUPABASE_ACCESS_TOKEN and PROJECT_REF:
         items = await _featured_via_sql()
         if items:
-            return {"items": items}
+            return {"items": _parse_items(items)}
         # Fall through to client-side shuffle
 
     # Client-side fallback: fetch a larger sample and shuffle
     items = await _featured_via_rest()
-    return {"items": items}
+    return {"items": _parse_items(items)}
 
 
 async def _featured_via_sql() -> list[dict] | None:
@@ -422,7 +448,7 @@ async def _featured_via_sql() -> list[dict] | None:
                 management_url, headers=mgmt_headers, json={"query": sql}
             )
             if resp.status_code == 200:
-                return resp.json()
+                return _parse_items(resp.json())
     except Exception:
         pass
     return None
