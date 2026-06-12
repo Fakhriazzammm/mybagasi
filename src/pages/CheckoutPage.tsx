@@ -48,9 +48,12 @@ const CheckoutPage = () => {
   const backLink = params.get("from") || getDashboardRoute() + "/ai-shopper";
   const backLabel = params.get("from") === "/aipersonalshopper" ? "Kembali ke Personal Shopper" : "Kembali ke AI Shopper";
 
-  const feeService = Math.round(productPrice * 0.15);
-  const shipping = 250_000;
-  const tax = Math.round((productPrice + feeService) * 0.08);
+  const feeService = productPrice < 1000000 ? 100000 :
+    productPrice < 3000000 ? 300000 :
+    productPrice < 5000000 ? 500000 :
+    productPrice < 10000000 ? 1000000 : 2000000;
+  const shipping = 125_000;
+  const tax = Math.round((productPrice + feeService) * 0.11);
   const total = productPrice + feeService + shipping + tax;
 
   const [form, setForm] = useState({ name: "", email: "", mobile: "" });
@@ -78,11 +81,11 @@ const CheckoutPage = () => {
             ? [{ description: productName, quantity: 1, rate: productPrice }]
             : [{ description: productName, quantity: 1, rate: 0 }]),
           ...(feeService > 0
-            ? [{ description: "Fee Jasa MyBagasi (15%)", quantity: 1, rate: feeService }]
+            ? [{ description: "Fee Jasa MyBagasi", quantity: 1, rate: feeService }]
             : []),
-          { description: "Estimasi Ongkir Jepang→Indonesia", quantity: 1, rate: shipping },
+          { description: "Estimasi Ongkir (fashion/general)", quantity: 1, rate: shipping },
           ...(tax > 0
-            ? [{ description: "Estimasi Pajak & Bea Masuk (8%)", quantity: 1, rate: tax }]
+            ? [{ description: "Estimasi Pajak & Bea Masuk (11%)", quantity: 1, rate: tax }]
             : []),
         ],
       });

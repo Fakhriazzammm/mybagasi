@@ -32,6 +32,6 @@ export const appConfig = {
     jpyToIdr: asNumber(clean(import.meta.env.VITE_JPY_TO_IDR as string | undefined), 105),
     serviceFeeRate: asNumber(clean(import.meta.env.VITE_SERVICE_FEE_RATE as string | undefined), 0.15),
     shippingIdr: asNumber(clean(import.meta.env.VITE_SHIPPING_IDR as string | undefined), 250_000),
-    taxRate: asNumber(clean(import.meta.env.VITE_TAX_RATE as string | undefined), 0.08),
+    taxRate: asNumber(clean(import.meta.env.VITE_TAX_RATE as string | undefined), 0.11),
   },
 } as const

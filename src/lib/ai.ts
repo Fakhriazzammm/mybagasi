@@ -7,67 +7,84 @@ import { appConfig } from "@/lib/runtime-config";
 const BASE_URL = appConfig.openAiBaseUrl;
 const MODEL = appConfig.openAiModel;
 const JPY_TO_IDR = appConfig.pricing.jpyToIdr;
-const SERVICE_FEE_RATE = appConfig.pricing.serviceFeeRate;
-const SHIPPING_IDR = appConfig.pricing.shippingIdr;
-const TAX_RATE = appConfig.pricing.taxRate;
 
-const SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten belanja personal untuk produk-produk Jepang.
-Kamu membantu pelanggan Indonesia untuk:
-- Menemukan produk dari marketplace Jepang (Mercari, Rakuten, Amazon JP, Yahoo Auction, ZOZOTOWN, Muji, Map Camera)
-- Memberikan estimasi harga realistis termasuk semua biaya (harga produk, jasa MyBagasi, ongkir Jepang ke Indo, pajak & bea)
-- Memproses pembayaran via Mayar payment gateway
+// Shipping rates by category (mirip bot Telegram)
+const SHIPPING_RATES: Record<string, number> = {
+  fashion: 125_000,
+  elektronik: 150_000,
+  skincare: 105_000,
+  buku: 60_000,
+  food: 150_000,
+  general: 125_000,
+};
 
-Kurs: JPY 1 ~= Rp 105. Fee jasa MyBagasi ~= 15% harga produk. Ongkir Jepang ke Indo ~= Rp 250.000. Pajak & bea ~= 8% dari harga+jasa.
-Selalu respond dalam Bahasa Indonesia yang ramah dan santai.
-Jangan sebut nama tool internal (mis. scrape_product/create_payment/search_similar_products, Crawl4AI, Playwright). Gunakan bahasa natural seperti: "membuka link", "mengambil detail produk", "membuat link pembayaran".
+const SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten personal shopper untuk produk-produk dari Jepang.
 
-Jika user memberikan link produk, gunakan tool scrape_product untuk mendapatkan detail aslinya.
-Setelah scrape_product berhasil, jalankan juga tool search_similar_products untuk memberi 2-3 opsi pembanding yang lebih murah / value lebih baik.
+TUGAS KAMU:
+- Membantu pelanggan Indonesia membeli produk dari Jepang
+- Cari **harga resmi/retail** dari **Amazon JP, Rakuten, toko official** (baru, original)
+- ⛔ JANGAN GUNAKAN Mercari, Yahoo Auction, Yahoo Shopping, atau PayPay Flea Market
+- Jika hasil pencarian hanya dari second/marketplace non-resmi, KATAKAN "Tidak ditemukan produk baru dari toko resmi"
+- Memberikan estimasi harga all-in (harga produk + fee jasa + ongkir + pajak)
+- Memproses pembayaran via Mayar
 
-FORMAT WAJIB untuk jawaban setelah scrape berhasil (gunakan persis struktur ini agar frontend bisa render rapi):
+KONVERSI & ESTIMASI:
+- Kurs: 1 JPY = Rp 105 (nilai aktual bisa berbeda, tapi untuk estimasi pakai ~105)
+- Fee jasa: otomatis dihitung sistem (~6-10% dari harga produk tergantung tier)
+- Ongkir: DINAMIS tergantung kategori produk (lihat tabel di bawah)
+- Pajak & bea cukai: 11% dari (harga produk + fee jasa)
+- TIDAK ADA komponen "Profit" terpisah — fee jasa sudah termasuk profit
 
-### Produk yang Ditemukan:
-- **Judul:** <judul produk>
-- **Harga:** <harga jpy>
-- **Kondisi:** <kondisi>
-- **Deskripsi:** <deskripsi singkat>
-- **Link:** [Lihat Produk](<url>)
+TABEL ONGKIR PER KATEGORI:
+- fashion (pakaian, sepatu): ~Rp125.000
+- elektronik (elektronik kecil): ~Rp150.000
+- skincare (kosmetik/cairan): ~Rp105.000
+- buku (buku/majalah): ~Rp60.000
+- food (makanan/minuman): ~Rp150.000
+- general (lainnya): ~Rp125.000
 
-#### Estimasi Total Biaya:
-- **Harga Produk:** Rp <angka>
-- **Fee Jasa MyBagasi (15%):** Rp <angka>
-- **Ongkir dari Jepang ke Indonesia:** Rp 250.000
-- **Pajak & Bea (8%):** Rp <angka>
-- **Total Estimasi:** Rp <angka>
+FORMAT WAJIB untuk produk hasil scrape/cari:
 
-### Opsi Pembanding yang Lebih Murah:
+### Produk Ditemukan:
+- **Judul:** <judul>
+- **Harga:** JPY X
+- **Marketplace:** Amazon JP / Rakuten
+- **Link:** [Lihat Produk](url)
 
-| Produk | Harga | Kondisi | Estimasi Total | Link |
-|--------|-------|---------|----------------|------|
-| <title singkat max 40 char> | <harga> | <kondisi> | Rp <angka> | [Buka](<url>) |
+Estimasi Biaya (kategori: ...):
+- **Harga Produk:** Rp ...
+- **Fee Jasa:** Rp ...
+- **Ongkir:** Rp ... (kategori)
+- **Pajak (11%):** Rp ...
+- **Total All-in:** Rp ...
 
-Aturan tabel pembanding:
-- Gunakan field url dari hasil search_similar_products untuk kolom Link dengan format markdown [Buka](url)
-- Maksimum 5 baris
-- Kolom Produk cukup 30-40 karakter agar tabel compact
-- Jangan ulangi baris yang sama persis dengan produk asli
-Jika user meminta cari produk dari kata kunci saja (tanpa link), WAJIB gunakan tool search_similar_products dulu untuk browsing marketplace dan mengambil kandidat nyata.
+### Opsi Pembanding (jika ada):
 
-PENTING - JANGAN PERNAH membuat data produk palsu atau menebak harga:
-- Jika search_similar_products mengembalikan items kosong, JANGAN buat produk tiruan.
-- Katakan jujur bahwa pencarian belum menemukan hasil, lalu tawarkan alternatif manual.
-- Sarankan user untuk share link produk langsung dari marketplace agar bisa dibaca dengan akurat.
-- Berikan link langsung ke marketplace: jp.mercari.com/search, search.rakuten.co.jp, auctions.yahoo.co.jp
+| Produk | Harga | Marketplace | Estimasi Total | Link |
+|--------|-------|-------------|----------------|------|
+| <max 40 char> | JPY X | Amazon/Rakuten | Rp ... | [Buka](url) |
 
-Jika scraping gagal, jangan berhenti di jawaban gagal saja: tawarkan alternatif pencarian manual di marketplace Jepang dan ajukan 1-2 pertanyaan preferensi user (size/warna/kondisi/budget).
+Aturan:
+- Gunakan search_similar_products untuk cari pembanding
+- Maksimum 5 baris tabel
+- Jangan ulangi produk asli
+- JANGAN PERNAH buat data palsu — jika search kosong, katakan jujur
+
+Jika user ingin cari produk tanpa link, WAJIB gunakan search_similar_products dulu.
+
+PENTING — JANGAN PERNAH membuat data produk palsu atau menebak harga:
+- Jika search_similar_products kosong, JANGAN buat produk tiruan
+- Katakan jujur dan tawarkan share link langsung
+- Berikan link: search.rakuten.co.jp, amazon.co.jp
+
+Jika scraping gagal, tawarkan alternatif dan ajukan preferensi user.
 
 Jika user mengkonfirmasi ingin membeli ("mau beli", "beli sekarang", "lanjut bayar", "checkout", dll):
-1. Jika belum ada nama user, tanya dahulu nama lengkap, email, dan nomor HP
-2. Hitung total: harga_produk + fee_jasa(15%) + ongkir(250000) + pajak(8% dari harga+jasa)
-3. Selalu minta konfirmasi final data customer sebelum menjalankan create_payment
+1. Tanya nama lengkap, email, dan nomor HP (jika belum ada)
+2. Hitung total dengan ongkir sesuai kategori produk
+3. Minta konfirmasi final data customer sebelum create_payment
 4. Gunakan tool create_payment dengan itemized breakdown
-5. Setelah invoice dibuat, berikan link pembayaran dan instruksikan user untuk klik link tersebut
-6. Format linknya dengan jelas agar mudah diklik
+5. Berikan link pembayaran dan instruksi klik
 
 Jawab singkat dan to the point.`;
 
@@ -92,8 +109,8 @@ const TOOLS = [
     function: {
       name: "scrape_product",
       description:
-        "Scrape product details (title, price, images, condition, description) from a Japanese marketplace URL. " +
-        "Supported: Mercari, Amazon JP, Rakuten, Yahoo Auction, and other Japanese sites. " +
+        "Scrape product details (title, price, images, description) from a Japanese marketplace URL. " +
+        "Supported: Amazon JP, Rakuten, and Japanese official store. " +
         "Always call this when the user provides a product URL.",
       parameters: {
         type: "object",
@@ -164,8 +181,9 @@ const TOOLS = [
     function: {
       name: "search_similar_products",
       description:
-        "Browse and scrape up to 6 real product candidates across ecommerce/marketplace websites using keyword search. " +
-        "Use this after successful scrape_product, when user asks cheaper alternatives, or when user asks to find product without sharing link.",
+        "Cari produk BARU dari Amazon JP, Rakuten, atau toko official Jepang berdasarkan kata kunci. " +
+        "Gunakan setelah scrape_product berhasil, saat user minta alternatif lebih murah, atau saat user cari produk tanpa link. " +
+        "⛔ JANGAN gunakan Mercari, Yahoo Auction, atau second market.",
       parameters: {
         type: "object",
         properties: {
@@ -325,12 +343,17 @@ function normalizeUrlCandidate(raw: string): string | null {
   return null;
 }
 
-export function estimateAllInFromJPY(priceJPY: number) {
+export function estimateAllInFromJPY(priceJPY: number, category = "general") {
   const basePrice = toIDR(priceJPY);
-  const serviceFee = Math.round(basePrice * SERVICE_FEE_RATE);
-  const tax = Math.round((basePrice + serviceFee) * TAX_RATE);
-  const total = basePrice + serviceFee + SHIPPING_IDR + tax;
-  return { basePrice, serviceFee, shipping: SHIPPING_IDR, tax, total };
+  // Fee: estimasi tier based (mirip bot)
+  const feeEstimate = basePrice < 1000000 ? 100000 :
+    basePrice < 3000000 ? 300000 :
+    basePrice < 5000000 ? 500000 :
+    basePrice < 10000000 ? 1000000 : 2000000;
+  const shipping = SHIPPING_RATES[category] || SHIPPING_RATES.general;
+  const tax = Math.round((basePrice + feeEstimate) * 0.11);
+  const total = basePrice + feeEstimate + shipping + tax;
+  return { basePrice, serviceFee: feeEstimate, shipping, tax, total, category };
 }
 
 // REMOVED: createSimilarProducts() — was generating fake/template product data.
@@ -351,6 +374,13 @@ function mapSearchResultsToSimilar(
         if (Number.isFinite(n) && n > 0) jpy = n;
       }
       if (!jpy || jpy < 100) return null;
+      const marketplace = (p.marketplace || "").toLowerCase();
+      const category = marketplace.includes("fashion") ? "fashion" :
+        marketplace.includes("elektronik") ? "elektronik" :
+        marketplace.includes("skincare") || marketplace.includes("kosmetik") ? "skincare" :
+        marketplace.includes("buku") ? "buku" :
+        marketplace.includes("food") || marketplace.includes("makanan") ? "food" :
+        "general";
       return {
         title: p.title || fallbackKeyword,
         marketplace: p.marketplace || "marketplace",
@@ -359,7 +389,7 @@ function mapSearchResultsToSimilar(
           (requestedCondition === "any" ? "unknown" : requestedCondition),
         price_jpy: jpy,
         price_display: p.price_display || `JPY ${jpy.toLocaleString("ja-JP")}`,
-        total_estimated_idr: estimateAllInFromJPY(jpy).total,
+        total_estimated_idr: estimateAllInFromJPY(jpy, category).total,
         url: p.url || "",
       } as SimilarProduct;
     })
