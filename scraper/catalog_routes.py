@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
-router = APIRouter(prefix="/api/catalog")
+router = APIRouter(prefix="/catalog")
 
 # ── Supabase config ──────────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
