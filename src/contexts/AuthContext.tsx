@@ -89,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password,
         options: { 
           data: { name },
-          emailRedirectTo: `${window.location.origin}/${username}/dashboard`,
+          emailRedirectTo: `${window.location.origin}/${username}`,
         },
       })
       if (error) return { success: false, error: error.message }
@@ -170,8 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       case 'super_admin': return '/super-admin'
       case 'ops_admin': case 'support': return '/admin'
       case 'finance': return '/finance'
-      case 'affiliate': return `/${profile.username}/dashboard`
-      default: return `/${profile.username}/dashboard`
+      case 'affiliate': return `/${profile.username}`
+      default: return `/${profile.username}`
     }
   }
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,7 +11,6 @@ import ForgotPassword from "@/pages/auth/ForgotPassword";
 import Profile from "@/pages/Profile";
 import { ProtectedRoute, GuestRoute } from "@/components/auth/RouteGuards";
 import { UserRoute } from "@/components/auth/UserRoute";
-import { useAuth } from "@/contexts/AuthContext";
 
 // Public pages
 import Index from "./pages/Index.tsx";
@@ -29,6 +28,7 @@ import Overview from "./pages/dashboard/Overview";
 import Quotations from "./pages/dashboard/Quotations";
 import Orders from "./pages/dashboard/Orders";
 import OrderDetail from "./pages/dashboard/OrderDetail";
+import Bills from "./pages/dashboard/Bills";
 import Wishlist from "./pages/dashboard/Wishlist";
 import PriceAlerts from "./pages/dashboard/PriceAlerts";
 import Addresses from "./pages/dashboard/Addresses";
@@ -67,31 +67,6 @@ import Marketplaces from "./pages/superadmin/Marketplaces";
 import Commission from "./pages/superadmin/Commission";
 import AISettingsPage from "./pages/superadmin/AISettings";
 
-/** Redirect old /profile → /:username/dashboard */
-function ProfileRedirect() {
-  const { profile, loading } = useAuth();
-  if (loading) return null;
-  if (!profile) return <Navigate to="/auth/login" replace />;
-  return <Navigate to={`/${profile.username}/dashboard`} replace />;
-}
-
-/** Redirect old /dashboard/* → /:username/dashboard/* (with subpath preserved) */
-function LegacyDashboardRedirect() {
-  const { profile, loading } = useAuth();
-  const location = useLocation();
-  if (loading) return null;
-  if (!profile) return <Navigate to="/auth/login" state={{ from: location }} replace />;
-  // /dashboard/orders/ORD-123 → /fakhri/dashboard/orders/ORD-123
-  const suffix = location.pathname.replace(/^\/dashboard/, '') || '';
-  return <Navigate to={`/${profile.username}/dashboard${suffix}`} replace />;
-}
-
-/** Redirect /:username (bare) → /:username/dashboard */
-function UsernameRootRedirect() {
-  const { username } = useParams();
-  return <Navigate to={`/${username}/dashboard`} replace />;
-}
-
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -115,20 +90,7 @@ const App = () => (
           <Route path="/auth/register" element={<GuestRoute><Register /></GuestRoute>} />
           <Route path="/auth/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
 
-          {/* Legacy redirects — keep working for backward compatibility */}
-          <Route path="/profile" element={<ProfileRedirect />} />
-          <Route path="/dashboard/*" element={<LegacyDashboardRedirect />} />
-
-          {/* Username-based: bare username → dashboard */}
-          <Route path="/:username" element={
-            <ProtectedRoute>
-              <UserRoute>
-                <UsernameRootRedirect />
-              </UserRoute>
-            </ProtectedRoute>
-          } />
-
-          {/* Username-based profile route */}
+          {/* Username-based profile route — must be BEFORE /:username */}
           <Route path="/:username/profile" element={
             <ProtectedRoute>
               <UserRoute>
@@ -138,7 +100,7 @@ const App = () => (
           } />
 
           {/* Username-based dashboard (customer) */}
-          <Route path="/:username/dashboard" element={
+          <Route path="/:username" element={
             <ProtectedRoute>
               <UserRoute>
                 <DashboardLayout />
@@ -150,6 +112,7 @@ const App = () => (
             <Route path="orders" element={<Orders />} />
             <Route path="orders/:id" element={<OrderDetail />} />
             <Route path="wishlist" element={<Wishlist />} />
+            <Route path="tagihan" element={<Bills />} />
             <Route path="price-alerts" element={<PriceAlerts />} />
             <Route path="addresses" element={<Addresses />} />
             <Route path="membership" element={<Membership />} />

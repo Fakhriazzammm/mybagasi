@@ -149,7 +149,7 @@ const Overview = () => {
               ) : activeOrders.map((o) => (
                 <Link
                   key={o.id}
-                  to={`/${profile.username}/dashboard/orders/${o.id}`}
+                  to={`/${profile.username}/orders/${o.id}`}
                   className="flex items-center gap-4 p-4 rounded-2xl bg-secondary/50 hover:bg-secondary transition-colors group"
                 >
                   <div className="h-12 w-12 rounded-xl bg-background grid place-items-center text-primary shrink-0">

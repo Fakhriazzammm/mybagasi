@@ -1,0 +1,316 @@
+<!-- ============================================================
+     MyBagasi — Supabase Auth Email Templates
+     Copy-paste ke: https://supabase.com/dashboard/project/gvbikxcnlmlcrbixwpxl/auth/templates
+     Brand: #ac0000 (red), #faf3e7 (cream), Inter + Instrument Serif
+     ============================================================ -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+     1. CONFIRM SIGNUP — Pendaftaran
+     ══════════════════════════════════════════════════════════ -->
+Subject: Selamat datang! Verifikasi akun MyBagasi kamu 🛍️
+
+<body style="margin:0;padding:0;background:#f5f0e8;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0e8;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#ac0000,#d42a2a);padding:40px 32px;text-align:center;">
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                <tr>
+                  <td style="width:48px;height:48px;background:rgba(255,255,255,0.2);border-radius:12px;text-align:center;vertical-align:middle;">
+                    <span style="font-size:24px;line-height:48px;">🛍️</span>
+                  </td>
+                </tr>
+              </table>
+              <h1 style="color:#ffffff;font-family:'Instrument Serif',Georgia,serif;font-size:28px;font-weight:400;margin:16px 0 0;letter-spacing:-0.3px;">
+                Selangkah lagi!
+              </h1>
+              <p style="color:rgba(255,255,255,0.85);font-size:15px;line-height:1.5;margin:8px 0 0;">
+                Verifikasi email untuk mulai belanja dari Jepang ✨
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 32px 24px;">
+              <p style="font-size:16px;color:#1a1a1a;line-height:1.6;margin:0 0 8px;">
+                Halo, <strong>{{ .Email }}</strong> 👋
+              </p>
+              <p style="font-size:15px;color:#555;line-height:1.6;margin:0 0 24px;">
+                Terima kasih sudah mendaftar di <strong>MyBagasi</strong> — AI Personal Shopper 
+                untuk produk Jepang. Klik tombol di bawah untuk mengaktifkan akun kamu:
+              </p>
+
+              <!-- CTA Button -->
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+                <tr>
+                  <td style="background:#ac0000;border-radius:100px;padding:0;">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:14px 40px;font-size:16px;font-weight:600;
+                              color:#ffffff;text-decoration:none;border-radius:100px;
+                              background:#ac0000;letter-spacing:0.2px;">
+                      ✅ Verifikasi Akun
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Fallback link -->
+              <p style="font-size:13px;color:#999;line-height:1.5;text-align:center;margin:0 0 20px;">
+                Atau buka link ini:<br>
+                <a href="{{ .ConfirmationURL }}" style="color:#ac0000;word-break:break-all;">
+                  {{ .ConfirmationURL }}
+                </a>
+              </p>
+
+              <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+
+              <!-- Info points -->
+              <table cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="padding:4px 0;">
+                    <span style="font-size:14px;">🔍</span>
+                    <span style="font-size:13px;color:#666;margin-left:8px;">Cari produk dari Amazon JP & Rakuten</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;">
+                    <span style="font-size:14px;">💰</span>
+                    <span style="font-size:13px;color:#666;margin-left:8px;">Harga transparan — kurs realtime + ongkir</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;">
+                    <span style="font-size:14px;">📦</span>
+                    <span style="font-size:13px;color:#666;margin-left:8px;">Lacak pesanan realtime sampai depan rumah</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 32px;text-align:center;border-top:1px solid #f0ebe3;">
+              <p style="font-size:12px;color:#aaa;margin:0 0 8px;">
+                Punya pertanyaan? Hubungi kami di <a href="mailto:hello@mybagasi.my.id" style="color:#ac0000;">hello@mybagasi.my.id</a>
+              </p>
+              <p style="font-size:11px;color:#bbb;margin:0;">
+                MyBagasi · AI Personal Shopper Jepang → Indonesia<br>
+                &copy; 2026 MyBagasi. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     2. MAGIC LINK — Login tanpa password
+     ══════════════════════════════════════════════════════════ -->
+Subject: 🔗 Link ajaib untuk masuk ke MyBagasi
+
+<body style="margin:0;padding:0;background:#f5f0e8;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0e8;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#ac0000,#d42a2a);padding:40px 32px;text-align:center;">
+              <span style="font-size:40px;line-height:1;">🔗</span>
+              <h1 style="color:#ffffff;font-family:'Instrument Serif',Georgia,serif;font-size:26px;font-weight:400;margin:12px 0 0;">
+                Masuk dengan Magic Link
+              </h1>
+              <p style="color:rgba(255,255,255,0.85);font-size:15px;margin:8px 0 0;">
+                Klik tombol di bawah — langsung masuk, tanpa password
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 32px 24px;text-align:center;">
+              <p style="font-size:16px;color:#1a1a1a;margin:0 0 8px;">
+                Halo, <strong>{{ .Email }}</strong> 👋
+              </p>
+              <p style="font-size:15px;color:#555;line-height:1.6;margin:0 0 28px;">
+                Kami menerima permintaan login ke akun MyBagasi kamu.
+              </p>
+
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+                <tr>
+                  <td style="background:#ac0000;border-radius:100px;">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:14px 40px;font-size:16px;font-weight:600;
+                              color:#ffffff;text-decoration:none;border-radius:100px;
+                              background:#ac0000;">
+                      🔑 Masuk ke MyBagasi
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="font-size:14px;color:#999;line-height:1.5;margin:0 0 12px;">
+                Link ini berlaku <strong>24 jam</strong>.<br>
+                Jika kamu tidak meminta ini, abaikan email ini.
+              </p>
+
+              <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+
+              <p style="font-size:13px;color:#aaa;margin:0;">
+                Atau buka link: <a href="{{ .ConfirmationURL }}" style="color:#ac0000;word-break:break-all;font-size:12px;">{{ .ConfirmationURL }}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 32px;text-align:center;border-top:1px solid #f0ebe3;">
+              <p style="font-size:11px;color:#bbb;margin:0;">
+                MyBagasi · AI Personal Shopper Jepang → Indonesia
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     3. RESET PASSWORD — Lupa password
+     ══════════════════════════════════════════════════════════ -->
+Subject: 🔒 Reset password MyBagasi
+
+<body style="margin:0;padding:0;background:#f5f0e8;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0e8;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#ac0000,#d42a2a);padding:40px 32px;text-align:center;">
+              <span style="font-size:40px;line-height:1;">🔒</span>
+              <h1 style="color:#ffffff;font-family:'Instrument Serif',Georgia,serif;font-size:26px;font-weight:400;margin:12px 0 0;">
+                Reset Password
+              </h1>
+              <p style="color:rgba(255,255,255,0.85);font-size:15px;margin:8px 0 0;">
+                Kamu menerima permintaan reset password
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 32px 24px;text-align:center;">
+              <p style="font-size:14px;color:#555;line-height:1.6;margin:0 0 28px;">
+                Kami menerima permintaan reset password untuk akun <strong>{{ .Email }}</strong>.<br>
+                Klik tombol di bawah untuk membuat password baru:
+              </p>
+
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+                <tr>
+                  <td style="background:#ac0000;border-radius:100px;">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:14px 40px;font-size:16px;font-weight:600;
+                              color:#ffffff;text-decoration:none;border-radius:100px;
+                              background:#ac0000;">
+                      🔑 Buat Password Baru
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="font-size:14px;color:#999;line-height:1.5;margin:0 0 12px;">
+                Link ini berlaku <strong>24 jam</strong>.<br>
+                Jika kamu tidak meminta reset password, abaikan email ini.
+              </p>
+
+              <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+
+              <p style="font-size:13px;color:#aaa;margin:0;">
+                Link alternatif: <a href="{{ .ConfirmationURL }}" style="color:#ac0000;word-break:break-all;font-size:12px;">{{ .ConfirmationURL }}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 32px;text-align:center;border-top:1px solid #f0ebe3;">
+              <p style="font-size:11px;color:#bbb;margin:0;">
+                MyBagasi · AI Personal Shopper Jepang → Indonesia
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     4. CHANGE EMAIL — Konfirmasi email baru
+     ══════════════════════════════════════════════════════════ -->
+Subject: 📧 Konfirmasi perubahan email MyBagasi
+
+<body style="margin:0;padding:0;background:#f5f0e8;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0e8;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#ac0000,#d42a2a);padding:40px 32px;text-align:center;">
+              <span style="font-size:40px;line-height:1;">📧</span>
+              <h1 style="color:#ffffff;font-family:'Instrument Serif',Georgia,serif;font-size:26px;font-weight:400;margin:12px 0 0;">
+                Konfirmasi Email Baru
+              </h1>
+              <p style="color:rgba(255,255,255,0.85);font-size:15px;margin:8px 0 0;">
+                Verifikasi perubahan alamat email akun MyBagasi
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 32px 24px;text-align:center;">
+              <p style="font-size:16px;color:#1a1a1a;margin:0 0 16px;">
+                Halo! 👋
+              </p>
+              <p style="font-size:15px;color:#555;line-height:1.6;margin:0 0 12px;">
+                Kamu menerima email ini karena ada permintaan perubahan email untuk akun MyBagasi ke:
+              </p>
+
+              <div style="background:#f5f0e8;border-radius:12px;padding:12px 24px;margin:0 auto 24px;display:inline-block;">
+                <span style="font-size:16px;font-weight:600;color:#ac0000;">{{ .Email }}</span>
+              </div>
+
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+                <tr>
+                  <td style="background:#ac0000;border-radius:100px;">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:14px 40px;font-size:16px;font-weight:600;
+                              color:#ffffff;text-decoration:none;border-radius:100px;
+                              background:#ac0000;">
+                      ✅ Konfirmasi Email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="font-size:14px;color:#999;line-height:1.5;margin:0 0 12px;">
+                Jika kamu tidak meminta perubahan ini,<br>
+                segera hubungi <a href="mailto:hello@mybagasi.my.id" style="color:#ac0000;">hello@mybagasi.my.id</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 32px;text-align:center;border-top:1px solid #f0ebe3;">
+              <p style="font-size:11px;color:#bbb;margin:0;">
+                MyBagasi · AI Personal Shopper Jepang → Indonesia
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>

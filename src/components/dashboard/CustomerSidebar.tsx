@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Package, Heart, MapPin, Crown, Coins } from "lucide-react";
+import { LayoutDashboard, Package, Heart, Receipt, MapPin, Crown, Coins } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
@@ -18,6 +18,7 @@ export function CustomerSidebar() {
   const main = [
     { title: "Overview", url: dash, icon: LayoutDashboard, end: true },
     { title: "Pesanan", url: `${dash}/orders`, icon: Package },
+    { title: "Tagihan", url: `${dash}/tagihan`, icon: Receipt },
     { title: "Wishlist", url: `${dash}/wishlist`, icon: Heart },
   ];
 

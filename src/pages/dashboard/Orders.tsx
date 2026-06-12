@@ -112,7 +112,7 @@ const Orders = () => {
             orders.map((o) => (
               <Link
                 key={o.id}
-                to={`/${username}/dashboard/orders/${o.id}`}
+                to={`/${username}/orders/${o.id}`}
                 className="flex items-center gap-4 p-5 hover:bg-secondary/30 transition-colors"
               >
                 <div className="h-14 w-14 rounded-2xl bg-secondary grid place-items-center text-primary shrink-0">
