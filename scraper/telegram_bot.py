@@ -1445,29 +1445,33 @@ async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
     await tg_typing(chat_id)
     response = await ai_process(chat_id, text, user_profile)
     
-    # Cek ---PHOTO:URL--- marker dulu
+    # Bersihkan response dari marker-marker
+    clean_text = re.sub(r'---PHOTO:https?://[^\s]+---\n?', '', response).strip()
+    clean_text = re.sub(r'\n?---KEYBOARD---.*?---END KEYBOARD---\n?', '', clean_text, flags=re.DOTALL).strip()
+    
+    if not clean_text:
+        clean_text = "Maaf, ada error. Coba lagi ya."
+    
+    # Coba kirim dengan foto dulu (jika ada ---PHOTO:--- marker)
     photo_match = re.search(r'---PHOTO:(https?://[^\s]+)---', response)
     if photo_match:
         photo_url = photo_match.group(1)
-        clean_text = re.sub(r'---PHOTO:https?://[^\s]+---\n?', '', response).strip()
-        # Strip any ---KEYBOARD--- markers that AI might still generate
-        clean_text = re.sub(r'\n?---KEYBOARD---.*?---END KEYBOARD---\n?', '', clean_text, flags=re.DOTALL).strip()
-        # Generate buttons otomatis
         reply_markup = detect_product_buttons(clean_text)
         result = await tg_send_photo(chat_id, photo_url, clean_text, reply_markup=reply_markup)
         if result and result.get("ok"):
             return
-        # Fallback: kirim teks aja kalau foto gagal
-        log.warning(f"sendPhoto failed (%s), falling back to text", result)
+        log.warning(f"sendPhoto failed: {result}")
+        # Lanjut ke fallback teks
     
-    # Strip any ---KEYBOARD--- markers that AI might still generate
-    clean_text = re.sub(r'\n?---KEYBOARD---.*?---END KEYBOARD---\n?', '', response, flags=re.DOTALL).strip()
-    # Fallback kalau clean_text kosong (misal response cuma foto)
-    if not clean_text:
-        clean_text = "Maaf, ada error. Coba lagi ya."
-    # Generate buttons otomatis berdasarkan produk
+    # Kirim sebagai teks (fallback)
     reply_markup = detect_product_buttons(clean_text)
-    await tg_split_send(chat_id, clean_text, reply_markup=reply_markup)
+    result = await tg_split_send(chat_id, clean_text, reply_markup=reply_markup)
+    # Jika gagal karena markdown, coba tanpa markdown
+    if result and not result.get("ok"):
+        log.warning(f"sendMessage markdown failed, retrying as plain text: {result}")
+        # Hapus markdown syntax sebelum kirim ulang
+        plain = re.sub(r'[*_`#\[\]]', '', clean_text)
+        await tg_send(chat_id, plain)
 
 # ── Message Router ─────────────────────────────────────────
 
