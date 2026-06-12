@@ -258,7 +258,7 @@ const Overview = () => {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><Sparkles className="h-4 w-4" />AI Shopper</Link></Button>
-          <Button variant="hero" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><MessageCircle className="h-4 w-4" />WhatsApp</Link></Button>
+          <Button variant="hero" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><MessageCircle className="h-4 w-4" />Telegram</Link></Button>
         </div>
       </div>
     </>

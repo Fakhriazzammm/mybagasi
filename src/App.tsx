@@ -28,13 +28,11 @@ import Overview from "./pages/dashboard/Overview";
 import Quotations from "./pages/dashboard/Quotations";
 import Orders from "./pages/dashboard/Orders";
 import OrderDetail from "./pages/dashboard/OrderDetail";
-import Bills from "./pages/dashboard/Bills";
 import Wishlist from "./pages/dashboard/Wishlist";
 import PriceAlerts from "./pages/dashboard/PriceAlerts";
 import Addresses from "./pages/dashboard/Addresses";
 import Membership from "./pages/dashboard/Membership";
 import Points from "./pages/dashboard/Points";
-import AIShopper from "./pages/dashboard/AIShopper";
 
 // Admin
 import { AdminLayout } from "./components/admin/AdminLayout";
@@ -112,13 +110,10 @@ const App = () => (
             <Route path="orders" element={<Orders />} />
             <Route path="orders/:id" element={<OrderDetail />} />
             <Route path="wishlist" element={<Wishlist />} />
-            <Route path="tagihan" element={<Bills />} />
             <Route path="price-alerts" element={<PriceAlerts />} />
             <Route path="addresses" element={<Addresses />} />
             <Route path="membership" element={<Membership />} />
             <Route path="points" element={<Points />} />
-            <Route path="ai-shopper" element={<AIShopper />} />
-            <Route path="shopper-ai" element={<AIShopper />} />
           </Route>
 
           {/* Admin (requires ops_admin or super_admin) */}

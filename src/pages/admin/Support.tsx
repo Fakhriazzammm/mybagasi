@@ -63,7 +63,7 @@ export default function Support() {
               <CardContent className="p-5">
                 <div className="flex items-start gap-3">
                   <div className="h-10 w-10 rounded-2xl bg-primary-soft text-primary grid place-items-center shrink-0">
-                    {n.channel === "WhatsApp" ? <MessageCircle className="h-5 w-5" /> : <Mail className="h-5 w-5" />}
+                    {n.channel === "Telegram" ? <MessageCircle className="h-5 w-5" /> : <Mail className="h-5 w-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

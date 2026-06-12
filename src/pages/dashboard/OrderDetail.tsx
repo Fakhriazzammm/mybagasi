@@ -288,7 +288,7 @@ const OrderDetail = () => {
           <div className="rounded-3xl bg-secondary/50 border border-border/40 p-6">
             <h3 className="font-display font-bold mb-2">Butuh bantuan?</h3>
             <p className="text-xs text-muted-foreground mb-3">
-              Tim CS siap bantu 24/7 lewat WhatsApp.
+              Tim CS siap bantu 24/7 lewat Telegram.
             </p>
             <Button variant="outline" size="sm" className="w-full" asChild>
               <Link to={getDashboardRoute() + "/ai-shopper"}>

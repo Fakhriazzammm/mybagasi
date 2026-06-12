@@ -13,13 +13,13 @@ export const Hero = () => (
       <div className="space-y-6 animate-fade-up">
         <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur border border-border/60 text-xs font-medium shadow-soft">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
-          AI Personal Shopper Jepang #1 di WhatsApp
+          AI Personal Shopper Jepang #1 di Telegram
         </span>
         <h1 className="font-display text-4xl md:text-6xl font-bold leading-[1.05]">
           Belanja barang Jepang
           <br />
           <span className="text-primary">
-            cukup chat WhatsApp.
+            cukup chat Telegram.
           </span>
         </h1>
         <p className="text-lg text-muted-foreground max-w-xl">
@@ -34,12 +34,12 @@ export const Hero = () => (
           </Button>
           <Button variant="outline" size="xl" asChild>
             <a
-              href="https://wa.me/6281234567890?text=Halo%20MyBagasi%2C%20saya%20mau%20belanja%20dari%20Jepang"
+              href="https://t.me/mybagasibot"
               target="_blank"
               rel="noopener noreferrer"
             >
               <MessageCircle className="h-5 w-5" />
-              Chat WhatsApp
+              Chat Telegram
               <ArrowRight className="h-4 w-4" />
             </a>
           </Button>

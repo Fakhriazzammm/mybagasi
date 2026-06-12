@@ -1,7 +1,7 @@
 import { MessageCircle, Calculator, CreditCard, Plane, Home } from "lucide-react";
 
 const steps = [
-  { icon: MessageCircle, title: "Chat WhatsApp", desc: "Kirim link produk, foto, atau cukup bilang apa yang kamu mau." },
+  { icon: MessageCircle, title: "Chat Telegram", desc: "Kirim link produk, foto, atau cukup bilang apa yang kamu mau." },
   { icon: Calculator, title: "Quotation Otomatis", desc: "AI kami hitung harga, ongkir, pajak — total all-in dalam detik." },
   { icon: CreditCard, title: "Bayar Aman", desc: "Transfer / VA / e-wallet. Setelah lunas, kami langsung beli." },
   { icon: Plane, title: "Diproses & Dikirim", desc: "Barang masuk gudang Tokyo, lalu dikirim ke Indonesia." },

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 const tiers = [
   {
     name: "Free", price: "Rp 0", period: "selamanya",
-    features: ["Quotation unlimited", "Order tracking", "Akses WhatsApp bot", "Komunitas"],
+    features: ["Quotation unlimited", "Order tracking", "Akses Telegram bot", "Komunitas"],
     cta: "Mulai Gratis", variant: "outline" as const,
   },
   {

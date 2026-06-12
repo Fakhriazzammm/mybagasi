@@ -113,7 +113,7 @@ export default function Preorder() {
         amount_remaining: totals!.remaining,
       });
       toast.success(`Booking ${selected.name} terkonfirmasi!`, {
-        description: `Bayar ${paymentType === "dp" ? "DP" : "lunas"} sebesar ${fmtRp(totals!.due)} via WhatsApp.`,
+        description: `Bayar ${paymentType === "dp" ? "DP" : "lunas"} sebesar ${fmtRp(totals!.due)} via Telegram.`,
       });
       setSelected(null);
     } catch (err: any) {

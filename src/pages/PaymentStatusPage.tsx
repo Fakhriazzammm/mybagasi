@@ -92,7 +92,7 @@ const PaymentStatusPage = () => {
                 </h1>
                 <p className="text-muted-foreground text-sm">
                   Order kamu sudah dikonfirmasi. Tim MyBagasi akan segera memproses
-                  pembelian dari Jepang dan menghubungi kamu via WhatsApp.
+                  pembelian dari Jepang dan menghubungi kamu via Telegram.
                 </p>
               </div>
               <div className="rounded-xl bg-muted/40 text-xs text-muted-foreground px-4 py-3 space-y-1 text-left">
@@ -126,7 +126,7 @@ const PaymentStatusPage = () => {
                 <Button variant="outline" asChild className="flex-1">
                   <Link to={getDashboardRoute() + "/ai-shopper"}>
                     <MessageCircle className="h-4 w-4" />
-                    WhatsApp
+                    Telegram
                   </Link>
                 </Button>
               </div>

@@ -11,7 +11,7 @@ export const Footer = () => (
         <div className="space-y-4">
           <Logo />
           <p className="text-sm text-muted-foreground max-w-xs">
-            AI personal shopper Jepang di WhatsApp. Kirim link, kami beli & antar sampai rumah.
+            AI personal shopper Jepang di Telegram. Kirim link, kami beli & antar sampai rumah.
           </p>
           <div className="flex gap-2">
             {[Instagram, MessageCircle, Mail].map((Icon, i) => (
@@ -27,7 +27,7 @@ export const Footer = () => (
         </div>
 
         {[
-          { title: "Produk", items: ["Cek Estimasi", "Demo WhatsApp", "Jadwal Pengiriman", "Price Alert"] },
+          { title: "Produk", items: ["Cek Estimasi", "Demo Telegram", "Jadwal Pengiriman", "Price Alert"] },
           { title: "Bisnis", items: ["Membership", "Reseller", "Affiliate", "Creator Program", "API"] },
           { title: "Bantuan", items: ["FAQ", "Cara Kerja", "Lacak Order", "Kontak", "Kebijakan"] },
         ].map((col) => (
