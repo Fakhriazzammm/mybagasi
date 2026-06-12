@@ -1166,9 +1166,9 @@ async def handle_start(chat_id: int, args: str):
         if existing:
             kb = {
                 "inline_keyboard": [
+                    [{"text": "👤 Akun Saya", "callback_data": "/status"}, {"text": "📦 Pesanan Saya", "callback_data": "/status"}],
                     [{"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
-                    [{"text": "📋 Wishlist Saya", "callback_data": "/wishlist"}],
-                    [{"text": "📖 Bantuan", "callback_data": "/help"}],
+                    [{"text": "📋 Wishlist", "callback_data": "/wishlist"}, {"text": "❓ Bantuan", "callback_data": "/help"}],
                 ]
             }
             await tg_send(chat_id,
@@ -1645,12 +1645,19 @@ def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None
         buttons.append([{"text": "❌ Skip", "callback_data": "cart_skip"}])
         return {"inline_keyboard": buttons}
     
-    # Fallback: cek apakah ada indikator produk (💰, TOTAL ALL-IN, dll)
+    # Fallback: cek apakah ada indikator produk
     has_product = False
-    for kw in ['💳 TOTAL', '💰 Harga', 'TOTAL ALL-IN', 'RINCIAN BIAYA', '🔗 Lihat di']:
-        if kw in text:
+    text_upper = text.upper()
+    for kw in ['💳 TOTAL', '💰 Harga', 'TOTAL ALL-IN', 'TOTAL ALL-IN', 'RINCIAN BIAYA', '🔗 LIHAT DI', '🔗 [LIHAT', '📍 *', 'ESTIMASI BIAYA']:
+        if kw in text or kw in text_upper:
             has_product = True
             break
+    if not has_product:
+        # Last resort: check for emoji markers
+        for emoji in ['💰', '🔗', '📍', '🛒']:
+            if emoji in text:
+                has_product = True
+                break
     
     if has_product:
         return {"inline_keyboard": [
@@ -1723,8 +1730,14 @@ async def process_update(update: dict):
             await handle_about(chat_id)
         elif data == "/wishlist":
             await handle_wishlist(chat_id)
+        elif data == "/status":
+            await handle_status(chat_id)
         elif data == "/help":
             await handle_help(chat_id)
+        elif data.startswith("cart_"):
+            # Product button tap — acknowledge and save intent
+            # cart_add = single product, cart_N = specific product
+            await tg_send(chat_id, "📦 Produk tercatat! Gunakan /beli untuk checkout atau bilang 'simpen ini'.")
         return
 
     message = update.get("message")
