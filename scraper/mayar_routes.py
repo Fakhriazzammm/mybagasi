@@ -63,6 +63,22 @@ def _supabase_headers() -> dict[str, str]:
         "Prefer": "return=minimal",
     }
 
+def _normalize_items(items: list[dict]) -> list[dict]:
+    """Ensure each item has name, description, price, quantity, rate for Mayar."""
+    normalized = []
+    for item in items:
+        desc = item.get("description", item.get("name", "Item"))
+        price = item.get("rate", item.get("price", 0))
+        normalized.append({
+            "name": item.get("name", desc),
+            "description": desc,
+            "quantity": item.get("quantity", 1),
+            "price": price,
+            "rate": price,
+        })
+    return normalized
+
+
 async def _save_bill_to_supabase(bill_data: dict) -> bool:
     """Insert a bill record into Supabase bills table. Returns True on success."""
     if not _SUPABASE_URL or not _SUPABASE_KEY:
@@ -162,6 +178,8 @@ async def create_invoice(request: Request):
                 "rate": body.get("amount", 0),
             }
         ]
+    else:
+        body["items"] = _normalize_items(body["items"])
     if not body.get("redirectUrl"):
         body["redirectUrl"] = f"{_APP_BASE}/payment/status"
     if not body.get("expiredAt"):
