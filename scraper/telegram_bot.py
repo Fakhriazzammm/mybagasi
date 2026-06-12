@@ -9,6 +9,7 @@ MyBagasi Telegram Bot v3 — AI Personal Shopper with Data Persistence
 Commands:
   /start <TOKEN>   — Link Telegram ke MyBagasi
   /status          — Cek status akun + data tersimpan
+  /tagihan         — Cek tagihan pembayaran
   /unlink          — Putus sambungan
   /beli <keyword>  — Cari produk Jepang (AI-driven)
   /cek <url>       — Cek harga produk dari link
@@ -1306,6 +1307,83 @@ async def handle_status(chat_id: int):
     
     await tg_send(chat_id, msg)
 
+async def handle_tagihan(chat_id: int):
+    """Handle /tagihan — show user's bills from Supabase bills table."""
+    user = await lookup_user_by_telegram_id(chat_id)
+    if not user:
+        await tg_send(chat_id, "⚠️ Kamu harus daftar/login dulu. Ketik `/register` atau `/login`.")
+        return
+
+    uid = user["id"]
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/bills",
+                params={
+                    "user_id": f"eq.{uid}",
+                    "select": "id,status,total_idr,total_jpy,invoice_url,items_summary,created_at,paid_at,expires_at",
+                    "order": "created_at.desc",
+                    "limit": 10,
+                },
+                headers=headers,
+            )
+            bills = r.json() if r.status_code == 200 else []
+
+        if not bills:
+            await tg_send(chat_id,
+                "🧾 *Tagihan* — Belum ada tagihan\n\n"
+                "Yuk belanja dulu! Ketik `/beli <produk>`\n"
+                "atau kirim link produk Jepang yang mau dibeli.")
+            return
+
+        total_unpaid = sum(1 for b in bills if b.get("status") == "unpaid")
+        total_pending = sum(1 for b in bills if b.get("status") in ("unpaid", "pending"))
+        msg = f"🧾 *Tagihan ({len(bills)} total, {total_pending} belum bayar)*\n\n"
+
+        for b in bills:
+            status_emoji = {
+                "unpaid": "🟡",
+                "paid": "✅",
+                "expired": "❌",
+                "cancelled": "🚫",
+                "pending": "⏳",
+            }.get(b.get("status", ""), "❓")
+
+            total = b.get("total_idr", 0)
+            created = b.get("created_at", "")[:10] if b.get("created_at") else ""
+            status_text = b.get("status", "")
+
+            # Get item name from items_summary
+            items = b.get("items_summary") or []
+            item_name = ""
+            if isinstance(items, list) and len(items) > 0:
+                first = items[0]
+                if isinstance(first, dict):
+                    item_name = first.get("name", first.get("product_name", ""))[:30]
+                elif isinstance(first, str):
+                    item_name = first[:30]
+
+            msg += f"{status_emoji} *{status_text.upper()}*"
+            if item_name:
+                msg += f" — {item_name}"
+            msg += f"\n"
+            msg += f"   💰 Rp {total:,}"
+            if created:
+                msg += f"  📅 {created}"
+            if b.get("invoice_url") and b.get("status") in ("unpaid", "pending"):
+                msg += f"\n   🔗 [Bayar Sekarang]({b['invoice_url']})"
+            paid_at = b.get("paid_at")
+            if paid_at:
+                msg += f"\n   ✅ Lunas {paid_at[:10]}"
+            msg += "\n"
+
+        msg += "\n📊 Lihat lengkap: mybagasi.my.id/dashboard"
+        await tg_send(chat_id, msg)
+    except Exception as e:
+        log.error(f"handle_tagihan error: {e}")
+        await tg_send(chat_id, "⚠️ Gagal memuat tagihan. Coba lagi nanti.")
+
 async def handle_wishlist(chat_id: int):
     """Handle /wishlist — show user's saved wishlist items."""
     user = await lookup_user_by_telegram_id(chat_id)
@@ -1757,6 +1835,8 @@ async def process_update(update: dict):
             await handle_wishlist(chat_id)
         elif data == "/status":
             await handle_status(chat_id)
+        elif data == "/tagihan":
+            await handle_tagihan(chat_id)
         elif data == "/help":
             await handle_help(chat_id)
         elif data.startswith("cart_"):
@@ -1790,6 +1870,8 @@ async def process_update(update: dict):
         await handle_start(chat_id, args)
     elif command == "/status":
         await handle_status(chat_id)
+    elif command == "/tagihan":
+        await handle_tagihan(chat_id)
     elif command == "/unlink":
         await handle_unlink(chat_id)
     elif command == "/register":
@@ -1831,8 +1913,10 @@ async def process_update(update: dict):
             await tg_send(chat_id, "⚠️ Kamu harus daftar dulu. Ketik /register")
             return
         await tg_send(chat_id, "📝 Ketik nama produk yang mau dicari, misal: `onitsuka tiger`")
-    elif any(kw in text for kw in ["Akun Saya", "Pesanan", "Tagihan"]):
+    elif any(kw in text for kw in ["Akun Saya", "Pesanan"]):
         await handle_status(chat_id)
+    elif "Tagihan" in text:
+        await handle_tagihan(chat_id)
     elif "Wishlist" in text or "Wishlist" in text:
         await handle_wishlist(chat_id)
     elif "Bantuan" in text:
