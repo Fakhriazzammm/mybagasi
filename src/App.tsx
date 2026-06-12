@@ -37,6 +37,7 @@ import PriceAlerts from "./pages/dashboard/PriceAlerts";
 import Addresses from "./pages/dashboard/Addresses";
 import Membership from "./pages/dashboard/Membership";
 import Points from "./pages/dashboard/Points";
+import Bills from "./pages/dashboard/Bills";
 
 // Admin
 import { AdminLayout } from "./components/admin/AdminLayout";
@@ -120,6 +121,7 @@ const App = () => (
             <Route path="addresses" element={<Addresses />} />
             <Route path="membership" element={<Membership />} />
             <Route path="points" element={<Points />} />
+            <Route path="tagihan" element={<Bills />} />
           </Route>
 
           {/* Admin (requires ops_admin or super_admin) */}
