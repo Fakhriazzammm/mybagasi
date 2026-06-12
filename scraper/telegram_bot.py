@@ -43,8 +43,12 @@ POLL_TIMEOUT = 30
 POLL_INTERVAL = 2
 
 # Pricing
+# ── Pricing Config (diambil dari DB, fallback hardcoded) ──
+_PRICING_CACHE: dict[str, any] = {}
+_PRICING_CACHE_TIME = 0
+
+# Default fallback
 JPY_TO_IDR = 105
-SERVICE_FEE_RATE = 0.15
 SHIPPING_IDR = 250000
 TAX_RATE = 0.08
 
@@ -303,25 +307,160 @@ async def supabase_insert(table: str, data: dict) -> dict | None:
         log.error(f"INSERT {table} error: {e}")
         return None
 
+# ── Pricing System ──────────────────────────────────────────
+_PRICING_CACHE_DATA: dict = {}
+_PRICING_CACHE_AT = 0.0
+_PRICING_CACHE_TTL = 300  # 5 menit
+
+async def _ensure_pricing_table():
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    seed = [
+        {"key": "exchange_rate", "value": {"rate": 105, "source": "hardcoded", "auto_update": True, "last_fetched": None}},
+        {"key": "profit_tiers", "value": {"tiers": [
+            {"min": 0, "max": 999999, "profit": 100000},
+            {"min": 1000000, "max": 2999999, "profit": 300000},
+            {"min": 3000000, "max": 4999999, "profit": 500000},
+            {"min": 5000000, "max": 9999999, "profit": 1000000},
+            {"min": 10000000, "max": 999999999, "profit": 2000000}
+        ]}},
+        {"key": "shipping_cost", "value": {"cost": 250000, "description": "Ongkir Jepang ke Indonesia"}},
+        {"key": "tax_rate", "value": {"rate": 0.08, "description": "Pajak & bea cukai 8%"}},
+    ]
+    async with httpx.AsyncClient(timeout=10) as client:
+        for s in seed:
+            r = await client.post(f"{SUPABASE_URL}/rest/v1/pricing_config", json=s, headers={**headers, "Prefer": "resolution=merge-duplicates"})
+            if r.status_code == 404:
+                log.warning("pricing_config table not found, using hardcoded defaults")
+                return
+
+async def refresh_pricing_cache():
+    global _PRICING_CACHE_DATA, _PRICING_CACHE_AT
+    now = time.time()
+    if now - _PRICING_CACHE_AT < _PRICING_CACHE_TTL:
+        return
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{SUPABASE_URL}/rest/v1/pricing_config", headers=headers, params={"select": "key,value"})
+            if r.status_code == 200 and r.json():
+                for item in r.json():
+                    _PRICING_CACHE_DATA[item["key"]] = item["value"]
+                _PRICING_CACHE_AT = now
+                log.info(f"Pricing config refreshed: {len(_PRICING_CACHE_DATA)} keys")
+    except Exception as e:
+        log.warning(f"Failed to refresh pricing config: {e}")
+
+async def get_exchange_rate() -> int:
+    await refresh_pricing_cache()
+    cfg = _PRICING_CACHE_DATA.get("exchange_rate", {})
+    rate = cfg.get("rate", 105)
+    # Auto-fetch dari internet jika diaktifkan
+    if cfg.get("auto_update"):
+        last = cfg.get("last_fetched")
+        should_fetch = not last  # never fetched
+        if last and isinstance(last, str):
+            import datetime
+            try:
+                last_dt = datetime.datetime.fromisoformat(last.replace("Z", "+00:00"))
+                if (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds() > 3600:
+                    should_fetch = True
+            except:
+                should_fetch = True
+        if should_fetch:
+            rate = await _fetch_live_rate()
+    return rate
+
+async def _fetch_live_rate() -> int:
+    import datetime
+    urls = [
+        "https://api.exchangerate-api.com/v4/latest/JPY",
+        "https://open.er-api.com/v6/latest/JPY",
+    ]
+    for url in urls:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url)
+                if r.status_code == 200:
+                    data = r.json()
+                    idr = data["rates"].get("IDR")
+                    if idr:
+                        rate = round(idr)
+                        log.info(f"Live JPY/IDR rate: {rate}")
+                        try:
+                            await client.patch(
+                                f"{SUPABASE_URL}/rest/v1/pricing_config?key=eq.exchange_rate",
+                                json={"value": {"rate": rate, "source": url.split('/')[2], "auto_update": True, "last_fetched": datetime.datetime.now(datetime.timezone.utc).isoformat()}},
+                                headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"},
+                            )
+                        except:
+                            pass
+                        return rate
+        except Exception as e:
+            log.warning(f"Rate fetch failed from {url}: {e}")
+    return 105
+
+async def get_shipping_cost() -> int:
+    await refresh_pricing_cache()
+    return _PRICING_CACHE_DATA.get("shipping_cost", {}).get("cost", 250000)
+
+async def get_tax_rate() -> float:
+    await refresh_pricing_cache()
+    return _PRICING_CACHE_DATA.get("tax_rate", {}).get("rate", 0.08)
+
+async def get_profit_tiers() -> list:
+    await refresh_pricing_cache()
+    return _PRICING_CACHE_DATA.get("profit_tiers", {}).get("tiers", [])
+
+# Hardcoded fallback tiers (used when DB table not available)
+_FALLBACK_TIERS = [
+    {"min": 0, "max": 999999, "profit": 100000},
+    {"min": 1000000, "max": 2999999, "profit": 300000},
+    {"min": 3000000, "max": 4999999, "profit": 500000},
+    {"min": 5000000, "max": 9999999, "profit": 1000000},
+    {"min": 10000000, "max": 999999999, "profit": 2000000},
+]
+
+async def calculate_profit(price_idr: int) -> int:
+    tiers = await get_profit_tiers()
+    if not tiers:
+        tiers = _FALLBACK_TIERS  # fallback jika DB tidak tersedia
+    for tier in tiers:
+        if tier["min"] <= price_idr <= tier["max"]:
+            return tier["profit"]
+    if tiers:
+        return tiers[-1]["profit"]
+    return 100000
+
+async def estimate_price_v2(price_jpy: int) -> dict:
+    rate = await get_exchange_rate()
+    shipping = await get_shipping_cost()
+    tax_rate = await get_tax_rate()
+    base_idr = price_jpy * rate
+    profit = await calculate_profit(base_idr)
+    tax = round((base_idr + profit) * tax_rate)
+    total = base_idr + profit + shipping + tax
+    return {
+        "base_idr": base_idr, "profit": profit,
+        "shipping": shipping, "tax": tax, "total": total,
+        "rate": rate, "tax_rate": tax_rate,
+    }
+
 async def save_quotation(user_id: str, product: str, price_jpy: int, source: str,
-                         url: str | None = None, exchange_rate: int = JPY_TO_IDR) -> dict | None:
-    """Save a quotation to Supabase and return it."""
-    fee = round(price_jpy * JPY_TO_IDR * SERVICE_FEE_RATE)
-    tax = round((price_jpy * JPY_TO_IDR + fee) * TAX_RATE)
-    total = price_jpy * JPY_TO_IDR + fee + SHIPPING_IDR + tax
+                         url: str | None = None, exchange_rate: int = 0) -> dict | None:
+    est = await estimate_price_v2(price_jpy)
     data = {
         "user_id": user_id,
         "product": product[:200],
         "url": url or None,
-        "source": source,  # 'mercari', 'telegram_bot', etc.
+        "source": source,
         "price_jpy": price_jpy,
-        "exchange_rate": exchange_rate,
-        "service_fee": fee,
-        "shipping_cost": SHIPPING_IDR,
-        "tax_customs": tax,
+        "exchange_rate": est["rate"],
+        "service_fee": est["profit"],
+        "shipping_cost": est["shipping"],
+        "tax_customs": est["tax"],
         "membership_discount": 0,
         "points_used": 0,
-        "total": total,
+        "total": est["total"],
         "status": "active",
     }
     return await supabase_insert("quotations", data)
@@ -329,22 +468,20 @@ async def save_quotation(user_id: str, product: str, price_jpy: int, source: str
 async def save_order(user_id: str, product: str, price_jpy: int, total: int,
                      source: str = "telegram_bot", quotation_id: str | None = None,
                      customer_name: str = "", notes: str = "") -> dict | None:
-    """Save an order to Supabase and return it."""
-    fee = round(price_jpy * JPY_TO_IDR * SERVICE_FEE_RATE)
-    tax = round((price_jpy * JPY_TO_IDR + fee) * TAX_RATE)
+    est = await estimate_price_v2(price_jpy)
     data = {
         "user_id": user_id,
         "quotation_id": quotation_id or None,
         "product": product[:200],
         "source": source,
         "price_jpy": price_jpy,
-        "exchange_rate": JPY_TO_IDR,
-        "service_fee": fee,
-        "shipping_cost": SHIPPING_IDR,
-        "tax_customs": tax,
+        "exchange_rate": est["rate"],
+        "service_fee": est["profit"],
+        "shipping_cost": est["shipping"],
+        "tax_customs": est["tax"],
         "membership_discount": 0,
         "points_used": 0,
-        "total": total,
+        "total": est["total"],
         "status": "waiting_payment",
         "notes": f"[Telegram Bot] {customer_name[:50]}\n{notes[:200]}" if notes else f"[Telegram Bot] {customer_name[:50]}" if customer_name else "Telegram Bot",
         "eta": None,
@@ -644,12 +781,8 @@ async def call_deepseek(messages: list[dict], with_tools: bool = True) -> dict:
         log.error(f"DeepSeek call error: {e}")
         return {"error": str(e)}
 
-def estimate_price(product_jpy: int) -> dict:
-    base_idr = product_jpy * JPY_TO_IDR
-    fee = round(base_idr * SERVICE_FEE_RATE)
-    tax = round((base_idr + fee) * TAX_RATE)
-    total = base_idr + fee + SHIPPING_IDR + tax
-    return {"base_idr": base_idr, "fee": fee, "shipping": SHIPPING_IDR, "tax": tax, "total": total, "rate": JPY_TO_IDR}
+async def estimate_price(product_jpy: int) -> dict:
+    return await estimate_price_v2(product_jpy)
 
 async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, chat_id: int | None = None) -> str:
     """Execute a tool, save results to Supabase, and return result as JSON string."""
@@ -1598,6 +1731,10 @@ async def poll_forever():
         return
     
     log.info(f"Bot starting... @mybagasibot")
+    await _ensure_pricing_table()
+    await refresh_pricing_cache()
+    rate = await get_exchange_rate()
+    log.info(f"Pricing: rate={rate}")
 
     offset = 0
     while True:
