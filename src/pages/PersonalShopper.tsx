@@ -56,7 +56,8 @@ const API_KEY =
   "";
 
 const AI_SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten personal shopper untuk produk Jepang.
-Kamu membantu pelanggan Indonesia menemukan produk dari marketplace Jepang (Mercari, Rakuten, Amazon JP, Yahoo Auction).
+Kamu membantu pelanggan Indonesia menemukan produk dari Amazon JP, Rakuten, atau toko official Jepang.
+⛔ JANGAN gunakan Mercari, Yahoo Auction, atau second market.
 Gunakan bahasa Indonesia yang ramah dan santai. Jawab singkat dan to the point.
 
 PENTING:
@@ -68,7 +69,7 @@ PENTING:
 const SUGGESTIONS = [
   "Cari Onitsuka Tiger Mexico 66 size 42",
   "Berapa harga kamera Fujifilm X100V dari Jepang?",
-  "https://jp.mercari.com/item/m1234567890",
+  "https://www.amazon.co.jp/dp/B0C4Y5K6L7",
 ];
 
 const now = () =>
@@ -121,7 +122,7 @@ const PersonalShopper = () => {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const hasApiKey = Boolean(API_KEY?.trim());
+  const hasApiKey = true; // API key lives server-side via /api/ai/chat proxy
 
   // Auto-scroll on new messages / streaming
   useEffect(() => {

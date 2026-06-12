@@ -656,48 +656,18 @@ Wajib lakukan ini:
 
 export async function* streamMessage(
   messages: ChatMessage[],
-  apiKey: string
+  _apiKey: string
 ): AsyncGenerator<string> {
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
-      max_tokens: 700,
-      temperature: 0.7,
-      stream: true,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text().catch(() => res.statusText);
-    throw new Error(`AI API error ${res.status}: ${err}`);
-  }
-
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value).split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      const payload = line.slice(6).trim();
-      if (payload === "[DONE]") return;
-      try {
-        const token = (
-          JSON.parse(payload) as {
-            choices: Array<{ delta: { content?: string } }>;
-          }
-        ).choices[0]?.delta?.content;
-        if (token) yield token;
-      } catch {
-        // skip malformed chunk
-      }
-    }
+  // Route through backend proxy to avoid CORS issues
+  try {
+    const content = await callAIViaProxy(
+      messages,
+      SYSTEM_PROMPT,
+      700,
+    );
+    yield content;
+  } catch (err) {
+    throw new Error(`AI proxy error: ${err}`);
   }
 }
 
@@ -778,7 +748,42 @@ export function extractUrl(text: string): string | null {
   return null;
 }
 
-// ─── Streaming ──────────────────────────────────────────────────────────────
+// ─── Backend AI Proxy ───────────────────────────────────────────────────────────
+
+const BACKEND_AI_URL = appConfig.backendBaseUrl + "/ai/chat";
+
+async function callAIViaProxy(
+  messages: ChatMessage[],
+  systemPrompt?: string,
+  maxTokens = 700,
+  temperature = 0.7
+): Promise<string> {
+  const body = {
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    system_prompt: systemPrompt,
+    max_tokens: maxTokens,
+    temperature,
+  };
+
+  const res = await fetch(BACKEND_AI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => res.statusText);
+    throw new Error(`AI proxy error ${res.status}: ${err}`);
+  }
+
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.error || "AI proxy returned error");
+  }
+  return data.content;
+}
+
+// ─── Streaming ──────────────────────────────────────────────────────────────────
 
 export type StreamChunk = {
   type: "content";
@@ -792,87 +797,23 @@ export type StreamChunk = {
 };
 
 /**
- * Call the AI API with streaming enabled.
- * Yields chunks of text as they arrive from the SSE stream.
- *
- * Usage:
- *   const reader = streamChatCompletion(messages, apiKey);
- *   for await (const chunk of reader) {
- *     if (chunk.type === "content") setText(prev => prev + chunk.text);
- *   }
+ * Call AI via backend proxy. Returns full content as a single chunk
+ * (no SSE streaming — the backend doesn't proxy SSE yet).
  */
 export async function* streamChatCompletion(
   messages: ChatMessage[],
-  apiKey: string,
+  _apiKey: string,
   options?: { systemPrompt?: string; maxTokens?: number }
 ): AsyncGenerator<StreamChunk> {
-  const msgs: object[] = options?.systemPrompt
-    ? [{ role: "system", content: options.systemPrompt }, ...messages]
-    : messages;
-
-  const body: Record<string, unknown> = {
-    model: MODEL,
-    messages: msgs,
-    max_tokens: options?.maxTokens ?? 700,
-    temperature: 0.7,
-    stream: true,
-  };
-
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const err = await res.text().catch(() => res.statusText);
-    yield { type: "error", error: `AI API error ${res.status}: ${err}` };
-    return;
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) {
-    yield { type: "error", error: "Response body is not readable" };
-    return;
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let fullContent = "";
-
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? ""; // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
-        const payload = trimmed.slice(6); // Remove "data: " prefix
-        if (payload === "[DONE]") continue;
-
-        try {
-          const parsed = JSON.parse(payload);
-          const delta = parsed?.choices?.[0]?.delta?.content;
-          if (delta) {
-            fullContent += delta;
-            yield { type: "content", text: delta };
-          }
-        } catch {
-          // Skip malformed JSON chunks
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
+    const content = await callAIViaProxy(
+      messages,
+      options?.systemPrompt,
+      options?.maxTokens ?? 700,
+    );
+    yield { type: "content", text: content };
+    yield { type: "done", fullContent: content };
+  } catch (err) {
+    yield { type: "error", error: String(err) };
   }
-
-  yield { type: "done", fullContent };
 }
