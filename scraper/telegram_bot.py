@@ -1177,8 +1177,8 @@ async def handle_start(chat_id: int, args: str):
             # Inline keyboard di dalam pesan
             inline_kb = {
                 "inline_keyboard": [
-                    [{"text": "👤 Akun Saya", "callback_data": "/status"}, {"text": "📦 Pesanan Saya", "callback_data": "/status"}],
-                    [{"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
+                    [{"text": "👤 Akun Saya", "callback_data": "/status"}, {"text": "📦 Pesanan", "callback_data": "/status"}],
+                    [{"text": "🧾 Tagihan", "callback_data": "/status"}, {"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
                     [{"text": "📋 Wishlist", "callback_data": "/wishlist"}, {"text": "❓ Bantuan", "callback_data": "/help"}],
                 ]
             }
