@@ -45,7 +45,7 @@ const CheckoutPage = () => {
   const productPrice = dbOrder?.total ?? parseInt(params.get("price") ?? "0", 10);
   const sourceUrl = params.get("url") ?? "";
 
-  const backLink = params.get("from") || getDashboardRoute() + "/ai-shopper";
+  const backLink = params.get("from") || "/aipersonalshopper";
   const backLabel = params.get("from") === "/aipersonalshopper" ? "Kembali ke Personal Shopper" : "Kembali ke AI Shopper";
 
   const feeService = productPrice < 1000000 ? 100000 :

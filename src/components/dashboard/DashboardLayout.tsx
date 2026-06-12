@@ -47,7 +47,7 @@ export const DashboardLayout = () => {
               <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary" />
             </Button>
             <Button variant="hero" size="sm" asChild className="hidden sm:inline-flex">
-              <Link to={`${dash}/ai-shopper`}><MessageCircle className="h-4 w-4" />Chat MyBagasi</Link>
+              <Link to="/aipersonalshopper"><MessageCircle className="h-4 w-4" />Chat MyBagasi</Link>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

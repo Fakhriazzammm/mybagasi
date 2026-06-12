@@ -257,8 +257,8 @@ const Overview = () => {
           <p className="text-sm text-muted-foreground">Chat AI personal shopper kami — gratis, jawab dalam detik.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><Sparkles className="h-4 w-4" />AI Shopper</Link></Button>
-          <Button variant="hero" asChild><Link to={getDashboardRoute() + "/ai-shopper"}><MessageCircle className="h-4 w-4" />Telegram</Link></Button>
+          <Button variant="outline" asChild><Link to="/aipersonalshopper"><Sparkles className="h-4 w-4" />AI Shopper</Link></Button>
+          <Button variant="hero" asChild><Link to="/aipersonalshopper"><MessageCircle className="h-4 w-4" />Telegram</Link></Button>
         </div>
       </div>
     </>

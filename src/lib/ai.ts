@@ -72,6 +72,14 @@ Aturan:
 
 Jika user ingin cari produk tanpa link, WAJIB gunakan search_similar_products dulu.
 
+AKSES KATALOG PRODUK REFERENSI:
+- MyBagasi punya katalog produk Jepang populer dengan foto, harga, dan kategori
+- Gunakan search_catalog() untuk cari produk di katalog referensi
+- Katalog berguna untuk rekomendasi produk tanpa harus scrape dari marketplace
+- Jika user minta rekomendasi produk, coba cari di katalog dulu
+- Setelah dapat produk dari katalog, kirim info produk + foto + hitung estimasi seperti biasa
+- Katalog referensi ada 8 kategori: Fashion, Makeup, Sepatu, Gacha, Snack, Toys, Disney Store, Donqi Items
+
 PENTING — JANGAN PERNAH membuat data produk palsu atau menebak harga:
 - Jika search_similar_products kosong, JANGAN buat produk tiruan
 - Katakan jujur dan tawarkan share link langsung
@@ -99,6 +107,38 @@ interface ToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
+}
+
+// ─── Catalog API ──────────────────────────────────────────────────────────────
+
+export interface CatalogSearchItem {
+  id: string;
+  category: string;
+  sub_category: string | null;
+  name: string;
+  description: string | null;
+  price_jpy: number | null;
+  price_idr: number | null;
+  images: string[];
+  source: string | null;
+  marketplace: string | null;
+}
+
+export async function searchCatalog(keyword: string, category?: string): Promise<CatalogSearchItem[]> {
+  const params = new URLSearchParams();
+  if (keyword) params.set("keyword", keyword);
+  if (category) params.set("category", category);
+  const res = await fetch(`/api/catalog/search?${params.toString()}`);
+  if (!res.ok) throw new Error(`Catalog search failed: ${res.status}`);
+  const data = await res.json();
+  return data.items ?? [];
+}
+
+export async function getCatalogByCategory(category: string): Promise<CatalogSearchItem[]> {
+  const res = await fetch(`/api/catalog/category?name=${encodeURIComponent(category)}&limit=50`);
+  if (!res.ok) throw new Error(`Catalog category failed: ${res.status}`);
+  const data = await res.json();
+  return data.items ?? [];
 }
 
 // Tool definitions

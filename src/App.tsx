@@ -15,12 +15,16 @@ import { UserRoute } from "@/components/auth/UserRoute";
 // Public pages
 import Index from "./pages/Index.tsx";
 import PersonalShopper from "./pages/PersonalShopper.tsx";
+import KatalogPage from "./pages/katalog/KatalogPage";
 import NotFound from "./pages/NotFound.tsx";
 import Install from "./pages/Install.tsx";
 import CheckoutPage from "./pages/CheckoutPage";
 import PaymentStatusPage from "./pages/PaymentStatusPage";
 import BatchShipping from "./pages/BatchShipping";
 import Preorder from "./pages/Preorder";
+
+// Catalog
+import CategoryPage from "./pages/katalog/CategoryPage";
 
 // Customer Dashboard (via /:username/...)
 import { DashboardLayout } from "./components/dashboard/DashboardLayout";
@@ -79,6 +83,8 @@ const App = () => (
           <Route path="/aipersonalshopper" element={<PersonalShopper />} />
           <Route path="/jadwal" element={<BatchShipping />} />
           <Route path="/preorder" element={<Preorder />} />
+          <Route path="/katalog/:category" element={<CategoryPage />} />
+          <Route path="/katalog" element={<KatalogPage />} />
           <Route path="/install" element={<Install />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/payment/status" element={<PaymentStatusPage />} />

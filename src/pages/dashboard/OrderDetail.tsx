@@ -162,7 +162,7 @@ const OrderDetail = () => {
         action={
           <>
             <Button variant="outline" asChild>
-              <Link to={getDashboardRoute() + "/ai-shopper"}>
+              <Link to="/aipersonalshopper">
                 <MessageCircle className="h-4 w-4" />
                 Tanya CS
               </Link>
@@ -291,7 +291,7 @@ const OrderDetail = () => {
               Tim CS siap bantu 24/7 lewat Telegram.
             </p>
             <Button variant="outline" size="sm" className="w-full" asChild>
-              <Link to={getDashboardRoute() + "/ai-shopper"}>
+              <Link to="/aipersonalshopper">
                 <MessageCircle className="h-4 w-4" />
                 Buka chat
               </Link>

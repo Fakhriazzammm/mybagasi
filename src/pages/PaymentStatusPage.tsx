@@ -124,7 +124,7 @@ const PaymentStatusPage = () => {
                   </Link>
                 </Button>
                 <Button variant="outline" asChild className="flex-1">
-                  <Link to={getDashboardRoute() + "/ai-shopper"}>
+                  <Link to="/aipersonalshopper">
                     <MessageCircle className="h-4 w-4" />
                     Telegram
                   </Link>
@@ -177,7 +177,7 @@ const PaymentStatusPage = () => {
                 </p>
               </div>
               <Button variant="hero" asChild>
-                <Link to={getDashboardRoute() + "/ai-shopper"}>Buat Order Baru</Link>
+                <Link to="/aipersonalshopper">Buat Order Baru</Link>
               </Button>
             </div>
           )}
@@ -198,7 +198,7 @@ const PaymentStatusPage = () => {
                   Coba Lagi
                 </Button>
                 <Button variant="hero" asChild className="flex-1">
-                  <Link to={getDashboardRoute() + "/ai-shopper"}>AI Shopper</Link>
+                  <Link to="/aipersonalshopper">AI Shopper</Link>
                 </Button>
               </div>
             </div>

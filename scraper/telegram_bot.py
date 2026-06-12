@@ -13,6 +13,7 @@ Commands:
   /unlink          — Putus sambungan
   /beli <keyword>  — Cari produk Jepang (AI-driven)
   /cek <url>       — Cek harga produk dari link
+  /katalog         — Jelajahi katalog produk
   /wishlist        — Lihat wishlist tersimpan
   /help            — Bantuan
   /reset           — Reset percakapan AI
@@ -681,6 +682,12 @@ TUGAS KAMU:
 - Memberikan estimasi harga all-in (harga produk + fee jasa + ongkir + pajak)
 - Memproses pembayaran via Mayar
 
+AKSES KATALOG:
+- MyBagasi punya katalog 300+ produk Jepang populer dengan foto
+- Gunakan search_catalog() untuk cari produk di katalog
+- Katalog berguna untuk rekomendasi instan tanpa scrape
+- Kategori: Fashion, Makeup, Sepatu, Gacha, Snack, Toys, Disney Store, Donqi Items
+
 KONVERSI & ESTIMASI:
 - Kurs: 1 JPY = Rp 105 (nilai aktual bisa berbeda, tapi untuk estimasi pakai ~105)
 - Fee jasa: otomatis dihitung sistem (~6-10% dari harga produk tergantung tier)
@@ -841,6 +848,21 @@ TOOLS = [
                     }
                 },
                 "required": ["customer_name", "customer_email", "customer_mobile", "order_description", "items"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_catalog",
+            "description": "Cari produk di katalog referensi MyBagasi. Gunakan untuk rekomendasi produk tanpa perlu scrape live ke marketplace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "Kata kunci pencarian produk"},
+                    "category": {"type": "string", "description": "Filter kategori (Fashion, Makeup, Sepatu, Gacha, Snack, Toys, Disney Store, Donqi Items)"}
+                },
+                "required": ["keyword"]
             }
         }
     }
@@ -1035,6 +1057,75 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
                 log.info(f"Order saved: {saved_order['id']} for user {user_id[:8]}")
         
         return json.dumps(result)
+
+    # ─── search_catalog ──────────────────────────────────
+    elif tool_name == "search_catalog":
+        keyword = args.get("keyword", "")
+        category = args.get("category", "")
+        if not keyword:
+            return json.dumps({"error": "Kata kunci diperlukan"})
+        log.info(f"Tool: search_catalog '{keyword}' category='{category}'")
+
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        limit = 10
+        like_pat = f"*{keyword}*"
+        or_clause = (
+            f"name.ilike.{like_pat},"
+            f"description.ilike.{like_pat},"
+            f"tags.cs.{{{keyword}}}"
+        )
+        params = {
+            "select": "id,name,category,price_jpy,images,description,url",
+            "active": "eq.true",
+            "or": or_clause,
+            "limit": str(limit),
+        }
+        if category:
+            params["category"] = f"eq.{category}"
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/catalog_items",
+                    params=params,
+                    headers=headers,
+                )
+                if r.status_code == 200:
+                    items = r.json()
+                else:
+                    items = []
+
+            result = {
+                "success": True,
+                "items": items,
+                "total": len(items),
+                "query": keyword,
+            }
+
+            # Kirim foto produk pertama jika ada
+            if chat_id and items:
+                first = items[0]
+                images = first.get("images") or []
+                if isinstance(images, list) and len(images) > 0:
+                    img_url = images[0]
+                elif isinstance(images, str):
+                    img_url = images
+                else:
+                    img_url = ""
+                if img_url:
+                    name = (first.get("name") or "")[:60]
+                    price = first.get("price_jpy", 0)
+                    caption = (
+                        f"📦 *{name}*\n"
+                        f"💰 *JP¥{price:,}* | 📂 {first.get('category', '')}\n"
+                        f"🔍 Ditemukan {len(items)} produk untuk \"{keyword}\""
+                    )
+                    await tg_send_photo(chat_id, img_url, caption)
+
+            return json.dumps(result)
+        except Exception as e:
+            log.error(f"search_catalog error: {e}")
+            return json.dumps({"success": False, "items": [], "error": str(e)})
 
     return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
@@ -1738,6 +1829,7 @@ async def handle_help(chat_id: int):
         "💬 \"simpan ke wishlist\" — simpan produk\n"
         "💬 \"buatkan price alert\" — pantau harga\n"
         "`/beli <keyword>` — Cari & beli\n"
+        "`/katalog` — Jelajahi katalog produk\n"
         "`/reset` — Reset percakapan\n\n"
         "*Semua data tersimpan otomatis* ke dashboard:\n"
         "🌐 mybagasi.my.id/dashboard\n\n"
@@ -1764,6 +1856,146 @@ async def handle_about(chat_id: int):
         "📊 *Cek dashboard:* mybagasi.my.id/dashboard\n\n"
         "👤 *Punya pertanyaan?* Chat @fakhriazzam",
         reply_markup=kb)
+
+async def handle_katalog(chat_id: int, text: str):
+    """
+    Menampilkan daftar kategori katalog atau produk dari kategori tertentu.
+    /katalog → daftar kategori dengan jumlah produk
+    /katalog <nama> → 5 produk pertama dari kategori
+    """
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    parts = text.split(maxsplit=1)
+    category_name = parts[1].strip() if len(parts) > 1 else ""
+
+    if not category_name:
+        # ── Show category list ──
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                # Fetch all active catalog items
+                r = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/catalog_items",
+                    params={
+                        "select": "category",
+                        "active": "eq.true",
+                        "category": "not.is.null",
+                        "limit": 1000,
+                    },
+                    headers=headers,
+                )
+                if r.status_code != 200:
+                    await tg_send(chat_id, "⚠️ Gagal memuat katalog. Coba lagi nanti.")
+                    return
+                rows = r.json()
+        except Exception as e:
+            log.error(f"handle_katalog categories error: {e}")
+            await tg_send(chat_id, "⚠️ Gagal memuat katalog. Coba lagi nanti.")
+            return
+
+        # Group by category and count
+        cat_counts: dict[str, int] = {}
+        for row in rows:
+            cat = row.get("category", "")
+            if cat:
+                cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+        if not cat_counts:
+            await tg_send(chat_id, "📦 *Katalog* — Belum ada produk tersedia.")
+            return
+
+        # Sort categories
+        sorted_cats = sorted(cat_counts.items(), key=lambda x: -x[1])
+
+        icon_map = {
+            "Fashion": "👕",
+            "Makeup": "💄",
+            "Sepatu": "👟",
+            "Gacha": "🎁",
+            "Snack": "🍪",
+            "Toys": "🧸",
+            "Disney Store": "🏰",
+            "Donqi Items": "🛍️",
+        }
+
+        msg = "📦 *Katalog Produk MyBagasi*\n\n"
+        for cat, count in sorted_cats:
+            icon = icon_map.get(cat, "📂")
+            msg += f"{icon} *{cat}* ({count} produk)\n"
+
+        msg += "\nKetik `/katalog fashion` untuk lihat produk kategori tertentu."
+        msg += "\nAtau `/katalog gacha` untuk lihat produk Gacha."
+
+        # Inline keyboard
+        inline_buttons = []
+        for cat, _ in sorted_cats[:6]:
+            icon = icon_map.get(cat, "📂")
+            inline_buttons.append([{
+                "text": f"{icon} Lihat {cat}",
+                "callback_data": f"/katalog {cat}"
+            }])
+        inline_kb = {"inline_keyboard": inline_buttons}
+
+        await tg_send(chat_id, msg, reply_markup=inline_kb)
+
+    else:
+        # ── Show products from specific category ──
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/catalog_items",
+                    params={
+                        "select": "id,name,category,price_jpy,images,url,description",
+                        "active": "eq.true",
+                        "category": f"eq.{category_name}",
+                        "order": "sort_order.asc.nullslast",
+                        "limit": 5,
+                    },
+                    headers=headers,
+                )
+                if r.status_code != 200:
+                    await tg_send(chat_id, f"⚠️ Gagal memuat kategori {category_name}.")
+                    return
+                items = r.json()
+        except Exception as e:
+            log.error(f"handle_katalog category '{category_name}' error: {e}")
+            await tg_send(chat_id, f"⚠️ Gagal memuat kategori {category_name}.")
+            return
+
+        if not items:
+            await tg_send(chat_id, f"📦 *{category_name}* — Belum ada produk di kategori ini.")
+            return
+
+        # Send first item as photo message
+        first = items[0]
+        images = first.get("images") or []
+        img_url = ""
+        if isinstance(images, list) and len(images) > 0:
+            img_url = images[0]
+        elif isinstance(images, str):
+            img_url = images
+
+        msg = f"📦 *{category_name}* — {len(items)} produk teratas\n\n"
+        for i, item in enumerate(items[:5], 1):
+            name = (item.get("name") or "")[:40]
+            price = item.get("price_jpy", 0)
+            item_url = item.get("url") or ""
+            short_desc = (item.get("description") or "")[:60]
+            msg += f"{i}. *{name}*\n"
+            if price:
+                msg += f"   💰 JP¥{price:,}\n"
+            if short_desc:
+                msg += f"   📝 {short_desc}\n"
+            if item_url:
+                msg += f"   🔗 {item_url[:60]}...\n"
+            msg += "\n"
+
+        msg += f"🔍 Cari produk lain dengan `/beli <keyword>`"
+
+        reply_markup = None
+        if img_url:
+            caption = f"📦 *{(first.get('name') or '')[:40]}*\n💰 JP¥{first.get('price_jpy', 0):,}"
+            await tg_send_photo(chat_id, img_url, caption)
+
+        await tg_send(chat_id, msg)
 
 def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None:
     """Auto-detect products in AI response and generate inline keyboard.
@@ -1894,6 +2126,11 @@ async def process_update(update: dict):
             await handle_tagihan(chat_id)
         elif data == "/help":
             await handle_help(chat_id)
+        elif data.startswith("/katalog"):
+            # Handle /katalog callback with optional category name
+            cmd_parts = data.split(maxsplit=1)
+            cb_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
+            await handle_katalog(chat_id, f"/katalog {cb_args}")
         elif data.startswith("cart_"):
             # Product button tap — acknowledge and save intent
             # cart_add = single product, cart_N = specific product
@@ -1944,6 +2181,8 @@ async def process_update(update: dict):
         _pending_reg.pop(chat_id, None)
         _pending_login.pop(chat_id, None)
         await tg_send(chat_id, "🔄 Percakapan di-reset. Mulai lagi yuk!")
+    elif command == "/katalog":
+        await handle_katalog(chat_id, text)
     elif command in ("/beli", "/ai", "/cari"):
         search_text = args if args else text
         if not user_profile:

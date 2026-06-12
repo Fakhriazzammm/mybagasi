@@ -9,6 +9,7 @@ import { Membership } from "@/components/landing/Membership";
 import { Affiliate } from "@/components/landing/Affiliate";
 import { FAQ } from "@/components/landing/FAQ";
 import { CTA } from "@/components/landing/CTA";
+import { KatalogPreview } from "@/components/landing/KatalogPreview";
 
 const Index = () => {
   return (
@@ -18,6 +19,7 @@ const Index = () => {
         <Hero />
         <HowItWorks />
         <Features />
+        <KatalogPreview />
         <Categories />
         <Testimonials />
         <Membership />

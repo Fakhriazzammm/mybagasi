@@ -26,6 +26,7 @@ from image_routes import router as image_router
 from order_routes import router as order_router
 from rate_routes import router as rate_router
 from ai_proxy import router as ai_router
+from catalog_routes import router as catalog_router
 
 app = FastAPI(title="MyBagasi Backend", version="1.0.0")
 
@@ -51,6 +52,7 @@ app.include_router(image_router)
 app.include_router(order_router)
 app.include_router(rate_router)
 app.include_router(ai_router)
+app.include_router(catalog_router)
 
 # ── Static files mount for cached images ──
 from fastapi.staticfiles import StaticFiles

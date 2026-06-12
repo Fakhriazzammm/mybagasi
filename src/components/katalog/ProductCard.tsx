@@ -1,0 +1,97 @@
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { fmtRp, fmtJpy } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import type { CatalogItem } from "@/hooks/useCatalog";
+
+interface ProductCardProps {
+  item: CatalogItem;
+  onBeli?: (item: CatalogItem) => void;
+  showPrice?: boolean;
+}
+
+const FALLBACK_IMG =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' fill='%23e2e8f0'%3E%3Crect width='200' height='200'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%2394a3b8' font-size='32'%3E📦%3C/text%3E%3C/svg%3E";
+
+export function ProductCard({ item, showPrice = true }: ProductCardProps) {
+  const imgSrc = item.images?.[0] || FALLBACK_IMG;
+
+  const hasJpy = item.price_jpy != null && item.price_jpy > 0;
+  const hasIdr = item.price_idr != null && item.price_idr > 0;
+
+  return (
+    <div className="group flex flex-col rounded-xl border border-border/50 bg-card overflow-hidden transition-all duration-150 hover:border-primary/30 hover:shadow-sm">
+      {/* Image */}
+      <Link
+        to={`/aipersonalshopper?catalog_id=${item.id}`}
+        className="aspect-square overflow-hidden bg-muted/30"
+      >
+        <img
+          src={imgSrc}
+          alt={item.name}
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          loading="lazy"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = FALLBACK_IMG;
+          }}
+        />
+      </Link>
+
+      {/* Body */}
+      <div className="flex flex-1 flex-col gap-1.5 p-3">
+        {/* Category tag */}
+        {item.category && (
+          <span className="text-[10px] text-muted-foreground truncate">
+            {item.category}
+            {item.sub_category ? ` · ${item.sub_category}` : ""}
+          </span>
+        )}
+
+        {/* Name */}
+        <Link
+          to={`/aipersonalshopper?catalog_id=${item.id}`}
+          className="text-sm font-medium leading-snug line-clamp-2 hover:text-primary transition-colors"
+        >
+          {item.name}
+        </Link>
+
+        {/* Price */}
+        {showPrice && (
+          <div className="mt-auto pt-1">
+            {hasJpy || hasIdr ? (
+              <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-baseline">
+                {hasJpy && (
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {fmtJpy(item.price_jpy!)}
+                  </span>
+                )}
+                {hasIdr && (
+                  <span className="text-sm font-bold text-primary">
+                    {fmtRp(item.price_idr!)}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <Badge variant="outline" className="text-[10px] px-2 py-0">
+                Hubungi
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {/* CTA */}
+        <Button
+          variant="hero"
+          size="sm"
+          className="mt-2 w-full gap-1.5 text-xs"
+          asChild
+        >
+          <Link to={`/aipersonalshopper?catalog_id=${item.id}`}>
+            🛒 Beli via AI
+          </Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
