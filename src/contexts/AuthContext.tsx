@@ -76,6 +76,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, name: string) => {
     try {
+      // Generate username from name FIRST (before using it)
+      const username = name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -85,14 +93,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       })
       if (error) return { success: false, error: error.message }
-
-      // Generate username from name
-      const username = name
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '')
 
       // Set username in profile
       if (data?.user) {

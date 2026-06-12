@@ -1310,7 +1310,7 @@ async def handle_status(chat_id: int):
             msg += f"• {o['product'][:35]}... — {o['status']}\n"
         msg += "\n"
     
-    msg += "📊 *Lihat semua:* mybagasi.my.id/dashboard\n"
+    msg += "📊 *Lihat semua:* mybagasi.my.id/profile\n"
     msg += "🔍 Ketik `/beli <produk>` untuk mulai belanja!"
     
     await tg_send(chat_id, msg)

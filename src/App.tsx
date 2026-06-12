@@ -67,12 +67,29 @@ import Marketplaces from "./pages/superadmin/Marketplaces";
 import Commission from "./pages/superadmin/Commission";
 import AISettingsPage from "./pages/superadmin/AISettings";
 
-// Redirect /profile and /dashboard to username-based routes
-function DashboardRedirect() {
+/** Redirect old /profile → /:username/dashboard */
+function ProfileRedirect() {
   const { profile, loading } = useAuth();
   if (loading) return null;
   if (!profile) return <Navigate to="/auth/login" replace />;
   return <Navigate to={`/${profile.username}/dashboard`} replace />;
+}
+
+/** Redirect old /dashboard/* → /:username/dashboard/* (with subpath preserved) */
+function LegacyDashboardRedirect() {
+  const { profile, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  if (!profile) return <Navigate to="/auth/login" state={{ from: location }} replace />;
+  // /dashboard/orders/ORD-123 → /fakhri/dashboard/orders/ORD-123
+  const suffix = location.pathname.replace(/^\/dashboard/, '') || '';
+  return <Navigate to={`/${profile.username}/dashboard${suffix}`} replace />;
+}
+
+/** Redirect /:username (bare) → /:username/dashboard */
+function UsernameRootRedirect() {
+  const { username } = useParams();
+  return <Navigate to={`/${username}/dashboard`} replace />;
 }
 
 const queryClient = new QueryClient();
@@ -99,8 +116,17 @@ const App = () => (
           <Route path="/auth/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
 
           {/* Legacy redirects — keep working for backward compatibility */}
-          <Route path="/profile" element={<DashboardRedirect />} />
-          <Route path="/dashboard" element={<DashboardRedirect />} />
+          <Route path="/profile" element={<ProfileRedirect />} />
+          <Route path="/dashboard/*" element={<LegacyDashboardRedirect />} />
+
+          {/* Username-based: bare username → dashboard */}
+          <Route path="/:username" element={
+            <ProtectedRoute>
+              <UserRoute>
+                <UsernameRootRedirect />
+              </UserRoute>
+            </ProtectedRoute>
+          } />
 
           {/* Username-based profile route */}
           <Route path="/:username/profile" element={
