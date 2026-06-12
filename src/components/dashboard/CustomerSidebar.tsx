@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Package, Heart, Bell, MapPin, Crown, Coins, Sparkles } from "lucide-react";
+import { LayoutDashboard, Package, Heart, MapPin, Crown, Coins } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
@@ -17,18 +17,12 @@ export function CustomerSidebar() {
 
   const main = [
     { title: "Overview", url: dash, icon: LayoutDashboard, end: true },
-    { title: "Quotations", url: `${dash}/quotations`, icon: FileText },
-    { title: "Orders", url: `${dash}/orders`, icon: Package },
-  ];
-
-  const collection = [
+    { title: "Pesanan", url: `${dash}/orders`, icon: Package },
     { title: "Wishlist", url: `${dash}/wishlist`, icon: Heart },
-    { title: "Price Alerts", url: `${dash}/price-alerts`, icon: Bell },
-    { title: "AI Shopper", url: `${dash}/ai-shopper`, icon: Sparkles },
   ];
 
   const account = [
-    { title: "Membership", url: `${dash}/membership`, icon: Crown },
+    { title: "Member", url: `${dash}/membership`, icon: Crown },
     { title: "Poin", url: `${dash}/points`, icon: Coins },
     { title: "Alamat", url: `${dash}/addresses`, icon: MapPin },
   ];
@@ -61,13 +55,8 @@ export function CustomerSidebar() {
         </div>
 
         <SidebarGroup>
-          {!collapsed && <SidebarGroupLabel className="text-[10px] tracking-widest uppercase">Belanja</SidebarGroupLabel>}
+          {!collapsed && <SidebarGroupLabel className="text-[10px] tracking-widest uppercase">Utama</SidebarGroupLabel>}
           <SidebarGroupContent>{renderItems(main)}</SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          {!collapsed && <SidebarGroupLabel className="text-[10px] tracking-widest uppercase">Koleksi</SidebarGroupLabel>}
-          <SidebarGroupContent>{renderItems(collection)}</SidebarGroupContent>
         </SidebarGroup>
 
         <SidebarGroup>

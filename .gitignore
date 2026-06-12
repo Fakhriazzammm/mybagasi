@@ -19,6 +19,10 @@ dist-ssr
 .env
 .env.*
 
+# Data files (runtime generated)
+scraper/data/images/
+scraper/data/*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from urllib.parse import urlparse
 from typing import Optional, Any
 import httpx
+import hashlib
 
 from scrapers.dispatcher import scrape_url
 from scrapers.models import ProductData
@@ -21,6 +22,9 @@ from cart_routes import router as cart_router
 from bills_routes import router as bills_router
 from linking_routes import router as linking_router
 from memory_routes import router as memory_router
+from image_routes import router as image_router
+from order_routes import router as order_router
+from rate_routes import router as rate_router
 
 app = FastAPI(title="MyBagasi Backend", version="1.0.0")
 
@@ -42,6 +46,54 @@ app.include_router(cart_router)
 app.include_router(bills_router)
 app.include_router(linking_router)
 app.include_router(memory_router)
+app.include_router(image_router)
+app.include_router(order_router)
+app.include_router(rate_router)
+
+# ── Static files mount for cached images ──
+from fastapi.staticfiles import StaticFiles
+import os
+images_dir = os.path.join(os.path.dirname(__file__), 'data', 'images')
+os.makedirs(images_dir, exist_ok=True)
+app.mount('/images', StaticFiles(directory=images_dir), name='images')
+
+# ── Auto-save images helper ──────────────────────────────────────────
+async def _autosave_images(product_data: ProductData, product_id_prefix: str):
+    """
+    Download each remote image URL in product_data.images and save locally.
+    On success, replaces the URL with the local /images/{id}.jpg path.
+    On failure (timeout, not an image, etc.), keeps the original URL and continues.
+    """
+    from image_routes import IMAGES_DIR
+
+    saved: list[str] = []
+    for idx, img_url in enumerate(product_data.images):
+        if not img_url:
+            saved.append(img_url)
+            continue
+
+        product_id = f"{product_id_prefix}_{idx}"
+        dest_path = os.path.join(IMAGES_DIR, f"{product_id}.jpg")
+
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                resp = await client.get(img_url)
+                resp.raise_for_status()
+
+            content_type = resp.headers.get("content-type", "")
+            if "image" not in content_type:
+                saved.append(img_url)   # not an image – keep original
+                continue
+
+            os.makedirs(IMAGES_DIR, exist_ok=True)
+            with open(dest_path, "wb") as f:
+                f.write(resp.content)
+
+            saved.append(f"/images/{product_id}.jpg")
+        except Exception:
+            saved.append(img_url)       # any error – keep original
+
+    product_data.images = saved
 
 
 class ScrapeRequest(BaseModel):
@@ -58,7 +110,10 @@ class SearchRequest(BaseModel):
 @app.post("/scrape")
 async def scrape(req: ScrapeRequest):
     try:
-        return await scrape_url(req.url)
+        result = await scrape_url(req.url)
+        product_id_prefix = hashlib.md5(req.url.encode()).hexdigest()[:12]
+        await _autosave_images(result, product_id_prefix)
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -116,6 +171,10 @@ async def search(req: SearchRequest):
         size=req.size,
         limit=limit,
     )
+    for item in products:
+        url_to_hash = item.url if getattr(item, 'url', None) else (getattr(item, 'title', None) or "")
+        product_id_prefix = hashlib.md5(url_to_hash.encode()).hexdigest()[:12]
+        await _autosave_images(item, product_id_prefix)
     return {"success": True, "items": products}
 
 

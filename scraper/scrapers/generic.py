@@ -64,7 +64,13 @@ async def _crawl4ai(url: str) -> ProductData:
     resolved_title = extracted["title"] or meta.get("title") or _heading(content) or "Unknown Product"
     if _is_blocked_page(resolved_title, extracted["description"], content):
         return _blocked_product(url, _domain(url))
+    
+    # If BS4 extraction found no price/images, try LLM extraction on markdown
     if _is_low_signal_result(resolved_title, extracted["price_display"], extracted["images"]):
+        from .llm_extract import llm_extract_product
+        llm_result = await llm_extract_product(url, content)
+        if llm_result:
+            return llm_result
         return _parse_empty_product(url, _domain(url))
 
     images = extracted["images"] or [

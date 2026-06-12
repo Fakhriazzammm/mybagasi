@@ -1,5 +1,24 @@
 [
   {
+    "id": "37ac3499-0062-462d-961c-f0c38089dbf4",
+    "telegram_id": "323151437",
+    "user_id": "test-uuid",
+    "mayar_invoice_id": "inv-001",
+    "invoice_url": "https://zantara.myr.id/invoices/test123",
+    "status": "unpaid",
+    "total_idr": 326000,
+    "items": [
+      {
+        "name": "Nike Sandal",
+        "qty": 1,
+        "price_jpy": 820
+      }
+    ],
+    "created_at": "2026-06-11T06:28:40.334385+00:00",
+    "expires_at": "2026-06-12T06:28:40.334399+00:00",
+    "paid_at": null
+  },
+  {
     "id": "07655e57-a2fa-4fad-8747-251189a6aea4",
     "telegram_id": "323151437",
     "user_id": "unknown",
@@ -45,25 +64,6 @@
     ],
     "created_at": "2026-06-11T06:29:39.304106+00:00",
     "expires_at": "2026-06-12T06:29:39.304117+00:00",
-    "paid_at": null
-  },
-  {
-    "id": "37ac3499-0062-462d-961c-f0c38089dbf4",
-    "telegram_id": "323151437",
-    "user_id": "test-uuid",
-    "mayar_invoice_id": "inv-001",
-    "invoice_url": "https://zantara.myr.id/invoices/test123",
-    "status": "unpaid",
-    "total_idr": 326000,
-    "items": [
-      {
-        "name": "Nike Sandal",
-        "qty": 1,
-        "price_jpy": 820
-      }
-    ],
-    "created_at": "2026-06-11T06:28:40.334385+00:00",
-    "expires_at": "2026-06-12T06:28:40.334399+00:00",
     "paid_at": null
   }
 ]

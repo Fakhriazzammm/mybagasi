@@ -1,7 +1,9 @@
 """
 Bills tracking for MyBagasi.
-Stores invoice records in a local JSON file (works with worker=1).
-Can be migrated to Supabase table later when DB access is available.
+Stores invoice records in a local JSON file.
+Auto-expires unpaid bills after 24 hours.
+Shows remaining time for pending bills.
+Full CRUD: create, read, update, delete.
 """
 from __future__ import annotations
 
@@ -14,11 +16,12 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from order_routes import create_order_from_bill
+
 router = APIRouter(prefix="/bills")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 BILLS_FILE = os.path.join(DATA_DIR, "bills.json")
-_LOCK = None  # Simple in-memory lock for concurrent access
 
 
 def _ensure_data_dir():
@@ -26,14 +29,33 @@ def _ensure_data_dir():
 
 
 def _load_bills() -> list[dict]:
+    """Load bills and auto-expire any that are past due."""
     _ensure_data_dir()
     if not os.path.exists(BILLS_FILE):
         return []
     try:
         with open(BILLS_FILE, "r") as f:
-            return json.load(f)
+            bills = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
         return []
+
+    # Auto-expire unpaid bills past expires_at
+    now = datetime.now(timezone.utc)
+    changed = False
+    for bill in bills:
+        if bill.get("status") == "unpaid" and bill.get("expires_at"):
+            try:
+                exp = datetime.fromisoformat(bill["expires_at"].replace("Z", "+00:00"))
+                if now > exp:
+                    bill["status"] = "expired"
+                    changed = True
+            except (ValueError, TypeError):
+                pass
+
+    if changed:
+        _save_bills(bills)
+
+    return bills
 
 
 def _save_bills(bills: list[dict]):
@@ -42,11 +64,35 @@ def _save_bills(bills: list[dict]):
         json.dump(bills, f, indent=2, default=str)
 
 
-def _get_mayar_status(mayar_invoice_id: str, api_key: str) -> str | None:
-    """Query Mayar API for invoice status. Returns status or None if error."""
-    mayar_base = os.getenv("MAYAR_API_BASE") or os.getenv("VITE_MAYAR_API_BASE", "https://api.mayar.id/hl/v1")
+def _format_remaining(expires_at: str | None) -> str:
+    """Format remaining time from expires_at string. Returns friendly string."""
+    if not expires_at:
+        return ""
     try:
-        import httpx
+        exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        diff = exp - now
+        total_seconds = int(diff.total_seconds())
+        if total_seconds <= 0:
+            return "Expired"
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        if hours > 24:
+            days = hours // 24
+            hours = hours % 24
+            return f"{days}h {hours}j"
+        if hours > 0:
+            return f"{hours}j {minutes}m"
+        return f"{minutes}m"
+    except (ValueError, TypeError):
+        return ""
+
+
+def _get_mayar_status(mayar_invoice_id: str, api_key: str) -> str | None:
+    """Query Mayar API for invoice status."""
+    mayar_base = os.getenv("MAYAR_API_BASE") or os.getenv("VITE_MAYAR_API_BASE",
+                                                          "https://api.mayar.id/hl/v1")
+    try:
         resp = httpx.get(
             f"{mayar_base}/invoice/{mayar_invoice_id}",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -66,7 +112,7 @@ def _get_mayar_status(mayar_invoice_id: str, api_key: str) -> str | None:
     return None
 
 
-# ─── Create a bill (after Mayar invoice is created) ─────
+# ─── CREATE bill ─────────────────────────────────────────
 
 @router.get("/create")
 async def bill_create(
@@ -78,7 +124,7 @@ async def bill_create(
     items_json: str = Query("[]"),
     expires_hours: int = Query(24),
 ):
-    """Record a new bill after Mayar invoice creation."""
+    """Record a new bill. Auto-expires in 24 hours (default)."""
     bills = _load_bills()
     new_bill = {
         "id": str(_uuid.uuid4()),
@@ -95,10 +141,18 @@ async def bill_create(
     }
     bills.insert(0, new_bill)
     _save_bills(bills)
-    return {"success": True, "bill": new_bill}
+
+    # Auto-create order from this bill
+    created = None
+    try:
+        created = create_order_from_bill(new_bill)
+    except Exception:
+        pass  # Order creation is non-critical, don't block bill creation
+
+    return {"success": True, "bill": new_bill, "order_id": created.get("id") if created else None}
 
 
-# ─── List unpaid bills for a user ───────────────────────
+# ─── READ list ───────────────────────────────────────────
 
 @router.get("/list")
 async def bill_list(
@@ -106,8 +160,7 @@ async def bill_list(
     status: str | None = Query(None),
     auto_refresh: bool = Query(True),
 ):
-    """List bills for a user. Auto-refreshes from Mayar API first."""
-    # Auto-refresh unpaid bills from Mayar API
+    """List bills for a user. Auto-refreshes unpaid from Mayar API."""
     if auto_refresh:
         mayar_key = os.getenv("MAYAR_API_KEY") or os.getenv("VITE_MAYAR_API_KEY", "")
         if mayar_key:
@@ -132,6 +185,9 @@ async def bill_list(
     if status and status != "all":
         user_bills = [b for b in user_bills if b.get("status") == status]
 
+    for b in user_bills:
+        b["remaining_display"] = _format_remaining(b.get("expires_at"))
+
     total_unpaid = sum(b.get("total_idr", 0) for b in user_bills if b.get("status") == "unpaid")
     total_paid = sum(b.get("total_idr", 0) for b in user_bills if b.get("status") == "paid")
 
@@ -144,7 +200,63 @@ async def bill_list(
     }
 
 
-# ─── Refresh status from Mayar API ─────────────────────
+# ─── UPDATE bill (PATCH) ─────────────────────────────────
+
+@router.patch("/update")
+async def bill_update(
+    bill_id: str = Query(...),
+    telegram_id: str = Query(...),
+    status: str | None = Query(None),
+    total_idr: int | None = Query(None),
+    invoice_url: str | None = Query(None),
+    mayar_invoice_id: str | None = Query(None),
+    items_json: str | None = Query(None),
+    expires_at: str | None = Query(None),
+):
+    """Update a bill's fields. Only the owner (telegram_id) can update."""
+    bills = _load_bills()
+    for bill in bills:
+        if bill.get("id") == bill_id and bill.get("telegram_id") == telegram_id:
+            if status is not None:
+                bill["status"] = status
+                if status == "paid":
+                    bill["paid_at"] = datetime.now(timezone.utc).isoformat()
+            if total_idr is not None:
+                bill["total_idr"] = total_idr
+            if invoice_url is not None:
+                bill["invoice_url"] = invoice_url
+            if mayar_invoice_id is not None:
+                bill["mayar_invoice_id"] = mayar_invoice_id
+            if items_json is not None:
+                bill["items"] = json.loads(items_json) if isinstance(items_json, str) else items_json
+            if expires_at is not None:
+                bill["expires_at"] = expires_at
+            _save_bills(bills)
+            return {"success": True, "bill": bill}
+
+    raise HTTPException(status_code=404, detail="Bill not found or not yours")
+
+
+# ─── DELETE bill ─────────────────────────────────────────
+
+@router.delete("/delete")
+async def bill_delete(
+    bill_id: str = Query(...),
+    telegram_id: str = Query(...),
+):
+    """Delete a bill. Only the owner (telegram_id) can delete."""
+    bills = _load_bills()
+    original_len = len(bills)
+    bills = [b for b in bills if not (b.get("id") == bill_id and b.get("telegram_id") == telegram_id)]
+
+    if len(bills) == original_len:
+        raise HTTPException(status_code=404, detail="Bill not found or not yours")
+
+    _save_bills(bills)
+    return {"success": True, "message": "Bill deleted"}
+
+
+# ─── Refresh status from Mayar API ──────────────────────
 
 @router.get("/refresh")
 async def bill_refresh(telegram_id: str = Query(...)):
@@ -172,7 +284,7 @@ async def bill_refresh(telegram_id: str = Query(...)):
     return {"success": True, "updated": updated, "total_bills": len(bills)}
 
 
-# ─── Mark bill as paid (webhook callback) ───────────────
+# ─── Webhook from Mayar ─────────────────────────────────
 
 @router.post("/webhook")
 async def bill_webhook(request: Request):
@@ -199,37 +311,79 @@ async def bill_webhook(request: Request):
     return {"success": True, "event": event}
 
 
-# ─── Get bill summary for display ──────────────────────
+# ─── Summary with structured data for inline keyboards ──
 
 @router.get("/summary")
 async def bill_summary(telegram_id: str = Query(...)):
-    """Get formatted summary of all bills."""
+    """Get formatted summary + structured bill data for inline keyboard CRUD."""
     bills = _load_bills()
     user_bills = [b for b in bills if b.get("telegram_id") == telegram_id]
 
     unpaid = [b for b in user_bills if b.get("status") == "unpaid"]
     paid = [b for b in user_bills if b.get("status") == "paid"]
+    expired = [b for b in user_bills if b.get("status") == "expired"]
 
-    lines = ["📋 TAGIHAN SAYA\n"]
+    lines = ["💰 *Tagihan Saya*"]
+    now_display = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")
+    lines.append(f"   {now_display} WIB")
+    lines.append("")
 
-    if not unpaid:
-        lines.append("✅ Tidak ada tagihan yang belum dibayar.\n")
+    # Build structured bill list for inline keyboards
+    bill_list = []
+
+    if not unpaid and not paid:
+        lines.append("Belum ada tagihan. Yuk, belanja dulu! 😊")
+    elif not unpaid:
+        lines.append("✅ Semua tagihan sudah lunas. Makasih! 🎉")
     else:
-        lines.append(f"⏳ **{len(unpaid)} Tagihan Belum Dibayar:**\n")
+        lines.append(f"⏳ *{len(unpaid)} Tagihan Belum Dibayar:*")
+        lines.append("")
         for i, b in enumerate(unpaid, 1):
             items_str = "; ".join(
-                f"{it.get('name','?')} × {it.get('qty',1)}"
+                f"{it.get('name', '?')} × {it.get('qty', 1)}"
                 for it in (b.get("items") or [])
-            ) or "1 item"
-            lines.append(f"{i}. **{items_str}**")
-            lines.append(f"   💰 Rp{b['total_idr']:,}")
+            ) or f"Pesanan #{i}"
+            remaining = _format_remaining(b.get("expires_at"))
+            expiry_info = ""
+            if remaining:
+                expiry_info = f"⏱ Sisa {remaining}"
+            else:
+                expiry_info = "⏱ Segera bayar"
+
+            lines.append(f"{i}️⃣ *{items_str}*")
+            lines.append(f"   💰 Rp{b['total_idr']:,}".replace(",", "."))
             lines.append(f"   📅 {b['created_at'][:10]}")
+            lines.append(f"   {expiry_info}")
             lines.append(f"   🔗 [Bayar Sekarang]({b['invoice_url']})")
             lines.append("")
 
-    if paid:
-        lines.append(f"✅ **{len(paid)} Tagihan Lunas:**\n")
-        lines.append(f"   Total: Rp{sum(b['total_idr'] for b in paid):,}")
+            bill_list.append({
+                "id": b["id"],
+                "index": i,
+                "status": "unpaid",
+                "total_idr": b["total_idr"],
+                "invoice_url": b["invoice_url"],
+                "remaining": remaining,
+                "items": b.get("items", []),
+            })
 
-    lines.append("\n💡 Klik link bayar untuk lunasi tagihan.")
-    return {"success": True, "text": "\n".join(lines)}
+    if paid:
+        lines.append(f"✅ *{len(paid)} Tagihan Lunas:*")
+        for b in paid:
+            items_str = "; ".join(
+                f"{it.get('name', '?')} × {it.get('qty', 1)}"
+                for it in (b.get("items") or [])
+            ) or "Pesanan"
+            lines.append(f"   • {items_str} — Rp{b['total_idr']:,}".replace(",", "."))
+        lines.append("")
+
+    if unpaid:
+        lines.append("💡 Yuk, buruan bayar sebelum ⏱ waktu habis! 😊")
+
+    return {
+        "success": True,
+        "text": "\n".join(lines),
+        "bills": bill_list,
+        "total_unpaid": len(unpaid),
+        "total_paid": len(paid),
+    }

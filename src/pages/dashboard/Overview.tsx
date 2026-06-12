@@ -1,8 +1,9 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Crown, Coins, Heart, Bell, MessageCircle, Sparkles, Package, FileText } from "lucide-react";
+import { ArrowRight, Crown, Coins, Heart, Package, MessageCircle, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
-import { useOrders, useQuotations, useWishlist, usePriceAlerts, useUserMembership, usePoints } from "@/hooks";
+import { useWishlist, useUserMembership, usePoints } from "@/hooks";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtRp, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
 
@@ -29,14 +30,54 @@ const Stat = ({ icon: Icon, label, value, hint, tone = "primary" }: any) => (
 
 const Overview = () => {
   const { profile, getDashboardRoute } = useAuth();
-  const { data: orders = [], isLoading: ordersLoading, error: ordersError } = useOrders();
-  const { data: quotations = [], isLoading: quotLoading } = useQuotations();
   const { data: wishlist = [], isLoading: wishLoading } = useWishlist();
-  const { data: priceAlerts = [], isLoading: alertsLoading } = usePriceAlerts();
   const { data: membership, isLoading: membLoading } = useUserMembership();
   const { data: pointsBalance, isLoading: pointsLoading } = usePoints();
 
-  const isLoading = ordersLoading || quotLoading || wishLoading || alertsLoading || membLoading || pointsLoading;
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState(null);
+
+  useEffect(() => {
+    if (!profile?.telegram_id) {
+      setOrdersLoading(false);
+      setOrdersError(null);
+      return;
+    }
+
+    const abortController = new AbortController();
+
+    const fetchOrders = async () => {
+      setOrdersLoading(true);
+      setOrdersError(null);
+
+      try {
+        const response = await fetch(
+          `/api/orders/dashboard?telegram_id=${profile.telegram_id}`,
+          { signal: abortController.signal }
+        );
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setOrders(Array.isArray(data) ? data : data?.data ?? []);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setOrdersError("Gagal memuat data pesanan");
+        setOrders([]);
+      } finally {
+        setOrdersLoading(false);
+      }
+    };
+
+    fetchOrders();
+
+    return () => abortController.abort();
+  }, [profile?.telegram_id]);
+
+  const isLoading = ordersLoading || wishLoading || membLoading || pointsLoading;
 
   const firstName = profile?.name?.split(" ")[0] ?? "User";
 
@@ -63,7 +104,7 @@ const Overview = () => {
       <PageHeader
         eyebrow={`Konnichiwa, ${firstName} 👋`}
         title="Selamat datang kembali."
-        description="Pantau quotation, order, dan keinginanmu dari Jepang di satu tempat."
+        description="Pantau order dan keinginanmu dari Jepang di satu tempat."
         action={
           <Button variant="hero" asChild>
             <Link to="/aipersonalshopper"><Sparkles className="h-4 w-4" />Buat Quotation Baru</Link>
@@ -77,8 +118,8 @@ const Overview = () => {
         </div>
       ) : (
         <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-          <Stat icon={Package} label="Order Aktif" value={activeOrders.length} hint={`${orders.length} total order`} />
-          <Stat icon={FileText} label="Quotation" value={quotations.filter(q => q.status === "active").length} hint="quote masih berlaku" />
+          <Stat icon={Package} label="Order Aktif" value={activeOrders.length} hint={`dari ${orders.length} total`} />
+          <Stat icon={Heart} label="Wishlist" value={wishlist.length} hint="item" />
           <Stat icon={Coins} label="Poin" value={pointsBalance != null ? pointsBalance.toLocaleString("id-ID") : "0"} hint={`≈ ${fmtRp(rupiahValue)}`} />
           <Stat icon={Crown} label="Membership" value={membership?.tier ?? "Free"} hint={membership?.renews_on ? `Renew ${new Date(membership.renews_on).toLocaleDateString("id-ID")}` : ""} />
         </div>
@@ -108,21 +149,25 @@ const Overview = () => {
               ) : activeOrders.map((o) => (
                 <Link
                   key={o.id}
-                  to={`${getDashboardRoute()}/orders/${o.id}`}
+                  to={`/${profile.username}/dashboard/orders/${o.id}`}
                   className="flex items-center gap-4 p-4 rounded-2xl bg-secondary/50 hover:bg-secondary transition-colors group"
                 >
                   <div className="h-12 w-12 rounded-xl bg-background grid place-items-center text-primary shrink-0">
                     <Package className="h-5 w-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">{o.product}</p>
-                    <p className="text-xs text-muted-foreground">{o.id.slice(0, 8)}… · ETA {o.eta ? new Date(o.eta).toLocaleDateString("id-ID") : "TBA"}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-sm truncate">
+                        {o.status_emoji} {o.order_number}
+                      </p>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${STATUS_TONE[o.status] || "bg-muted text-muted-foreground"}`}>
+                        {STATUS_LABEL[o.status] || o.status_label || o.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{o.items_summary}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${STATUS_TONE[o.status] ?? "bg-muted text-muted-foreground"}`}>
-                      {STATUS_LABEL[o.status] ?? o.status}
-                    </span>
-                    <p className="text-sm font-bold mt-1">{fmtRp(o.total)}</p>
+                    <p className="text-sm font-bold">{fmtRp(o.total)}</p>
                   </div>
                 </Link>
               ))}
@@ -204,38 +249,6 @@ const Overview = () => {
           )}
         </div>
 
-        {/* Price alerts */}
-        <div className="rounded-3xl bg-card border border-border/40 p-6 shadow-soft">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-primary" />
-              <h2 className="font-display text-lg font-bold">Price Alerts</h2>
-            </div>
-            <Button variant="ghost" size="sm" asChild><Link to={getDashboardRoute() + "/price-alerts"}>Semua <ArrowRight className="h-3.5 w-3.5" /></Link></Button>
-          </div>
-          {isLoading ? (
-            <div className="animate-pulse space-y-3">
-              {Array.from({ length: 2 }).map((_, i) => (
-                <div key={i} className="h-14 bg-secondary rounded-2xl" />
-              ))}
-            </div>
-          ) : priceAlerts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada price alert.</p>
-          ) : (
-            <div className="space-y-2.5">
-              {priceAlerts.map((a) => (
-                <div key={a.id} className="flex items-center gap-3 p-3 rounded-2xl hover:bg-secondary transition-colors">
-                  <div className={`h-2 w-2 rounded-full shrink-0 ${a.status === "triggered" ? "bg-success animate-pulse" : "bg-warning"}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate">{a.product}</p>
-                    <p className="text-xs text-muted-foreground">Target {fmtRp(a.target_price)} · {a.last_checked_at ? new Date(a.last_checked_at).toLocaleDateString("id-ID") : "—"}</p>
-                  </div>
-                  <p className="text-sm font-bold">{a.current_price != null ? fmtRp(a.current_price) : "—"}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="mt-6 rounded-3xl bg-secondary/40 border border-border/40 p-6 flex flex-col sm:flex-row items-center gap-4 justify-between">

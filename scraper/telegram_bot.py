@@ -89,9 +89,10 @@ async def tg_typing(chat_id: int):
     except:
         pass
 
-async def tg_split_send(chat_id: int, text: str, parse_mode: str = "Markdown"):
+async def tg_split_send(chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup: dict | None = None):
     if len(text) <= 4000:
-        return await tg_send(chat_id, text, parse_mode)
+        return await tg_send(chat_id, text, parse_mode, reply_markup=reply_markup)
+    # Keyboard hanya di bagian pertama kalau split
     parts = []
     while text:
         if len(text) <= 4000:
@@ -102,8 +103,9 @@ async def tg_split_send(chat_id: int, text: str, parse_mode: str = "Markdown"):
             split_at = 4000
         parts.append(text[:split_at])
         text = text[split_at:]
-    for part in parts:
-        await tg_send(chat_id, part, parse_mode)
+    for i, part in enumerate(parts):
+        rm = reply_markup if i == 0 else None
+        await tg_send(chat_id, part, parse_mode, reply_markup=rm)
         await asyncio.sleep(0.3)
 
 async def tg_send_photo(chat_id: int, photo_url: str, caption: str, reply_markup: dict | None = None) -> dict | None:
@@ -431,30 +433,10 @@ KONVERSI:
 - Ongkir Jepang → Indonesia: Rp 250.000
 - Pajak & bea cukai: 8% dari (harga produk + fee jasa)
 
-PENTING - DATA TERSIMPAN OTOMATIS:
-- Setiap kali kamu mencari atau scrape produk, data akan kamu SIMPAN ke database MyBagasi
-- User bisa melihat semua quotation, order, dan wishlist di dashboard web
-- Jadi pastikan data yang kamu simpan AKURAT
-- Jika user minta simpan ke wishlist atau buat price alert, gunakan tool yang tersedia
-
-ALUR KERJA:
-1. Jika user mengirim LINK produk → gunakan tool scrape_product
-2. Jika user mencari produk (kata kunci) → gunakan tool search_products
-3. Setelah dapat data produk, berikan estimasi harga all-in
-4. Jika user setuju beli, tanya: nama lengkap, email, nomor HP
-5. Gunakan tool create_payment setelah dapat konfirmasi
-6. Berikan link pembayaran ke user
-
-LARANGAN:
-- JANGAN PERNAH membuat data produk palsu
-- JANGAN menebak harga produk
-- Jika scraping gagal, katakan jujur
-- Jawab dalam Bahasa Indonesia yang ramah, singkat, to the point
-- Jangan sebut tool internal (scrape_product, search_products, dll)
-
 FORMAT JAWABAN:
 
-Untuk hasil scrape/search berhasil:
+Untuk hasil scrape/search berhasil, gunakan format jelas per produk:
+
 📍 *Nama Produk*
 💰 Harga: JPY X (Rp Y)
 🏪 Marketplace: ...
@@ -466,12 +448,42 @@ Estimasi Biaya:
 • Pajak: Rp ...
 • Total All-in: Rp ...
 
-📌 *Data sudah tersimpan di dashboard MyBagasi kamu!*
+🔗 Lihat di [nama marketplace](url)
 
-Untuk pembayaran setelah konfirmasi:
-✅ *Invoice dibuat!*
-Klik link berikut untuk bayar:
-🔗 [Link Pembayaran](url)
+*Data tersimpan otomatis ke dashboard kamu!*
+
+Jika ada foto produk, tulis:
+---PHOTO:URL_FOTO_PRODUK---
+di atas nama produk.
+
+LARANGAN: JANGAN PERNAH menambahkan ---KEYBOARD---, ---END KEYBOARD---, [[{"text":...}]] atau apapun yang berkaitan dengan tombol/keyboard. Tombol akan ditambahkan OTOMATIS oleh sistem.
+
+CONTOH HASIL MULTI PRODUK:
+
+1 — *Adizero Japan 9*
+
+---PHOTO:https://example.com/foto.jpg---
+
+🔗 [Lihat di Amazon JP](url)
+
+💰 RINCIAN BIAYA:
+Harga produk       ¥14.000    (Rp1.568.000)
+Fee jasa 15%       ¥2.100     (Rp235.200)
+Ongkir                         (Rp250.000)
+Pajak 8%           ¥1.288     (Rp144.256)
+💳 TOTAL ALL-IN    ¥17.388    (Rp2.197.456)
+
+2 — *Adizero EVO SL*
+
+---PHOTO:https://example.com/foto2.jpg---
+
+🔗 [Lihat di Amazon JP](url)
+
+💰 RINCIAN BIAYA:
+Harga produk       ¥20.000    (Rp2.240.000)
+...
+💳 TOTAL ALL-IN    ¥22.000    (Rp2.839.000)
+
 """
 
 TOOLS = [
@@ -1314,13 +1326,87 @@ async def handle_about(chat_id: int):
         "👤 *Punya pertanyaan?* Chat @fakhriazzam",
         reply_markup=kb)
 
+def detect_product_buttons(text: str) -> dict | None:
+    """Auto-detect products in AI response and generate inline keyboard.
+    
+    Detects numbered products (1 — Nama Produk, 2 — Nama Produk) or single product.
+    Returns reply_markup dict or None if no products detected.
+    """
+    lines = text.strip().split('\n')
+    
+    # Cari produk dengan pola "N — Nama Produk" atau "N. Nama Produk"
+    product_indices = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Match: "1 — Product", "1. Product", "1 —Product"
+        m = re.match(r'^(\d+)\s*[—\-\.]\s*(.+)', stripped)
+        if m:
+            num = int(m.group(1))
+            name = m.group(2).strip()
+            # Skip kalau judul section (bukan produk)
+            if name and len(name) > 3 and not name.startswith(('RINCIAN', 'TOTAL', 'Harga')):
+                product_indices.append((num, name, i))
+    
+    # Kalau ada produk bernomor
+    if product_indices:
+        # Pilih produk teratas (max 5 biar gak overflow)
+        top_products = product_indices[:5]
+        buttons = []
+        for num, name, _ in top_products:
+            short_name = name[:30] if len(name) > 30 else name
+            buttons.append([
+                {"text": f"🛒 Produk {num}: {short_name}", "callback_data": f"cart_{num}"}
+            ])
+        # Cancel button di baris terakhir
+        buttons.append([{"text": "❌ Skip", "callback_data": "cart_skip"}])
+        return {"inline_keyboard": buttons}
+    
+    # Fallback: cek apakah ada indikator produk (💰, TOTAL ALL-IN, dll)
+    has_product = False
+    for kw in ['💳 TOTAL', '💰 Harga', 'TOTAL ALL-IN', 'RINCIAN BIAYA', '🔗 Lihat di']:
+        if kw in text:
+            has_product = True
+            break
+    
+    if has_product:
+        return {"inline_keyboard": [
+            [{"text": "🛒 Tambah ke Cart", "callback_data": "cart_add"}],
+            [{"text": "❌ Skip", "callback_data": "cart_skip"}]
+        ]}
+    
+    return None
+
+
 async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
     if not DEEPSEEK_API_KEY:
         await tg_send(chat_id, "❌ AI Personal Shopper belum dikonfigurasi.")
         return
     await tg_typing(chat_id)
     response = await ai_process(chat_id, text, user_profile)
-    await tg_split_send(chat_id, response)
+    
+    # Cek ---PHOTO:URL--- marker dulu
+    photo_match = re.search(r'---PHOTO:(https?://[^\s]+)---', response)
+    if photo_match:
+        photo_url = photo_match.group(1)
+        clean_text = re.sub(r'---PHOTO:https?://[^\s]+---\n?', '', response).strip()
+        # Strip any ---KEYBOARD--- markers that AI might still generate
+        clean_text = re.sub(r'\n?---KEYBOARD---.*?---END KEYBOARD---\n?', '', clean_text, flags=re.DOTALL).strip()
+        # Generate buttons otomatis
+        reply_markup = detect_product_buttons(clean_text)
+        result = await tg_send_photo(chat_id, photo_url, clean_text, reply_markup=reply_markup)
+        if result and result.get("ok"):
+            return
+        # Fallback: kirim teks aja kalau foto gagal
+        log.warning(f"sendPhoto failed (%s), falling back to text", result)
+    
+    # Strip any ---KEYBOARD--- markers that AI might still generate
+    clean_text = re.sub(r'\n?---KEYBOARD---.*?---END KEYBOARD---\n?', '', response, flags=re.DOTALL).strip()
+    # Fallback kalau clean_text kosong (misal response cuma foto)
+    if not clean_text:
+        clean_text = "Maaf, ada error. Coba lagi ya."
+    # Generate buttons otomatis berdasarkan produk
+    reply_markup = detect_product_buttons(clean_text)
+    await tg_split_send(chat_id, clean_text, reply_markup=reply_markup)
 
 # ── Message Router ─────────────────────────────────────────
 

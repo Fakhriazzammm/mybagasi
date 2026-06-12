@@ -195,6 +195,9 @@ async def receive_webhook(request: Request):
                 order_id = field.get("value")
                 break
 
+        # Extract mayar invoice id for bill lookup
+        invoice_id = data.get("id")
+
         if order_id:
             supabase_url = os.getenv("SUPABASE_URL", "")
             supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -217,6 +220,28 @@ async def receive_webhook(request: Request):
                         params={"id": f"eq.{order_id}"},
                         json=payload,
                     )
+
+        # ── Auto-create order from bill ──
+        from order_routes import create_order_from_bill, notify_user_status
+
+        # Find bill by mayar_invoice_id
+        try:
+            import json
+            bills_path = os.path.join(os.path.dirname(__file__), 'data', 'bills.json')
+            if os.path.exists(bills_path):
+                with open(bills_path) as f:
+                    bills = json.load(f)
+                for bill in bills:
+                    if bill.get('mayar_invoice_id') == invoice_id:
+                        # Create order from this paid bill
+                        order = create_order_from_bill(bill)
+
+                        # Notify user via Telegram (log for now)
+                        notify_user_status(bill.get('telegram_id', ''), order)
+                        print(f'[ORDER] Created order {order.get("id")} from bill {bill.get("id")}')
+                        break
+        except Exception as e:
+            print(f'[ORDER] Failed to create order from webhook: {e}')
 
     return {"status": "ok"}
 
