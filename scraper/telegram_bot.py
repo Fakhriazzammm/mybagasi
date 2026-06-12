@@ -1164,7 +1164,18 @@ async def handle_start(chat_id: int, args: str):
     
     if not token:
         if existing:
-            kb = {
+            # Persistent reply keyboard di bawah chat
+            reply_kb = {
+                "keyboard": [
+                    [{"text": "🔍 Cari Produk"}],
+                    [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan Saya"}],
+                    [{"text": "📋 Wishlist"}, {"text": "❓ Bantuan"}],
+                ],
+                "resize_keyboard": True,
+                "one_time_keyboard": False,
+            }
+            # Inline keyboard di dalam pesan
+            inline_kb = {
                 "inline_keyboard": [
                     [{"text": "👤 Akun Saya", "callback_data": "/status"}, {"text": "📦 Pesanan Saya", "callback_data": "/status"}],
                     [{"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
@@ -1180,9 +1191,20 @@ async def handle_start(chat_id: int, args: str):
                 f"💳 *Beli & bayar* — via chat, bayar pakai Zantara Pay\n"
                 f"📋 *Simpan wishlist* — bilang aja \"simpen ini\"\n\n"
                 f"Atau tap tombol di bawah 👇",
-                reply_markup=kb)
+                reply_markup=reply_kb)
+            # Kirim inline keyboard terpisah (biar tombol di chat juga ada)
+            await asyncio.sleep(0.5)
+            await tg_send(chat_id, "📌 *Menu cepat:*", reply_markup=inline_kb)
         else:
-            kb = {
+            reply_kb = {
+                "keyboard": [
+                    [{"text": "🆕 Daftar Akun Baru"}, {"text": "🔐 Login"}],
+                    [{"text": "📖 Tentang MyBagasi"}],
+                ],
+                "resize_keyboard": True,
+                "one_time_keyboard": False,
+            }
+            inline_kb = {
                 "inline_keyboard": [
                     [{"text": "🆕 Daftar Akun Baru", "callback_data": "/register"}],
                     [{"text": "🔐 Login", "callback_data": "/login"}],
@@ -1201,7 +1223,9 @@ async def handle_start(chat_id: int, args: str):
                 "📦 *Lacak pesanan* sampai ke rumah kamu\n\n"
                 "🚀 *Baru pertama?* Tinggal tap tombol *Daftar* di bawah — cuma 30 detik!\n"
                 "👇 *Pilih salah satu:*",
-                reply_markup=kb)
+                reply_markup=reply_kb)
+            await asyncio.sleep(0.5)
+            await tg_send(chat_id, "📌 *Menu:*", reply_markup=inline_kb)
         return
 
     if existing:
@@ -1801,6 +1825,23 @@ async def process_update(update: dict):
                 "• `/login` — Login ke akun yang sudah ada")
             return
         await handle_ai(chat_id, f"Tolong cek harga produk ini: {args}", user_profile)
+    elif text in ("🔍 Cari Produk",):
+        if not user_profile:
+            await tg_send(chat_id, "⚠️ Kamu harus daftar dulu. Ketik /register")
+            return
+        await tg_send(chat_id, "📝 Ketik nama produk yang mau dicari, misal: `onitsuka tiger`")
+    elif text in ("👤 Akun Saya", "📦 Pesanan Saya"):
+        await handle_status(chat_id)
+    elif text in ("📋 Wishlist",):
+        await handle_wishlist(chat_id)
+    elif text in ("❓ Bantuan",):
+        await handle_help(chat_id)
+    elif text in ("🆕 Daftar Akun Baru",):
+        await handle_register(chat_id)
+    elif text in ("🔐 Login",):
+        await handle_login(chat_id)
+    elif text in ("📖 Tentang MyBagasi",):
+        await handle_about(chat_id)
     else:
         # Cek pending registration/login steps
         if chat_id in _pending_reg:
