@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-06-12T10:02:22Z",
+  "total_images_found": 300,
+  "total_inserted": 300,
+  "total_failed": 0,
+  "by_category": {
+    "Disney Store": 17,
+    "Donqi Items": 48,
+    "Fashion": 46,
+    "Gacha": 49,
+    "Makeup": 39,
+    "Sepatu": 12,
+    "Snack": 39,
+    "Toys": 50
+  },
+  "by_subcategory": {
+    "Disney Store/Stitch": 17,
+    "Donqi Items/Skincare": 41,
+    "Donqi Items/Snack Donqi": 7,
+    "Fashion/GU": 20,
+    "Fashion/No Brand": 5,
+    "Fashion/Uniqlo": 21,
+    "Gacha/": 49,
+    "Makeup/High End Brand": 18,
+    "Makeup/Local Brand": 21,
+    "Sepatu/No Brand (Affordable)": 3,
+    "Sepatu/On Cloud": 4,
+    "Sepatu/Onitsuka Tiger": 5,
+    "Snack/Donqi": 4,
+    "Snack/Muji": 35,
+    "Toys/Sanrio": 43,
+    "Toys/Sylvaina": 7
+  }
+}
