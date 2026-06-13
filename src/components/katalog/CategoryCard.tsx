@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface CategoryCardProps {
@@ -36,30 +37,45 @@ export function CategoryCard({ name, count, to }: CategoryCardProps) {
 
   if (to) {
     return (
-      <Link
-        to={to}
-        className={cn(
-          "flex flex-col items-center gap-1.5 rounded-xl border border-border/50",
-          "bg-card p-3 transition-all duration-150",
-          "hover:border-primary/40 hover:bg-primary-soft/30 hover:shadow-sm",
-          "active:scale-[0.97] w-full"
-        )}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        whileHover={{ scale: 1.05, y: -4 }}
+        whileTap={{ scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 400, damping: 17 }}
       >
-        {content}
-      </Link>
+        <Link
+          to={to}
+          className={cn(
+            "flex flex-col items-center gap-1.5 rounded-xl border border-border/50",
+            "bg-card p-3 transition-colors duration-150",
+            "hover:border-primary/40 hover:bg-primary-soft/30 hover:shadow-sm",
+            "w-full"
+          )}
+        >
+          {content}
+        </Link>
+      </motion.div>
     );
   }
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      whileHover={{ scale: 1.05, y: -4 }}
+      whileTap={{ scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 400, damping: 17 }}
       className={cn(
         "flex flex-col items-center gap-1.5 rounded-xl border border-border/50",
-        "bg-card p-3 transition-all duration-150",
+        "bg-card p-3 transition-colors duration-150",
         "hover:border-primary/40 hover:bg-primary-soft/30 hover:shadow-sm",
-        "active:scale-[0.97] w-full"
+        "w-full"
       )}
     >
       {content}
-    </div>
+    </motion.div>
   );
 }

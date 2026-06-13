@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtRp, fmtJpy } from "@/lib/format";
@@ -25,17 +26,25 @@ export function ProductCard({ item, showPrice = true, onBeli }: ProductCardProps
   };
 
   return (
-    <div className="group flex flex-col rounded-xl border border-border/50 bg-card overflow-hidden transition-all duration-150 hover:border-primary/30 hover:shadow-sm cursor-pointer">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-50px" }}
+      whileHover={{ y: -6, transition: { type: "spring", stiffness: 400, damping: 17 } }}
+      className="group flex flex-col rounded-xl border border-border/50 bg-card overflow-hidden transition-colors duration-150 hover:border-primary/30 hover:shadow-sm cursor-pointer"
+    >
       {/* Image */}
       <div
         onClick={handleClick}
         className="aspect-square overflow-hidden bg-muted/30"
       >
-        <img
+        <motion.img
           src={imgSrc}
           alt={item.name}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          className="h-full w-full object-cover"
           loading="lazy"
+          whileHover={{ scale: 1.1 }}
+          transition={{ duration: 0.4 }}
           onError={(e) => {
             (e.target as HTMLImageElement).src = FALLBACK_IMG;
           }}
@@ -85,15 +94,20 @@ export function ProductCard({ item, showPrice = true, onBeli }: ProductCardProps
         )}
 
         {/* CTA */}
-        <Button
-          variant="hero"
-          size="sm"
-          className="mt-2 w-full gap-1.5 text-xs"
-          onClick={handleClick}
+        <motion.div
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
         >
-          🛒 Beli via AI
-        </Button>
+          <Button
+            variant="hero"
+            size="sm"
+            className="mt-2 w-full gap-1.5 text-xs"
+            onClick={handleClick}
+          >
+            🛒 Beli via AI
+          </Button>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }

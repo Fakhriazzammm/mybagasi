@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart,
   CreditCard,
@@ -178,22 +179,43 @@ export function ProductDetailModal({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-card border border-border/60 rounded-3xl shadow-2xl animate-in zoom-in-95 duration-200">
-        {/* ── Close button ── */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-10 h-9 w-9 rounded-full bg-background/80 backdrop-blur border border-border/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
         >
-          <X className="h-4 w-4" />
-        </button>
+          {/* Backdrop */}
+          <motion.div
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) onClose();
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          />
 
-        {/* ── Content ── */}
+          {/* Modal content */}
+          <motion.div
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-card border border-border/60 rounded-3xl shadow-2xl"
+            initial={{ opacity: 0, scale: 0.92, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 20 }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          >
+            {/* ── Close button ── */}
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 z-10 h-9 w-9 rounded-full bg-background/80 backdrop-blur border border-border/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* ── Content ── */}
         <div className="flex flex-col md:flex-row">
           {/* ── Image section ── */}
           <div className="md:w-[45%] shrink-0 bg-muted/20">
@@ -394,8 +416,10 @@ export function ProductDetailModal({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+    )}
+    </AnimatePresence>
   );
 }
 

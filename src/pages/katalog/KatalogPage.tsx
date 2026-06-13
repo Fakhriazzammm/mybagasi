@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Button } from "@/components/ui/button";
@@ -72,19 +73,39 @@ function CategoryGrid({
   if (!categories.length) return null;
 
   return (
-    <section className="space-y-4">
+    <motion.section
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.1 }}
+      className="space-y-4"
+    >
       <h2 className="font-display text-lg font-semibold">Kategori</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={{
+          hidden: {},
+          visible: { transition: { staggerChildren: 0.07 } },
+        }}
+        className="grid grid-cols-2 md:grid-cols-4 gap-3"
+      >
         {categories.map((cat) => (
-          <CategoryCard
+          <motion.div
             key={cat.name}
-            name={cat.name}
-            count={cat.count}
-            to={`/katalog/${encodeURIComponent(cat.name)}`}
-          />
+            variants={{
+              hidden: { opacity: 0, y: 20 },
+              visible: { opacity: 1, y: 0 },
+            }}
+          >
+            <CategoryCard
+              name={cat.name}
+              count={cat.count}
+              to={`/katalog/${encodeURIComponent(cat.name)}`}
+            />
+          </motion.div>
         ))}
-      </div>
-    </section>
+      </motion.div>
+    </motion.section>
   );
 }
 
@@ -98,16 +119,37 @@ function FeaturedSection({
   if (!items.length) return null;
 
   return (
-    <section className="space-y-4">
+    <motion.section
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.3 }}
+      className="space-y-4"
+    >
       <h2 className="font-display text-lg font-semibold">
         Produk Unggulan
       </h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={{
+          hidden: {},
+          visible: { transition: { staggerChildren: 0.05 } },
+        }}
+        className="grid grid-cols-2 md:grid-cols-4 gap-3"
+      >
         {items.map((item) => (
-          <ProductCard key={item.id} item={item} onBeli={onBeli} />
+          <motion.div
+            key={item.id}
+            variants={{
+              hidden: { opacity: 0, y: 20 },
+              visible: { opacity: 1, y: 0 },
+            }}
+          >
+            <ProductCard key={item.id} item={item} onBeli={onBeli} />
+          </motion.div>
         ))}
-      </div>
-    </section>
+      </motion.div>
+    </motion.section>
   );
 }
 
