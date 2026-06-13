@@ -18,14 +18,14 @@ router = APIRouter(prefix="/rate")
 # ── Shipping rates table (base_kg and JPY/kg) ──────────────
 
 SHIPPING_RATES: dict[str, dict[str, Any]] = {
-    "skincare": {"base_kg": 0.3, "price_jpy_per_kg": 1500, "note": "Kosmetik/cairan"},
-    "obat": {"base_kg": 0.3, "price_jpy_per_kg": 1400, "note": "Kesehatan & obat"},
-    "food": {"base_kg": 0.3, "price_jpy_per_kg": 1400, "note": "Makanan/minuman"},
-    "fashion": {"base_kg": 0.5, "price_jpy_per_kg": 1200, "note": "Pakaian, aksesoris"},
-    "sepatu": {"base_kg": 0.8, "price_jpy_per_kg": 1200, "note": "Sepatu & sandal"},
-    "jam": {"base_kg": 0.4, "price_jpy_per_kg": 1300, "note": "Jam tangan"},
-    "elektronik": {"base_kg": 0.5, "price_jpy_per_kg": 1500, "note": "Elektronik kecil"},
-    "general": {"base_kg": 0.5, "price_jpy_per_kg": 1300, "note": "Lainnya"},
+    "skincare": {"base_kg": 0.3, "price_jpy_per_kg": 750, "note": "Kosmetik/cairan"},
+    "obat": {"base_kg": 0.3, "price_jpy_per_kg": 700, "note": "Kesehatan & obat"},
+    "food": {"base_kg": 0.3, "price_jpy_per_kg": 700, "note": "Makanan/minuman"},
+    "fashion": {"base_kg": 0.5, "price_jpy_per_kg": 700, "note": "Pakaian, aksesoris"},
+    "sepatu": {"base_kg": 0.8, "price_jpy_per_kg": 600, "note": "Sepatu & sandal"},
+    "jam": {"base_kg": 0.4, "price_jpy_per_kg": 700, "note": "Jam tangan"},
+    "elektronik": {"base_kg": 0.5, "price_jpy_per_kg": 800, "note": "Elektronik kecil"},
+    "general": {"base_kg": 0.5, "price_jpy_per_kg": 700, "note": "Lainnya"},
 }
 
 # ── Constants ──────────────────────────────────────────────

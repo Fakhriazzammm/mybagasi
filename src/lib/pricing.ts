@@ -11,14 +11,14 @@ export interface PriceEstimate {
 }
 
 const SHIPPING_RATES: Record<string, { base_kg: number; price_jpy_per_kg: number }> = {
-  skincare: { base_kg: 0.3, price_jpy_per_kg: 1500 },
-  obat: { base_kg: 0.3, price_jpy_per_kg: 1400 },
-  food: { base_kg: 0.3, price_jpy_per_kg: 1400 },
-  fashion: { base_kg: 0.5, price_jpy_per_kg: 1200 },
-  sepatu: { base_kg: 0.8, price_jpy_per_kg: 1200 },
-  jam: { base_kg: 0.4, price_jpy_per_kg: 1300 },
-  elektronik: { base_kg: 0.5, price_jpy_per_kg: 1500 },
-  general: { base_kg: 0.5, price_jpy_per_kg: 1300 },
+  skincare: { base_kg: 0.3, price_jpy_per_kg: 750 },
+  obat: { base_kg: 0.3, price_jpy_per_kg: 700 },
+  food: { base_kg: 0.3, price_jpy_per_kg: 700 },
+  fashion: { base_kg: 0.5, price_jpy_per_kg: 700 },
+  sepatu: { base_kg: 0.8, price_jpy_per_kg: 600 },
+  jam: { base_kg: 0.4, price_jpy_per_kg: 700 },
+  elektronik: { base_kg: 0.5, price_jpy_per_kg: 800 },
+  general: { base_kg: 0.5, price_jpy_per_kg: 700 },
 };
 
 export function getShippingRate(category: string, jpyToIdr: number): number {
