@@ -14,6 +14,7 @@ import {
 
 import type { CatalogItem } from "@/hooks/useCatalog";
 import { useAddToCart } from "@/hooks/useCart";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   calculatePriceEstimate,
   formatRp,
@@ -47,6 +48,7 @@ export function ProductDetailModal({
   const navigate = useNavigate();
   const { toast } = useToast();
   const addToCart = useAddToCart();
+  const { user } = useAuth();
 
   // ── Local state ───────────────────────────────────────────────────────────
 
@@ -89,6 +91,12 @@ export function ProductDetailModal({
 
   const handleAddToCart = async () => {
     if (isAdding) return;
+    if (!user) {
+      toast({ title: "Login Diperlukan", description: "Silakan login atau daftar akun dulu ya" });
+      onClose();
+      navigate("/auth/login");
+      return;
+    }
     setIsAdding(true);
     try {
       await addToCart.mutateAsync({
@@ -125,6 +133,12 @@ export function ProductDetailModal({
 
   const handleBuyNow = async () => {
     // First add to cart, then navigate to checkout
+    if (!user) {
+      toast({ title: "Login Diperlukan", description: "Silakan login atau daftar akun dulu ya" });
+      onClose();
+      navigate("/auth/login");
+      return;
+    }
     try {
       await addToCart.mutateAsync({
         catalog_item_id: item.id,
