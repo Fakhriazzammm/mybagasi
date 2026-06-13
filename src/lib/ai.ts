@@ -8,14 +8,16 @@ const BASE_URL = appConfig.openAiBaseUrl;
 const MODEL = appConfig.openAiModel;
 const JPY_TO_IDR = appConfig.pricing.jpyToIdr;
 
-// Shipping rates by category (mirip bot Telegram)
-const SHIPPING_RATES: Record<string, number> = {
-  fashion: 125_000,
-  elektronik: 150_000,
-  skincare: 105_000,
-  buku: 60_000,
-  food: 150_000,
-  general: 125_000,
+// Shipping rates by category (base_kg and JPY/kg)
+const SHIPPING_RATES: Record<string, { base_kg: number; price_jpy_per_kg: number }> = {
+  skincare: { base_kg: 0.3, price_jpy_per_kg: 1500 },
+  obat: { base_kg: 0.3, price_jpy_per_kg: 1400 },
+  food: { base_kg: 0.3, price_jpy_per_kg: 1400 },
+  fashion: { base_kg: 0.5, price_jpy_per_kg: 1200 },
+  sepatu: { base_kg: 0.8, price_jpy_per_kg: 1200 },
+  jam: { base_kg: 0.4, price_jpy_per_kg: 1300 },
+  elektronik: { base_kg: 0.5, price_jpy_per_kg: 1500 },
+  general: { base_kg: 0.5, price_jpy_per_kg: 1300 },
 };
 
 const SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten personal shopper untuk produk-produk dari Jepang.
@@ -385,13 +387,17 @@ function normalizeUrlCandidate(raw: string): string | null {
 
 export function estimateAllInFromJPY(priceJPY: number, category = "general") {
   const basePrice = toIDR(priceJPY);
-  // Fee: estimasi tier based (mirip bot)
+  // Fee: estimasi tier based (matching pricing.ts)
   const feeEstimate = basePrice < 1000000 ? 100000 :
     basePrice < 3000000 ? 300000 :
     basePrice < 5000000 ? 500000 :
     basePrice < 10000000 ? 1000000 : 2000000;
-  const shipping = SHIPPING_RATES[category] || SHIPPING_RATES.general;
-  const tax = Math.round((basePrice + feeEstimate) * 0.11);
+  
+  const cat = category.toLowerCase().trim ? category.toLowerCase().trim() : category.toLowerCase();
+  const rate_info = SHIPPING_RATES[cat] ?? SHIPPING_RATES.general;
+  const shipping = Math.round(rate_info.base_kg * rate_info.price_jpy_per_kg * JPY_TO_IDR);
+
+  const tax = Math.round(basePrice * 0.11);
   const total = basePrice + feeEstimate + shipping + tax;
   return { basePrice, serviceFee: feeEstimate, shipping, tax, total, category };
 }

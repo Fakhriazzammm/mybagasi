@@ -15,22 +15,23 @@ from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/rate")
 
-# ── Shipping rates table ──────────────────────────────────
+# ── Shipping rates table (base_kg and JPY/kg) ──────────────
 
 SHIPPING_RATES: dict[str, dict[str, Any]] = {
-    "skincare": {"base_kg": 0.3, "price_per_kg": 350000, "note": "Kosmetik/cairan"},
-    "fashion": {"base_kg": 0.5, "price_per_kg": 250000, "note": "Pakaian, sepatu"},
-    "elektronik": {"base_kg": 0.5, "price_per_kg": 300000, "note": "Elektronik kecil"},
-    "buku": {"base_kg": 0.3, "price_per_kg": 200000, "note": "Buku/majalah"},
-    "food": {"base_kg": 0.5, "price_per_kg": 300000, "note": "Makanan/minuman"},
-    "general": {"base_kg": 0.5, "price_per_kg": 250000, "note": "Lainnya"},
+    "skincare": {"base_kg": 0.3, "price_jpy_per_kg": 1500, "note": "Kosmetik/cairan"},
+    "obat": {"base_kg": 0.3, "price_jpy_per_kg": 1400, "note": "Kesehatan & obat"},
+    "food": {"base_kg": 0.3, "price_jpy_per_kg": 1400, "note": "Makanan/minuman"},
+    "fashion": {"base_kg": 0.5, "price_jpy_per_kg": 1200, "note": "Pakaian, aksesoris"},
+    "sepatu": {"base_kg": 0.8, "price_jpy_per_kg": 1200, "note": "Sepatu & sandal"},
+    "jam": {"base_kg": 0.4, "price_jpy_per_kg": 1300, "note": "Jam tangan"},
+    "elektronik": {"base_kg": 0.5, "price_jpy_per_kg": 1500, "note": "Elektronik kecil"},
+    "general": {"base_kg": 0.5, "price_jpy_per_kg": 1300, "note": "Lainnya"},
 }
 
 # ── Constants ──────────────────────────────────────────────
 
 ADMIN_FEE = 25000  # Rp25.000 flat admin fee (optional, can be 0)
-JASA_PERSEN = 0.10  # 10% jasa fee (default, configurable from DB)
-PAJAK_PERSEN = 0.11  # Pajak 11%
+PAJAK_PERSEN = 0.11  # Pajak 11% (dari harga barang saja, tanpa fee)
 HARDCODED_JPY_RATE = 105  # Last-resort fallback
 
 JPY_API_URL = "https://api.exchangerate-api.com/v4/latest/JPY"
@@ -143,19 +144,33 @@ async def _get_jpy_rate(force_refresh: bool = False) -> dict[str, Any]:
     }
 
 
-def _calc_shipping_cost(category: str) -> dict[str, Any]:
-    """Calculate shipping cost based on category rules."""
+def _calc_fee(price_idr: int) -> int:
+    """Tier-based jasa fee (matching frontend pricing.ts)."""
+    if price_idr < 1_000_000:
+        return 100_000
+    elif price_idr < 3_000_000:
+        return 300_000
+    elif price_idr < 5_000_000:
+        return 500_000
+    elif price_idr < 10_000_000:
+        return 1_000_000
+    return 2_000_000
+
+
+def _calc_shipping_cost(category: str, jpy_to_idr: float) -> dict[str, Any]:
+    """Calculate shipping cost from JPY/kg rates, then convert to IDR."""
     cat_data = SHIPPING_RATES.get(category, SHIPPING_RATES["general"])
     base_kg = cat_data["base_kg"]
-    price_per_kg = cat_data["price_per_kg"]
-    # Minimum shipping = base_kg * price_per_kg
-    cost = int(base_kg * price_per_kg)
+    price_jpy_per_kg = cat_data["price_jpy_per_kg"]
+    cost_jpy = base_kg * price_jpy_per_kg
+    cost_idr = int(cost_jpy * jpy_to_idr)
     return {
         "category": category,
         "note": cat_data["note"],
         "base_kg": base_kg,
-        "price_per_kg": price_per_kg,
-        "shipping_cost_idr": cost,
+        "price_jpy_per_kg": price_jpy_per_kg,
+        "shipping_cost_jpy": cost_jpy,
+        "shipping_cost_idr": cost_idr,
     }
 
 
@@ -186,6 +201,9 @@ async def rate_shipping(category: str | None = Query(None)):
     - ?category=fashion — single category
     - no param — all categories
     """
+    rate_data = await _get_jpy_rate()
+    jpy_to_idr = rate_data["rate"]
+
     if category:
         cat = category.lower().strip()
         if cat not in SHIPPING_RATES:
@@ -195,13 +213,15 @@ async def rate_shipping(category: str | None = Query(None)):
             }
         return {
             "success": True,
-            "data": _calc_shipping_cost(cat),
+            "rate": jpy_to_idr,
+            "data": _calc_shipping_cost(cat, jpy_to_idr),
         }
 
     return {
         "success": True,
+        "rate": jpy_to_idr,
         "data": [
-            _calc_shipping_cost(cat)
+            _calc_shipping_cost(cat, jpy_to_idr)
             for cat in SHIPPING_RATES
         ],
     }
@@ -216,10 +236,10 @@ async def rate_calculate(
     """Full price breakdown from JPY price to final IDR total.
 
     Calculation:
-      - price_idr  = price_jpy * rate_jpy
-      - jasa       = price_idr * 10%
-      - ongkir     = shipping cost per category
-      - pajak      = (price_idr + jasa) * 11%
+      - price_idr  = price_jpy * rate_jpy * quantity
+      - jasa       = tier-based fee (Rp100k–2jt tergantung harga)
+      - ongkir     = base_kg * price_jpy_per_kg * rate_jpy per kategori
+      - pajak      = price_idr * 11% (flat dari harga barang saja)
       - total_idr  = price_idr + jasa + ongkir + pajak
       - total_jpy  = total_idr / rate_jpy
     """
@@ -227,10 +247,10 @@ async def rate_calculate(
     rate = rate_data["rate"]
 
     price_idr = round(price_jpy * rate * quantity)
-    jasa = round(price_idr * JASA_PERSEN)
-    ongkir_info = _calc_shipping_cost(category)
+    jasa = _calc_fee(price_idr)
+    ongkir_info = _calc_shipping_cost(category, rate)
     ongkir = ongkir_info["shipping_cost_idr"]
-    pajak = round((price_idr + jasa) * PAJAK_PERSEN)
+    pajak = round(price_idr * PAJAK_PERSEN)
     total_idr = price_idr + jasa + ongkir + pajak
     total_jpy = round(total_idr / rate, 2) if rate > 0 else 0
 
@@ -242,12 +262,15 @@ async def rate_calculate(
             "price_jpy": price_jpy,
             "quantity": quantity,
             "price_idr": price_idr,
-            "jasa_10_persen": jasa,
+            "jasa_tier": jasa,
             "ongkir": ongkir,
+            "ongkir_jpy": ongkir_info["shipping_cost_jpy"],
             "pajak": pajak,
             "total_idr": total_idr,
             "total_jpy": total_jpy,
             "shipping_category": ongkir_info["category"],
             "shipping_note": ongkir_info["note"],
+            "base_kg": ongkir_info["base_kg"],
+            "price_jpy_per_kg": ongkir_info["price_jpy_per_kg"],
         },
     }

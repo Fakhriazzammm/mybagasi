@@ -10,16 +10,22 @@ export interface PriceEstimate {
   currency: string;
 }
 
-const SHIPPING_RATES: Record<string, number> = {
-  fashion: 125_000,
-  skincare: 105_000,
-  elektronik: 150_000,
-  buku: 60_000,
-  food: 150_000,
+const SHIPPING_RATES: Record<string, { base_kg: number; price_jpy_per_kg: number }> = {
+  skincare: { base_kg: 0.3, price_jpy_per_kg: 1500 },
+  obat: { base_kg: 0.3, price_jpy_per_kg: 1400 },
+  food: { base_kg: 0.3, price_jpy_per_kg: 1400 },
+  fashion: { base_kg: 0.5, price_jpy_per_kg: 1200 },
+  sepatu: { base_kg: 0.8, price_jpy_per_kg: 1200 },
+  jam: { base_kg: 0.4, price_jpy_per_kg: 1300 },
+  elektronik: { base_kg: 0.5, price_jpy_per_kg: 1500 },
+  general: { base_kg: 0.5, price_jpy_per_kg: 1300 },
 };
 
-export function getShippingRate(category: string): number {
-  return SHIPPING_RATES[category] ?? 125_000;
+export function getShippingRate(category: string, jpyToIdr: number): number {
+  const cat = category.toLowerCase().strip ? category.toLowerCase().trim() : category.toLowerCase();
+  const rate_info = SHIPPING_RATES[cat] ?? SHIPPING_RATES.general;
+  const cost_jpy = rate_info.base_kg * rate_info.price_jpy_per_kg;
+  return Math.round(cost_jpy * jpyToIdr);
 }
 
 export function formatRp(amount: number): string {
@@ -64,8 +70,8 @@ export function calculatePriceEstimate(params: {
     priceJpy ?? (priceIdr != null ? Math.round(priceIdr / jpyToIdr) : 0);
 
   const fee = calculateFee(resolvedPriceIdr);
-  const shipping = getShippingRate(shippingCategory ?? "general");
-  const tax = Math.round((resolvedPriceIdr + fee) * 0.11);
+  const shipping = getShippingRate(shippingCategory ?? "general", jpyToIdr);
+  const tax = Math.round(resolvedPriceIdr * 0.11);
   const total = resolvedPriceIdr + fee + shipping + tax;
 
   return {

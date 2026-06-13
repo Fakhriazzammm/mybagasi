@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { createInvoice } from "@/lib/mayar";
 import { supabase } from "@/lib/supabase";
+import { appConfig } from "@/lib/runtime-config";
 import { calculatePriceEstimate, formatRp, getShippingRate } from "@/lib/pricing";
 import {
   CreditCard,
@@ -68,9 +69,9 @@ function calculateCartTotals(items: CartItemState[]) {
 
   // Use the first item's shipping category, fallback to general
   const shippingCategory = items[0]?.shipping_category ?? "general";
-  const shipping = getShippingRate(shippingCategory);
+  const shipping = getShippingRate(shippingCategory, appConfig.pricing.jpyToIdr);
 
-  const tax = Math.round((totalItemPrice + feeService) * 0.11);
+  const tax = Math.round(totalItemPrice * 0.11);
   const grandTotal = totalItemPrice + feeService + shipping + tax;
 
   return { itemSubtotals, totalItemPrice, feeService, shipping, tax, grandTotal };
