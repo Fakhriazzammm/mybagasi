@@ -19,7 +19,7 @@ from .models import BROWSER_HEADERS, ProductData, parse_jpy
 
 
 PRICE_PATTERN = re.compile(
-    r"(?:[¥￥円]|JPY|IDR|Rp|USD|GBP|EUR|\$|£|€)\s?[\d.,]+",
+    r"(?:[¥￥円]|JPY|IDR|Rp|USD|GBP|EUR|\$|£|€)\s?[\d.,]+|[\d,]+(?:\.\d+)?\s*(?:円|yen|JPY|IDR|Rp)",
     re.IGNORECASE,
 )
 TRACKING_PARAMS = re.compile(r"([?&])(utm_[^=&]+|fbclid|gclid|mc_eid|mc_cid)=[^&]*")

@@ -209,6 +209,561 @@ COMMAND_MAP = {
     "/pesanan": "status",
 }
 
+# ─── Invoice creation state machine ────────────────────────
+# Key: user_id (int), Value: dict with step, name, items, msg_id
+_invoice_sessions: dict[int, dict] = {}
+
+INVOICE_STEPS = {
+    "name": "name",
+    "items": "items",
+    "confirm": "confirm",
+}
+
+
+# ─── Invoice creation functions ────────────────────────────
+
+async def _invoice_start(user_id: int, chat_id: int):
+    """Start the invoice creation flow — ask for customer name."""
+    _invoice_sessions[user_id] = {
+        "step": "name",
+        "name": "",
+        "phone": "",
+        "address": "",
+        "email": "",
+        "notes": "",
+        "payment_type": "LUNAS",
+        "items": [],
+        "chat_id": chat_id,
+        "msg_id": None,
+    }
+    await tg_send(
+        chat_id,
+        "🧾 *Buat Invoice Baru*\n\n"
+        "📝 Siapa nama customer?\n\n"
+        "_Ketik nama atau /inv-cancel untuk batal_",
+    )
+
+
+# ─── Generic step handler ─────────────────────────────────
+
+async def _invoice_ask_next(user_id: int):
+    """Advance to the next step after saving current input."""
+    session = _invoice_sessions.get(user_id)
+    if not session:
+        return
+
+    chat_id = session["chat_id"]
+    step = session["step"]
+
+    steps = [
+        ("name", "📝 Siapa nama customer?\n\n_Ketik nama atau /inv-cancel untuk batal_"),
+        ("phone", "📱 Nomor WhatsApp customer?\n\n_Contoh: 08123456789_"),
+        ("address", "📮 Alamat pengiriman?\n\n_Contoh: Jl. Merpati No.5, Jakarta_"),
+        ("email", "✉️ Email customer? (_opsional, langsung enter untuk skip_)"),
+        ("notes", "📝 Catatan kirim? (_opsional, langsung enter untuk skip_)\n_Contoh: Bungkus bubble wrap_"),
+    ]
+
+    idx = -1
+    for i, (s, _) in enumerate(steps):
+        if s == step:
+            idx = i
+            break
+
+    # Find next step
+    next_idx = idx + 1
+    while next_idx < len(steps):
+        next_step, question = steps[next_idx]
+        session["step"] = next_step
+        await tg_send(chat_id, question)
+        return
+
+    # All text steps done → ask payment type
+    session["step"] = "payment_type"
+    await _invoice_ask_payment_type(user_id)
+
+
+async def _invoice_ask_payment_type(user_id: int):
+    """Ask admin to choose DP 50% or LUNAS."""
+    session = _invoice_sessions.get(user_id)
+    if not session:
+        return
+
+    keyboard = [
+        [{"text": "💰 DP 50%", "callback_data": f"invpay:dp:{user_id}"}],
+        [{"text": "💵 LUNAS", "callback_data": f"invpay:lunas:{user_id}"}],
+        [{"text": "❌ Batal", "callback_data": f"invoice:cancel:{user_id}"}],
+    ]
+    await tg_send_with_keyboard(
+        session["chat_id"],
+        "💰 **Metode Pembayaran**\n\nPilih metode pembayaran:",
+        keyboard,
+    )
+
+
+async def _invoice_handle_payment(user_id: int, payment_type: str):
+    """Handle payment type selection — start items."""
+    session = _invoice_sessions.get(user_id)
+    if not session:
+        return
+
+    label = "DP 50%" if payment_type == "dp" else "LUNAS"
+    session["payment_type"] = label
+    session["step"] = "items"
+    await tg_send(
+        session["chat_id"],
+        f"✅ Pembayaran: *{label}*\n\n"
+        "📦 Tambahkan item satu per satu:\n"
+        "Format: `Nama Barang|Harga`\n"
+        "Contoh: `Kaos Anime|150000`\n\n"
+        "Kirim `selesai` jika sudah cukup.\n"
+        "_Ketik /inv-cancel untuk batal_",
+    )
+
+
+async def _invoice_handle_text(user_id: int, text: str):
+    """Route text input to the correct step handler."""
+    session = _invoice_sessions.get(user_id)
+    if not session:
+        return
+
+    step = session["step"]
+    text = text.strip()
+
+    if step == "name":
+        session["name"] = text
+        await tg_send(session["chat_id"], f"✅ Nama: *{text}*")
+        await _invoice_ask_next(user_id)
+
+    elif step == "phone":
+        if text.lower() in ("", "-", "skip", "nope", "tidak"):
+            session["phone"] = ""
+            await tg_send(session["chat_id"], "ℹ️ No. WA: skip (pakai default)")
+        else:
+            session["phone"] = text
+            await tg_send(session["chat_id"], f"✅ No. WA: *{text}*")
+        await _invoice_ask_next(user_id)
+
+    elif step == "address":
+        if text.lower() in ("", "-", "skip", "nope", "tidak"):
+            session["address"] = ""
+            await tg_send(session["chat_id"], "ℹ️ Alamat: skip")
+        else:
+            session["address"] = text
+            await tg_send(session["chat_id"], f"✅ Alamat: *{text}*")
+        await _invoice_ask_next(user_id)
+
+    elif step == "email":
+        if text.lower() in ("", "-", "skip", "nope", "tidak"):
+            session["email"] = ""
+            await tg_send(session["chat_id"], "ℹ️ Email: skip (pakai default)")
+        else:
+            session["email"] = text
+            await tg_send(session["chat_id"], f"✅ Email: *{text}*")
+        await _invoice_ask_next(user_id)
+
+    elif step == "notes":
+        text_clean = text.strip()
+        if text_clean.lower() in ("-", "skip", "nope", "tidak"):
+            session["notes"] = ""
+            await tg_send(session["chat_id"], "ℹ️ Catatan: skip")
+        else:
+            session["notes"] = text_clean if text_clean else ""
+            if text_clean:
+                await tg_send(session["chat_id"], f"✅ Catatan: *{text_clean}*")
+        await _invoice_ask_next(user_id)
+
+    elif step == "items":
+        await _invoice_handle_item(user_id, text)
+
+
+async def _invoice_handle_item(user_id: int, text: str):
+    """Handle item input — smart parse + AI fallback."""
+    session = _invoice_sessions.get(user_id)
+    if not session:
+        return
+
+    text = text.strip()
+    if text.lower() == "selesai":
+        if not session["items"]:
+            await tg_send(
+                session["chat_id"],
+                "⚠️ Belum ada item. Tambahkan minimal 1 item.",
+            )
+            return
+        await _invoice_show_confirm(user_id)
+        return
+
+    # Try smart parsing first
+    name, price = _parse_item_natural(text)
+    if name and price > 0:
+        session["items"].append({"name": name, "price": price, "quantity": 1})
+        total_items = len(session["items"])
+        total_price = sum(i["price"] * i["quantity"] for i in session["items"])
+        await tg_send(
+            session["chat_id"],
+            f"✅ *{name}* — Rp{price:,}\n"
+            f"📦 Total: {total_items} item | 💰 Rp{total_price:,}\n\n"
+            "_Kirim item lagi atau `selesai` untuk lanjut_",
+        )
+        return
+
+    # Fallback: try AI parsing via DeepSeek
+    result = await _parse_item_with_ai(text)
+    if result and result.get("name") and result.get("price", 0) > 0:
+        name = result["name"]
+        price = result["price"]
+        session["items"].append({"name": name, "price": price, "quantity": 1})
+        total_items = len(session["items"])
+        total_price = sum(i["price"] * i["quantity"] for i in session["items"])
+        await tg_send(
+            session["chat_id"],
+            f"✅ *{name}* — Rp{price:,}\n"
+            f"📦 Total: {total_items} item | 💰 Rp{total_price:,}\n\n"
+            "_Kirim item lagi atau `selesai` untuk lanjut_",
+        )
+        return
+
+    # Both failed — show error
+    await tg_send(
+        session["chat_id"],
+        "❌ Tidak bisa membaca item. Gunakan format:\n"
+        "• `Nama Barang|Harga` — contoh: `Kaos Anime|150000`\n"
+        "• `Nama Barang Harga` — contoh: `Baju GU 150000`\n"
+        "• `Nama Barang Rp Harga` — contoh: `Sepatu Nike Rp850.000`",
+    )
+
+
+def _parse_item_natural(text: str) -> tuple[str | None, int]:
+    """Parse item from natural language without AI.
+    
+    Handles formats:
+    - Nama|Harga (existing)
+    - Nama Harga (number at end)
+    - Nama Rp Harga (with Rp)
+    - Nama harga N (with "harga" keyword)
+    - Nama RpN (no space after Rp)
+    """
+    import re
+
+    # Format 1: pipe separator (existing)
+    if "|" in text:
+        parts = text.rsplit("|", 1)
+        name = parts[0].strip()
+        try:
+            price_str = parts[1].strip().replace(".", "").replace(",", "").replace("Rp", "").replace("rp", "")
+            price = int(price_str)
+            if price > 0 and name:
+                return name, price
+        except ValueError:
+            pass
+
+    # Clean up Rp/rp variations (Rp25000, Rp 25000, Rp.25000, etc)
+    clean = re.sub(r'\brp\b\.?\s*', '', text, flags=re.IGNORECASE).strip()
+    # Also handle Rp without space (Rp25000)
+    clean = re.sub(r'rp(?=\d)', '', clean, flags=re.IGNORECASE).strip()
+
+    # Format 2: find "harga" keyword
+    # "Baju GU harga 150.000" → name = "Baju GU", price = 150000
+    harga_match = re.search(r'\bharga\b', clean, re.IGNORECASE)
+    if harga_match:
+        name_part = clean[:harga_match.start()].strip()
+        price_part = clean[harga_match.end():].strip()
+        price = _extract_price(price_part)
+        if price and name_part:
+            return name_part, price
+
+    # Format 3: find number at the end
+    # "Baju GU 150.000" or "Gacha Figure 350000"
+    # Strategy: extract last number, split text at that point
+    matches = list(re.finditer(r'(\d[\d.,]*)', clean))
+    if not matches:
+        return None, 0
+
+    last_match = matches[-1]
+    price_str = last_match.group()
+    price_int = int(price_str.replace(".", "").replace(",", ""))
+
+    if price_int <= 0:
+        return None, 0
+
+    # Name is everything before the last number
+    name_raw = clean[:last_match.start()].strip()
+    if name_raw:
+        return name_raw, price_int
+
+    return None, 0
+
+
+def _extract_price(text: str) -> int | None:
+    """Extract integer price from text, handling thousand separators."""
+    import re
+    # Match: continuous digits and thousand separators
+    # Handles: 150000, 150.000, 2.500.000, 150,000
+    matches = re.findall(r'(\d[\d.,]*)', text)
+    if not matches:
+        return None
+    # Take the last number (price usually at end)
+    last = matches[-1]
+    # Remove thousand separators
+    price_str = last.replace(".", "").replace(",", "")
+    try:
+        price = int(price_str)
+        return price
+    except ValueError:
+        return None
+
+
+async def _parse_item_with_ai(text: str) -> dict | None:
+    """Use DeepSeek AI to parse item text into structured data."""
+    api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+    if not api_key:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Extract item name and price from Indonesian shopping text. "
+                                "Return ONLY valid JSON: {\"name\": \"item name\", \"price\": 123456}. "
+                                "Price in Indonesian Rupiah (IDR), integer only, no thousand separators. "
+                                "Examples:\n"
+                                "- 'Baju GU Harga 150.000' → {\"name\": \"Baju GU\", \"price\": 150000}\n"
+                                "- 'Kaos Anime 85000' → {\"name\": \"Kaos Anime\", \"price\": 85000}\n"
+                                "- 'Sepatu Nike Rp 2.500.000' → {\"name\": \"Sepatu Nike\", \"price\": 2500000}\n"
+                                "- 'Gacha Figure 350000' → {\"name\": \"Gacha Figure\", \"price\": 350000}"
+                            ),
+                        },
+                        {"role": "user", "content": text},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 100,
+                },
+            )
+            if r.is_success:
+                data = r.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                # Extract JSON from response
+                import json as _json
+                # Try direct parse
+                try:
+                    return _json.loads(content)
+                except _json.JSONDecodeError:
+                    pass
+                # Try to find JSON in code block
+                if "```" in content:
+                    json_str = content.split("```")[1]
+                    if json_str.startswith("json"):
+                        json_str = json_str[4:]
+                    try:
+                        return _json.loads(json_str.strip())
+                    except _json.JSONDecodeError:
+                        pass
+                # Try to find {...} pattern
+                import re
+                brace_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if brace_match:
+                    try:
+                        return _json.loads(brace_match.group())
+                    except _json.JSONDecodeError:
+                        pass
+    except Exception as e:
+        log.warning(f"AI parse error: {e}")
+
+    return None
+
+
+async def _invoice_show_confirm(user_id: int):
+    """Show invoice summary and ask for confirmation."""
+    session = _invoice_sessions.get(user_id)
+    if not session:
+        return
+
+    session["step"] = "confirm"
+    items_list = "\n".join(
+        f"• {i['name']} × {i['quantity']} — Rp{i['price']:,}"
+        for i in session["items"]
+    )
+    total_price = sum(i["price"] * i["quantity"] for i in session["items"])
+
+    # Optional fields
+    parts = [f"👤 *{session['name']}*"]
+    if session["phone"]:
+        parts.append(f"📱 {session['phone']}")
+    if session["address"]:
+        parts.append(f"📮 {session['address']}")
+    if session["email"]:
+        parts.append(f"✉️ {session['email']}")
+    if session["notes"]:
+        parts.append(f"📝 {session['notes']}")
+
+    text = (
+        f"🧾 *Konfirmasi Invoice*\n\n"
+        f"{' | '.join(parts)}\n"
+        f"💰 *{session['payment_type']}*\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"{items_list}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"💰 *Total: Rp{total_price:,}*\n\n"
+        f"Konfirmasi untuk membuat invoice?"
+    )
+
+    keyboard = [
+        [{"text": "✅ Buat Invoice", "callback_data": f"invoice:create:{user_id}"}],
+        [{"text": "❌ Batal", "callback_data": f"invoice:cancel:{user_id}"}],
+    ]
+
+    sent = await tg_send_with_keyboard(session["chat_id"], text, keyboard)
+    if sent:
+        result = sent.get("result", {})
+        session["msg_id"] = result.get("message_id")
+
+
+async def _invoice_create_via_mayar(user_id: int) -> bool:
+    """Call scraper's mayar endpoint to create the invoice."""
+    session = _invoice_sessions.get(user_id)
+    if not session:
+        await tg_send(user_id, "❌ Sesi invoice tidak ditemukan.")
+        return False
+
+    chat_id = session["chat_id"]
+    name = session["name"]
+    phone = session.get("phone", "")
+    address = session.get("address", "")
+    email = session.get("email", "")
+    notes = session.get("notes", "")
+    payment_type = session.get("payment_type", "LUNAS")
+    items = session["items"]
+    total_price = sum(i["price"] * i["quantity"] for i in items)
+
+    # Build custom fields for admin reference
+    custom_fields = [
+        {"key": "user_id", "value": f"admin_{user_id}", "text": "Admin ID"},
+        {"key": "telegram_id", "value": str(chat_id), "text": "Telegram Group"},
+        {"key": "source", "value": "admin_bot", "text": "Source"},
+        {"key": "payment_type", "value": payment_type, "text": "Pembayaran"},
+    ]
+    if phone:
+        custom_fields.append({"key": "phone", "value": phone, "text": "No. WA"})
+    if address:
+        custom_fields.append({"key": "address", "value": address, "text": "Alamat"})
+    if notes:
+        custom_fields.append({"key": "notes", "value": notes, "text": "Catatan"})
+
+    # Use real email if provided, otherwise fallback
+    use_email = email or os.getenv("MAYAR_DEFAULT_EMAIL", "contact@djiwatentram.com")
+    use_mobile = phone or os.getenv("MAYAR_DEFAULT_MOBILE", "081234567890")
+
+    payload = {
+        "name": f"Invoice — {name}",
+        "description": f"Invoice jastip untuk {name} — {payment_type}",
+        "email": use_email,
+        "mobile": use_mobile,
+        "custom_field": custom_fields,
+        "items": items,
+        "redirectUrl": "https://mybagasi.my.id/payment/status",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                f"{SCRAPER_URL}/mayar/invoice/create",
+                json=payload,
+            )
+            if not r.is_success:
+                error_body = r.text[:500]
+                log.error(f"Mayar invoice create failed ({r.status_code}): {error_body}")
+                await tg_send(
+                    chat_id,
+                    f"❌ Gagal create invoice (HTTP {r.status_code}). Coba lagi nanti.",
+                )
+                return False
+
+            result = r.json()
+            mayar_data = result.get("data", result) if isinstance(result, dict) else {}
+            invoice_url = (
+                mayar_data.get("url")
+                or mayar_data.get("link")
+                or mayar_data.get("invoice_url")
+                or ""
+            )
+            mayar_id = mayar_data.get("id") or (isinstance(result, dict) and result.get("id", ""))
+
+            # Build nice summary
+            items_detail = "\n".join(
+                f"• {i['name']} — Rp{i['price']:,} × {i['quantity']}"
+                for i in items
+            )
+            summary = (
+                f"✅ *Invoice Berhasil Dibuat!*\n\n"
+                f"👤 *{name}*\n"
+                f"💰 {payment_type}\n"
+                f"━━━━━━━━━━━\n"
+                f"{items_detail}\n"
+                f"━━━━━━━━━━━\n"
+                f"💰 *Total: Rp{total_price:,}*\n\n"
+                f"🔗 [Link Invoice]({invoice_url})"
+            )
+
+            await tg_send(chat_id, summary)
+
+            if mayar_id:
+                log.info(f"Invoice created: {mayar_id} — {invoice_url}")
+
+            # Cleanup session
+            _invoice_sessions.pop(user_id, None)
+            return True
+
+    except Exception as e:
+        log.error(f"invoice_create error: {e}")
+        await tg_send(chat_id, f"❌ Error: {e}")
+        return False
+
+
+async def _invoice_cancel(user_id: int, chat_id: int | None = None):
+    """Cancel the invoice creation flow."""
+    session = _invoice_sessions.pop(user_id, None)
+    target = chat_id or (session["chat_id"] if session else user_id)
+    await tg_send(target, "❌ Pembuatan invoice dibatalkan.")
+
+
+# ─── Reply keyboard ───────────────────────────────────────
+
+MAIN_KEYBOARD = {
+    "keyboard": [
+        [{"text": "🧾 Buat Invoice"}],
+        [{"text": "📋 Daftar Pesanan"}],
+    ],
+    "resize_keyboard": True,
+    "one_time_keyboard": False,
+}
+
+async def _send_main_keyboard(chat_id: int):
+    """Send persistent reply keyboard to admin group."""
+    url = f"{API_BASE}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(url, json={
+                "chat_id": chat_id,
+                "text": "🏠 *Menu Admin*\n\nKetuk tombol di bawah untuk mulai:",
+                "parse_mode": "Markdown",
+                "reply_markup": MAIN_KEYBOARD,
+            })
+    except Exception as e:
+        log.error(f"send_keyboard error: {e}")
+
 
 # ─── Main bot loop ───────────────────────────────────────
 
@@ -474,6 +1029,9 @@ async def main():
     log.info(f"Admin group: {ADMIN_GROUP_ID}")
     log.info(f"Scraper URL: {SCRAPER_URL}")
     
+    # Send startup keyboard to admin group
+    await _send_main_keyboard(ADMIN_GROUP_ID)
+    
     offset = 0
     last_notification_check = 0
     notification_interval = 30  # Check every 30 seconds
@@ -504,6 +1062,26 @@ async def main():
                     
                     if data and data.startswith("order:"):
                         await handle_callback(data, chat_id, msg_id, cq_id)
+                    elif data and data.startswith("invoice:create:"):
+                        parts = data.split(":", 2)
+                        if len(parts) >= 3:
+                            uid = int(parts[2])
+                            await tg_answer_callback(cq_id, "⏳ Membuat invoice...")
+                            await _invoice_create_via_mayar(uid)
+                    elif data and data.startswith("invoice:cancel:"):
+                        parts = data.split(":", 2)
+                        if len(parts) >= 3:
+                            uid = int(parts[2])
+                            await tg_answer_callback(cq_id, "❌ Dibatalkan")
+                            await _invoice_cancel(uid, chat_id)
+                    elif data and data.startswith("invpay:"):
+                        parts = data.split(":", 2)
+                        if len(parts) >= 3:
+                            uid = int(parts[2])
+                            pay_type = parts[1]
+                            label = "DP 50%" if pay_type == "dp" else "LUNAS"
+                            await tg_answer_callback(cq_id, f"✅ {label}")
+                            await _invoice_handle_payment(uid, pay_type)
                     
                     continue
                 
@@ -515,16 +1093,66 @@ async def main():
                 chat_id = msg.get("chat", {}).get("id", 0)
                 msg_id = msg.get("message_id", 0)
                 text = msg.get("text", "").strip()
+                from_id = msg.get("from", {}).get("id", 0)
                 
                 # Only respond in the admin group
                 if chat_id != ADMIN_GROUP_ID:
                     continue
                 
-                # Only respond to messages that look like commands
+                # ── Invoice conversation flow (non-command messages) ──
                 if not text.startswith("/"):
+                    # Check reply keyboard buttons first
+                    if text == "🧾 Buat Invoice":
+                        await _invoice_start(from_id, chat_id)
+                        continue
+                    if text == "📋 Daftar Pesanan":
+                        cmd_parsed, order_id, note = parse_command("/pesanan")
+                        await handle_command(cmd_parsed, order_id, note, chat_id, msg_id)
+                        continue
+
+                    # Invoice state machine
+                    if from_id in _invoice_sessions:
+                        session = _invoice_sessions[from_id]
+                        if session["step"] == "items":
+                            await _invoice_handle_item(from_id, text)
+                        elif session["step"] in ("name", "phone", "address", "email", "notes"):
+                            await _invoice_handle_text(from_id, text)
+                        elif session["step"] == "confirm":
+                            await tg_send(chat_id, "Gunakan tombol di atas untuk konfirmasi atau batal.")
+                        elif session["step"] == "payment_type":
+                            await tg_send(chat_id, "Pilih metode pembayaran via tombol di atas ☝️")
                     continue
                 
                 log.info(f"Command from {chat_id}: {text[:50]}")
+                
+                # ── Menu / Start ──
+                if text.startswith("/start") or text.startswith("/menu"):
+                    await _send_main_keyboard(chat_id)
+                    continue
+                
+                # ── Map reply keyboard buttons ──
+                if text == "🧾 Buat Invoice":
+                    await _invoice_start(from_id, chat_id)
+                    continue
+                if text == "📋 Daftar Pesanan":
+                    cmd = "/pesanan"
+                    cmd_parsed, order_id, note = parse_command(cmd)
+                    await handle_command(cmd_parsed, order_id, note, chat_id, msg_id)
+                    continue
+                
+                # ── Invoice commands ──
+                if text.startswith("/inv") or text.startswith("/invoice"):
+                    cmd_clean = text.split()[0].lower()
+                    if "@" in cmd_clean:
+                        cmd_clean = cmd_clean.split("@")[0]
+                    
+                    if cmd_clean in ("/inv-cancel", "/invoice-cancel"):
+                        await _invoice_cancel(from_id, chat_id)
+                    else:
+                        await _invoice_start(from_id, chat_id)
+                    continue
+                
+                # ── Regular order commands ──
                 cmd, order_id, note = parse_command(text)
                 await handle_command(cmd, order_id, note, chat_id, msg_id)
             

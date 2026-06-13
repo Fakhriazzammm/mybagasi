@@ -5,7 +5,7 @@
     "user_id": "test-uuid",
     "mayar_invoice_id": "inv-001",
     "invoice_url": "https://zantara.myr.id/invoices/test123",
-    "status": "unpaid",
+    "status": "expired",
     "total_idr": 326000,
     "items": [
       {
@@ -24,7 +24,7 @@
     "user_id": "unknown",
     "mayar_invoice_id": "218bae66-c581-4d5d-a41a-5039181fcc64",
     "invoice_url": "https://zantara.myr.id/invoices/cosre8d096",
-    "status": "unpaid",
+    "status": "expired",
     "total_idr": 1842350,
     "items": [
       {
@@ -53,7 +53,7 @@
     "user_id": "",
     "mayar_invoice_id": "2a3a3b8f-84fb-4a1e-a5dd-3bb65a5b6147",
     "invoice_url": "https://zantara.myr.id/invoices/7t88jc9fha",
-    "status": "unpaid",
+    "status": "expired",
     "total_idr": 275000,
     "items": [
       {

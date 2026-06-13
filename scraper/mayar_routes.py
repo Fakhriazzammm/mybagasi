@@ -190,6 +190,8 @@ async def create_invoice(request: Request):
         resp = await client.post(
             f"{_BASE}/invoice/create", headers=_headers(), json=body
         )
+    if not resp.is_success:
+        print(f"[MAYAR PROXY] invoice/create failed: {resp.status_code} — {resp.text[:500]}")
     _raise(resp)
     mayar_result = resp.json()
 

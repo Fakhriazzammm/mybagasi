@@ -10,19 +10,23 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .dispatcher import scrape_url
-from .generic import scrape_generic_http
-from .models import ProductData
+from .generic import scrape_generic_http, _find_price_from_text
+from .models import ProductData, parse_jpy
 
 
 SEARCH_DOMAINS = [
     "rakuten.co.jp",
     "amazon.co.jp",
     "zozo.jp",
+    "shopping.yahoo.co.jp",
+    "store.shopping.yahoo.co.jp",
 ]
 
 MARKETPLACE_SEARCH_URLS = [
     "https://search.rakuten.co.jp/search/mall/{q}/",
     "https://www.amazon.co.jp/s?k={q}",
+    "https://zozo.jp/search/?p={q}&p_stype=1",
+    "https://shopping.yahoo.co.jp/search?p={q}",
 ]
 
 # In-memory cache for scraped URLs (simple LRU-like)
@@ -137,10 +141,10 @@ async def _scrape_candidate_curl_first(url: str, tokens: list[str]) -> ProductDa
 
     await _wait_rate_limit(url)
 
-    # Try lightweight HTTP scraper first (faster timeout)
+    # Try lightweight HTTP scraper first (fast timeout)
     try:
-        light = await asyncio.wait_for(scrape_generic_http(url), timeout=6)
-        if _usable_product(light) and _relevant_to_keyword(light, tokens):
+        light = await asyncio.wait_for(scrape_generic_http(url), timeout=5)
+        if _usable_product(light):
             _set_cached(url, light)
             return light
     except asyncio.TimeoutError:
@@ -148,10 +152,10 @@ async def _scrape_candidate_curl_first(url: str, tokens: list[str]) -> ProductDa
     except Exception:
         pass
 
-    # Fallback to full scraper with longer timeout
+    # Fallback to full scraper with longer timeout (18s to accommodate Rakuten/Amazon)
     await _wait_rate_limit(url)
     try:
-        full = await asyncio.wait_for(scrape_url(url), timeout=15)
+        full = await asyncio.wait_for(scrape_url(url), timeout=18)
         if _usable_product(full):
             _set_cached(url, full)
             return full
@@ -160,7 +164,68 @@ async def _scrape_candidate_curl_first(url: str, tokens: list[str]) -> ProductDa
     except Exception:
         pass
 
+    # Fallback: try Jina AI Reader (bypasses CDN blocks like Akamai/Cloudflare)
+    await _wait_rate_limit(url)
+    jina_result = await _scrape_via_jina(url)
+    if jina_result:
+        _set_cached(url, jina_result)
+        return jina_result
+
     return None
+
+
+async def _scrape_via_jina(url: str) -> ProductData | None:
+    """Use Jina AI Reader to scrape a URL. Bypasses most CDN blocks (Akamai, Cloudflare)."""
+    mirror_url = f"https://r.jina.ai/http://{url.replace('https://', '').replace('http://', '')}"
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            resp = await client.get(mirror_url, headers={"Accept": "text/plain"})
+            resp.raise_for_status()
+        text = resp.text or ""
+        if not text.strip():
+            return None
+
+        title_match = re.search(r"^Title:\s*(.+)$", text, re.MULTILINE)
+        title = title_match.group(1).strip() if title_match else ""
+
+        price_text = _find_price_from_text(text)
+
+        img_matches = re.findall(r"!\[[^\]]*\]\((https?://[^)]+)\)", text)
+        images = []
+        seen: set[str] = set()
+        for img in img_matches[:6]:
+            if img not in seen:
+                seen.add(img)
+                images.append(img)
+
+        if not title and not price_text and not images:
+            return None
+
+        normalized_title = (title or "").strip().lower()
+        bad_titles = {
+            "privacy settings", "blocked page", "captcha interception",
+            "access denied", "page not found", "not found",
+        }
+        if normalized_title in bad_titles and not price_text and len(images) < 2:
+            return None
+
+        marketplace = (urlparse(url).hostname or "").lower()
+        if marketplace.startswith("www."):
+            marketplace = marketplace[4:]
+
+        return ProductData(
+            title=title or "Unknown Product",
+            price_jpy=parse_jpy(price_text),
+            price_display=price_text or "",
+            images=images,
+            description=text[:600] if text else None,
+            marketplace=marketplace,
+            url=url,
+            confidence="medium" if (title and (price_text or images)) else "low",
+            scrape_reason_code="JINA_AI",
+        )
+    except Exception:
+        return None
 
 
 async def search_products_by_keyword(
@@ -174,13 +239,17 @@ async def search_products_by_keyword(
         q += f" {condition.strip()}"
     if size and size.strip():
         q += f" size {size.strip()}"
-    q += " japan marketplace"
+    q += " japan buy"
 
     candidates: list[str] = []
-    # Prioritize direct marketplace search (DuckDuckGo blocked by CAPTCHA)
+    # Prioritize direct marketplace search
     candidates.extend(await _collect_candidates_from_marketplace_search(q))
-    # DuckDuckGo is currently blocked by CAPTCHA on this IP - skip for now
-    # candidates.extend(await _collect_candidates_from_duckduckgo(q))
+    # If marketplace search returned nothing, try Google
+    if not candidates:
+        candidates.extend(await _collect_candidates_from_google(q))
+    # Fallback: try Bing
+    if not candidates:
+        candidates.extend(await _collect_candidates_from_bing(q))
     # de-duplicate while preserving order
     deduped: list[str] = []
     seen: set[str] = set()
@@ -188,7 +257,7 @@ async def search_products_by_keyword(
         if c not in seen:
             seen.add(c)
             deduped.append(c)
-    candidates = deduped[:8]  # Reduced from 12 to avoid timeout
+    candidates = deduped[:4]
 
     if not candidates:
         return []
@@ -196,7 +265,7 @@ async def search_products_by_keyword(
     tokens = _keyword_tokens(keyword)
 
     # Parallel scraping with semaphore to limit concurrency
-    semaphore = asyncio.Semaphore(4)  # 4 concurrent scrapes
+    semaphore = asyncio.Semaphore(6)  # 6 concurrent scrapes
 
     async def scrape_with_semaphore(url: str) -> ProductData | None:
         async with semaphore:
@@ -227,6 +296,77 @@ async def search_products_by_keyword(
     if products:
         return products[:limit]
     return broad_products[:limit]
+
+
+async def _collect_candidates_from_google(query: str) -> list[str]:
+    """Search Google for product URLs, works more reliably than DuckDuckGo."""
+    search_url = f"https://www.google.com/search?q={quote_plus(query)}&hl=en&num=15"
+    import random
+    headers = {
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,ja;q=0.8",
+        "DNT": "1",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
+            resp = await client.get(search_url)
+            if resp.status_code != 200:
+                return []
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(resp.text, "lxml")
+    candidates: list[str] = []
+
+    for a in soup.select("a[href]"):
+        href = a.get("href", "").strip()
+        if href.startswith("/url?q="):
+            href = href.split("/url?q=")[1].split("&")[0]
+            href = _clean_url(href)
+        if not href.startswith("http"):
+            continue
+        if not _is_ecommerce_url(href):
+            continue
+        if href not in candidates:
+            candidates.append(href)
+
+    return candidates
+
+
+async def _collect_candidates_from_bing(query: str) -> list[str]:
+    """Search Bing for product URLs."""
+    search_url = f"https://www.bing.com/search?q={quote_plus(query)}"
+    import random
+    headers = {
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,ja;q=0.8",
+        "DNT": "1",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
+            resp = await client.get(search_url)
+            if resp.status_code != 200:
+                return []
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(resp.text, "lxml")
+    candidates: list[str] = []
+
+    for a in soup.select("a[href]"):
+        href = a.get("href", "").strip()
+        if not href.startswith("http"):
+            continue
+        if not _is_ecommerce_url(href):
+            continue
+        if href not in candidates:
+            candidates.append(href)
+
+    return candidates
 
 
 async def _collect_candidates_from_duckduckgo(query: str) -> list[str]:
@@ -304,7 +444,7 @@ async def _collect_candidates_from_marketplace_search(query: str) -> list[str]:
         "Connection": "keep-alive",
     }
     candidates: list[str] = []
-    async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers=headers) as client:
         for template in MARKETPLACE_SEARCH_URLS:
             try:
                 url = template.format(q=encoded_query)
@@ -332,11 +472,22 @@ async def _collect_candidates_from_marketplace_search(query: str) -> list[str]:
 def _extract_ecommerce_links_from_html(html: str) -> list[str]:
     patterns = [
         # Rakuten (both formats)
-        r"https://item\.rakuten\.co\.jp/[\w-]+/[\w-]+/?",
-        r"https://product\.rakuten\.co\.jp/product/[\w-]+/",
-        # Amazon (DP pages)
-        r"https://www\.amazon\.co\.jp/[\w-]+/dp/[A-Z0-9]{10}(?:/|\?|$)",
-        r"https://www\.amazon\.co\.jp/dp/[A-Z0-9]{10}(?:/|\?|$)",
+        r"https://item\.rakuten\.co\.jp/[\w-]+/[\w-]+/?(?:\?|$|[\s<>\"'])",
+        r"https://product\.rakuten\.co\.jp/product/[\w-]+/?(?:\?|$|[\s<>\"'])",
+        # Amazon (DP pages + gp/product)
+        r"https://www\.amazon\.co\.jp/[\w-]+/dp/[A-Z0-9]{10}(?:/|\?|$|[\s<>\"'])",
+        r"https://www\.amazon\.co\.jp/dp/[A-Z0-9]{10}(?:/|\?|$|[\s<>\"'])",
+        r"https://www\.amazon\.co\.jp/gp/product/[A-Z0-9]{10}(?:/|\?|$|[\s<>\"'])",
+        # ZOZO (shop/goods format + direct goods)
+        r"https://zozo\.jp/shop/[\w-]+/goods/[\w-]+(?:/|\?|$|[\s<>\"'])",
+        r"https://zozo\.jp/shop/[\w-]+/product/[\w-]+(?:/|\?|$|[\s<>\"'])",
+        r"https://zozo\.jp/[\w-]+/goods/\d+(?:/|\?|$|[\s<>\"'])",
+        r"https://zozo\.jp/goods/\d+(?:/|\?|$|[\s<>\"'])",
+        # Yahoo Shopping store products
+        r"https://store\.shopping\.yahoo\.co\.jp/[\w-]+/[\w-]+(?:\.html)?(?:/|\?|$|[\s<>\"'])",
+        r"https://store\.shopping\.yahoo\.co\.jp/[\w-]+/\d+(?:/|\?|$|[\s<>\"'])",
+        # Yahoo Shopping general
+        r"https://shopping\.yahoo\.co\.jp/[\w-]+/\d+(?:/|\?|$|[\s<>\"'])",
     ]
     links: list[str] = []
     for pattern in patterns:

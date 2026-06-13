@@ -184,7 +184,7 @@ async def link_telegram(user_id: str, telegram_chat_id: int) -> bool:
             r = await client.patch(
                 f"{SUPABASE_URL}/rest/v1/profiles",
                 params={"id": f"eq.{user_id}"},
-                json={"telegram_id": telegram_chat_id},
+                json={"telegram_id": telegram_chat_id, "last_active_at": datetime.now(timezone.utc).isoformat()},
                 headers=headers,
             )
             return r.status_code in (200, 204)
@@ -207,13 +207,76 @@ async def unlink_telegram(telegram_chat_id: int) -> bool:
         log.error(f"unlink_telegram error: {e}")
         return False
 
+
+# ─── Session management (24h inactivity expiry) ──────────
+
+SESSION_TIMEOUT_HOURS = 24
+SESSION_TIMEOUT_SECONDS = SESSION_TIMEOUT_HOURS * 3600
+SESSION_CACHE: dict[int, float] = {}  # chat_id → last_active_timestamp
+
+async def _update_last_active(chat_id: int):
+    """Update last_active_at in DB + memory cache."""
+    import time
+    now = time.time()
+    SESSION_CACHE[chat_id] = now
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal"}
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/profiles",
+                params={"telegram_id": f"eq.{chat_id}"},
+                json={"last_active_at": datetime.now(timezone.utc).isoformat()},
+                headers=headers,
+            )
+    except Exception as e:
+        log.warning(f"update_last_active error: {e}")
+
+async def _is_session_valid(chat_id: int) -> bool:
+    """Check if user's session is still valid (within 24h inactivity)."""
+    import time
+    now = time.time()
+    
+    # Check memory cache first (fast path)
+    cached = SESSION_CACHE.get(chat_id)
+    if cached and (now - cached) < SESSION_TIMEOUT_SECONDS:
+        return True
+    
+    # Check DB
+    try:
+        user = await lookup_user_by_telegram_id(chat_id)
+        if not user:
+            return False
+        last_active = user.get("last_active_at")
+        if not last_active:
+            return True  # No record = first time, allow
+        if isinstance(last_active, str):
+            last = datetime.fromisoformat(last_active.replace("Z", "+00:00"))
+            if (datetime.now(timezone.utc) - last).total_seconds() > SESSION_TIMEOUT_SECONDS:
+                return False  # Expired
+            SESSION_CACHE[chat_id] = last.timestamp()  # Cache it
+            return True
+    except Exception as e:
+        log.warning(f"session check error: {e}")
+    return True  # On error, allow through
+
+async def _notify_session_expired(chat_id: int):
+    """Send expiry notice and clear keyboard."""
+    empty_kb = {"keyboard": [], "resize_keyboard": True}
+    await tg_send(chat_id,
+        "🔐 *Sesi kamu sudah habis.*\n\n"
+        "Demi keamanan, sesi login otomatis berakhir "
+        f"setelah {SESSION_TIMEOUT_HOURS} jam tidak ada aktivitas.\n\n"
+        "Ketik `/login` untuk masuk lagi.",
+        reply_markup=empty_kb)
+
+
 async def lookup_user_by_telegram_id(telegram_chat_id: int) -> dict | None:
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.get(
                 f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"telegram_id": f"eq.{telegram_chat_id}", "select": "id,name,email,telegram_id,telegram_token,role", "limit": 1},
+                params={"telegram_id": f"eq.{telegram_chat_id}", "select": "id,name,email,telegram_id,telegram_token,role,last_active_at", "limit": 1},
                 headers=headers,
             )
             if r.status_code == 200 and r.json():
@@ -652,7 +715,7 @@ async def scraper_scrape(url: str) -> dict:
 
 async def scraper_search(keyword: str, limit: int = 6) -> dict:
     try:
-        async with httpx.AsyncClient(timeout=45) as client:
+        async with httpx.AsyncClient(timeout=25) as client:
             r = await client.post(f"{SCRAPER_URL}/search", json={"keyword": keyword, "limit": limit})
             if r.status_code == 200:
                 return r.json()
@@ -674,18 +737,31 @@ async def create_payment_invoice(data: dict) -> dict:
 
 SYSTEM_PROMPT = """Kamu adalah MyBagasi AI, asisten personal shopper untuk produk-produk dari Jepang.
 
+GAYA RESPON:
+- **SINGKAT & PADAT** — langsung ke inti, maksimal 2 paragraf
+- **JANGAN pakai sapaan** (jangan "Kak", "Azzam", "Halo", "Kakak")
+- **JANGAN pakai emoji** di teks balasan (kecuali ---PHOTO:...--- marker)
+- **JANGAN tawarkan opsi/saran alternatif** yang panjang — cukup tanya "Mau cari produk lain?"
+- **JANGAN kalimat penghibur** (jangan "Jangan khawatir", "Tapi tenang", "Tetapi", dll)
+- Balasan langsung, lugas, tanpa basa-basi
+
+KETIKA TIDAK DITEMUKAN:
+- Balas singkat: "Produk [nama] tidak ditemukan. Mau cari produk lain?"
+- JANGAN listing alternatif brand/rekomendasi
+
 TUGAS KAMU:
 - Membantu pelanggan Indonesia membeli produk dari Jepang
 - Cari **harga resmi/retail** dari **Amazon JP, Rakuten, toko official** (baru, original)
 - ⛔ JANGAN GUNAKAN Yahoo Auction, Yahoo Shopping, atau PayPay Flea Market
-- Jika hasil pencarian hanya dari Yahoo/second, KATAKAN "Tidak ditemukan produk baru dari toko resmi"
+- Jika hasil pencarian hanya dari Yahoo/second, balas: "Cuma nemu dari marketplace second. Mau cari produk lain?"
 - Memberikan estimasi harga all-in (harga produk + fee jasa + ongkir + pajak)
 - Memproses pembayaran via Mayar
 
-AKSES KATALOG:
+AKSES KATALOG (PRIORITAS #1):
 - MyBagasi punya katalog 300+ produk Jepang populer dengan foto
-- Gunakan search_catalog() untuk cari produk di katalog
-- Katalog berguna untuk rekomendasi instan tanpa scrape
+- ⚡ **WAJIB: Gunakan search_catalog() DAHULU** sebelum scrape marketplace
+- Katalog berguna untuk rekomendasi instan tanpa scrape (lebih cepat!)
+- Hanya gunakan scrape_product / search_product jika catalog tidak menemukan hasil
 - Kategori: Fashion, Makeup, Sepatu, Gacha, Snack, Toys, Disney Store, Donqi Items
 
 KONVERSI & ESTIMASI:
@@ -707,20 +783,20 @@ FORMAT JAWABAN:
 
 Untuk hasil scrape/search berhasil, gunakan format jelas per produk:
 
-📍 *Nama Produk*
-💰 Harga: JPY X (Rp Y)
-🏪 Marketplace: ...
+*Nama Produk*
+Harga: JPY X (Rp Y)
+Marketplace: ...
 
 Estimasi Biaya:
-• Harga Produk: Rp ...
-• Fee Jasa: Rp ...
-• Ongkir: Rp ... (kategori)
-• Pajak: Rp ...
-• Total All-in: Rp ...
+- Harga Produk: Rp ...
+- Fee Jasa: Rp ...
+- Ongkir: Rp ... (kategori)
+- Pajak: Rp ...
+- Total All-in: Rp ...
 
-🔗 Lihat di [nama marketplace](url)
+Lihat di [nama marketplace](url)
 
-*Data tersimpan otomatis ke dashboard kamu!*
+Data tersimpan otomatis ke dashboard kamu!
 
 Jika ada foto produk, tulis:
 ---PHOTO:URL_FOTO_PRODUK---
@@ -734,27 +810,27 @@ CONTOH HASIL MULTI PRODUK:
 
 ---PHOTO:https://example.com/foto.jpg---
 
-🔗 [Lihat di Amazon JP](url)
+[Lihat di Amazon JP](url)
 
 Estimasi Biaya:
-• Harga Produk: Rp1.470.000
-• Fee Jasa: Rp100.000
-• Ongkir: Rp125.000 (fashion)
-• Pajak: Rp195.000
-• Total All-in: Rp1.890.000
+- Harga Produk: Rp1.470.000
+- Fee Jasa: Rp100.000
+- Ongkir: Rp125.000 (fashion)
+- Pajak: Rp195.000
+- Total All-in: Rp1.890.000
 
 2 — *Adizero EVO SL*
 
 ---PHOTO:https://example.com/foto2.jpg---
 
-🔗 [Lihat di Amazon JP](url)
+[Lihat di Amazon JP](url)
 
 Estimasi Biaya:
-• Harga Produk: Rp2.100.000
-• Fee Jasa: Rp100.000
-• Ongkir: Rp125.000 (fashion)
-• Pajak: Rp255.000
-• Total All-in: Rp2.580.000
+- Harga Produk: Rp2.100.000
+- Fee Jasa: Rp100.000
+- Ongkir: Rp125.000 (fashion)
+- Pajak: Rp255.000
+- Total All-in: Rp2.580.000
 
 """
 
@@ -1167,7 +1243,7 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
     if status_msg_id:
         timer_task = asyncio.create_task(status_timer(chat_id, status_msg_id, start_time, status_ref))
     
-    max_turns = 5
+    max_turns = 5  # Up to 4 tool rounds + 1 final response
     for turn in range(max_turns):
         # Update status sesuai turn
         status_texts = {
@@ -1175,13 +1251,14 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
             1: "🔄 *Mengecek harga & ketersediaan...*",
             2: "📊 *Menghitung estimasi biaya...*",
             3: "✍️ *Menyusun hasil...*",
+            4: "⏳ *Finalizing...*",
         }
         status_ref[0] = status_texts.get(turn, "⏳ *Memproses...*")
         
         result = await call_deepseek(msgs, with_tools=True)
         
         if "error" in result:
-            error_msg = f"Maaf, AI sedang bermasalah. Coba lagi ya."
+            error_msg = "AI sedang bermasalah. Coba lagi ya."
             conv["messages"].append({"role": "assistant", "content": error_msg})
             # Stop timer
             if timer_task:
@@ -1230,7 +1307,7 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
         if ai_text:
             conv["messages"].append({"role": "assistant", "content": ai_text})
         else:
-            ai_text = "Maaf, saya tidak bisa memproses permintaan itu. Coba kirim link produk atau kata kunci yang lebih spesifik."
+            ai_text = "Tidak bisa memproses permintaan itu. Coba kirim link produk atau kata kunci yang lebih spesifik."
             conv["messages"].append({"role": "assistant", "content": ai_text})
         
         # Stop timer — selesai
@@ -1241,7 +1318,7 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
         
         return ai_text
     
-    fallback = "Percakapan terlalu panjang. Coba mulai lagi dengan /reset ya."
+    fallback = "Waktu pencarian habis. Coba /reset lalu kirim ulang keyword yang lebih singkat."
     conv["messages"].append({"role": "assistant", "content": fallback})
     
     # Stop timer
@@ -1264,6 +1341,8 @@ async def handle_start(chat_id: int, args: str):
     
     if not token:
         if existing:
+            # Refresh session (update last_active_at)
+            await _update_last_active(chat_id)
             # Persistent reply keyboard di bawah chat
             reply_kb = {
                 "keyboard": [
@@ -1606,7 +1685,18 @@ async def handle_token_verification(chat_id: int, token: str):
     """Handle when user types a raw token code for verification."""
     existing = await lookup_user_by_telegram_id(chat_id)
     if existing:
-        await tg_send(chat_id, f"✅ Akun kamu (*{existing['name']}*) sudah terhubung!")
+        user_kb = {
+            "keyboard": [
+                [{"text": "🔍 Cari Produk"}],
+                [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
+                [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
+                [{"text": "❓ Bantuan"}],
+            ],
+            "resize_keyboard": True,
+        }
+        await tg_send(chat_id,
+            f"✅ Akun kamu (*{existing['name']}*) sudah terhubung!",
+            reply_markup=user_kb)
         return
     user = await lookup_user_by_token(token)
     if not user:
@@ -1624,10 +1714,20 @@ async def handle_token_verification(chat_id: int, token: str):
     success = await link_telegram(user["id"], chat_id)
     if success:
         conversations[chat_id] = {"messages": [], "context": {"user_id": user["id"]}}
+        user_kb = {
+            "keyboard": [
+                [{"text": "🔍 Cari Produk"}],
+                [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
+                [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
+                [{"text": "❓ Bantuan"}],
+            ],
+            "resize_keyboard": True,
+        }
         await tg_send(chat_id,
             f"✅ *Verifikasi Berhasil!*\n\n"
             f"Selamat datang, *{user['name']}*! 🎉\n\n"
-            f"Lanjutkan dengan mengirim kata kunci atau link produk!")
+            f"Lanjutkan dengan mengirim kata kunci atau link produk!",
+            reply_markup=user_kb)
         log.info(f"User verified via token: {user['name']} ({user['id'][:8]})")
     else:
         await tg_send(chat_id, "❌ Gagal menghubungkan. Coba lagi.")
@@ -1711,6 +1811,16 @@ async def process_reg_step(chat_id: int, text: str):
         
         if link_success:
             conversations[chat_id] = {"messages": [], "context": {"user_id": user_id}}
+            # Update reply keyboard for logged-in user
+            user_kb = {
+                "keyboard": [
+                    [{"text": "🔍 Cari Produk"}],
+                    [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
+                    [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
+                    [{"text": "❓ Bantuan"}],
+                ],
+                "resize_keyboard": True,
+            }
             await tg_send(chat_id,
                 f"✅ *Akun MyBagasi berhasil dibuat!*\n\n"
                 f"Selamat datang, *{state['name']}*! 🎉\n\n"
@@ -1720,7 +1830,8 @@ async def process_reg_step(chat_id: int, text: str):
                 f"💳 Bayar via chat — checkout langsung\n"
                 f"📋 `/wishlist` — lihat wishlist\n"
                 f"📊 Dashboard: mybagasi.my.id/dashboard\n\n"
-                f"💡 Contoh: ketik `onitsuka tiger`")
+                f"💡 Contoh: ketik `onitsuka tiger`",
+                reply_markup=user_kb)
             log.info(f"User registered via bot: {state['name']} ({user_id[:8]})")
         else:
             await tg_send(chat_id,
@@ -1781,10 +1892,20 @@ async def process_login_step(chat_id: int, text: str):
             success = await link_telegram(state["user_id"], chat_id)
             if success:
                 conversations[chat_id] = {"messages": [], "context": {"user_id": state["user_id"]}}
+                user_kb = {
+                    "keyboard": [
+                        [{"text": "🔍 Cari Produk"}],
+                        [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
+                        [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
+                        [{"text": "❓ Bantuan"}],
+                    ],
+                    "resize_keyboard": True,
+                }
                 await tg_send(chat_id,
                     f"✅ *Login Berhasil!*\n\n"
                     f"Selamat datang kembali, *{state['name']}*! 🎉\n\n"
-                    f"Lanjutkan belanja dengan kirim kata kunci atau link produk!")
+                    f"Lanjutkan belanja dengan kirim kata kunci atau link produk!",
+                    reply_markup=user_kb)
                 log.info(f"User logged in via bot: {state['name']} ({state['user_id'][:8]})")
             else:
                 await tg_send(chat_id, "❌ Gagal menghubungkan. Coba lagi.")
@@ -2000,13 +2121,26 @@ async def handle_katalog(chat_id: int, text: str):
 def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None:
     """Auto-detect products in AI response and generate inline keyboard.
     
-    Detects numbered products (1 — Nama Produk, 2 — Nama Produk) or single product.
-    multi_button=True: all product buttons in 1 keyboard (for 1-message multi-product).
+    Detects numbered products (1 — Nama Produk, 2 — Nama Produk) or product indicators.
     Returns reply_markup dict or None if no products detected.
     """
-    lines = text.strip().split('\n')
+    t = (text or "").strip()
+    t_upper = t.upper()
+    lines = t.split('\n')
     
-    # Cari produk dengan pola "N — Nama Produk" atau "N. Nama Produk"
+    # ── 1. Cek "tidak ditemukan" ──
+    not_found_words = ["tidak ditemukan", "tidak ketemu", "tidak ada hasil", "tidak tersedia", 
+                       "tidak dapat menemukan", "gagal", "tidak bisa memproses", "tidak berhasil"]
+    is_not_found = any(kw in t.lower() for kw in not_found_words)
+    if is_not_found:
+        return {
+            "inline_keyboard": [
+                [{"text": "🔍 Cari Lagi", "switch_inline_query_current_chat": ""}],
+                [{"text": "📖 Bantuan", "callback_data": "/help"}],
+            ]
+        }
+    
+    # ── 2. Cari produk bernomor ──
     product_indices = []
     for i, line in enumerate(lines):
         stripped = line.strip()
@@ -2016,12 +2150,11 @@ def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None
             num = int(m.group(1))
             name = m.group(2).strip()
             # Skip kalau judul section (bukan produk)
-            if name and len(name) > 3 and not name.startswith(('RINCIAN', 'TOTAL', 'Harga')):
+            if name and len(name) > 3 and not name.startswith(('RINCIAN', 'TOTAL', 'Harga', 'Estimasi')):
                 product_indices.append((num, name, i))
     
     # Kalau ada produk bernomor
     if product_indices:
-        # Pilih produk teratas (max 5 biar gak overflow)
         top_products = product_indices[:5]
         buttons = []
         for num, name, _ in top_products:
@@ -2029,29 +2162,48 @@ def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None
             buttons.append([
                 {"text": f"🛒 Produk {num}: {short_name}", "callback_data": f"cart_{num}"}
             ])
-        # Cancel button di baris terakhir
-        buttons.append([{"text": "❌ Skip", "callback_data": "cart_skip"}])
+        # Action buttons
+        buttons.append([
+            {"text": "💳 Beli Semua", "callback_data": "cart_buy_all"},
+            {"text": "❌ Lewati", "callback_data": "cart_skip"}
+        ])
         return {"inline_keyboard": buttons}
     
-    # Fallback: cek apakah ada indikator produk
+    # ── 3. Deteksi indikator produk (clean format, no emoji) ──
     has_product = False
-    text_upper = text.upper()
-    for kw in ['💳 TOTAL', '💰 Harga', 'TOTAL ALL-IN', 'TOTAL ALL-IN', 'RINCIAN BIAYA', '🔗 LIHAT DI', '🔗 [LIHAT', '📍 *', 'ESTIMASI BIAYA']:
-        if kw in text or kw in text_upper:
+    indicators = [
+        'Harga: JPY', 'Harga: Rp', 'Total All-in:', 'Estimasi Biaya:',
+        'harga produk: Rp', 'fee jasa: Rp', 'ongkir: Rp', 'pajak: Rp',
+        'total all-in: Rp', 'JPY', 'Rp.', 'all-in:',
+    ]
+    for kw in indicators:
+        if kw.lower() in t.lower():
             has_product = True
             break
+    
     if not has_product:
-        # Last resort: check for emoji markers
-        for emoji in ['💰', '🔗', '📍', '🛒']:
-            if emoji in text:
-                has_product = True
-                break
+        # Cek pola harga seperti "Rp1.500.000" atau "JPY 12,000"
+        if re.search(r'Rp\s?[\d.,]+', t) or re.search(r'JPY\s?[\d.,]+', t):
+            has_product = True
     
     if has_product:
-        return {"inline_keyboard": [
-            [{"text": "🛒 Tambah ke Cart", "callback_data": "cart_add"}],
-            [{"text": "❌ Skip", "callback_data": "cart_skip"}]
-        ]}
+        return {
+            "inline_keyboard": [
+                [{"text": "🛒 Tambah ke Cart", "callback_data": "cart_add"}],
+                [{"text": "💳 Beli Langsung", "callback_data": "cart_buy"}, {"text": "❌ Lewati", "callback_data": "cart_skip"}],
+            ]
+        }
+    
+    # ── 4. Deteksi pertanyaan dari AI ──
+    question_words = ["mau cari", "mau beli", "ingin cari", "produk lain", "lainnya?", "spesifik?", "apa lagi"]
+    is_question = any(kw in t.lower() for kw in question_words)
+    if is_question:
+        return {
+            "inline_keyboard": [
+                [{"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
+                [{"text": "📖 Bantuan", "callback_data": "/help"}],
+            ]
+        }
     
     return None
 
@@ -2068,7 +2220,7 @@ async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
     clean_text = re.sub(r'\n?---KEYBOARD---.*?---END KEYBOARD---\n?', '', clean_text, flags=re.DOTALL).strip()
     
     if not clean_text:
-        clean_text = "Maaf, ada error. Coba lagi ya."
+        clean_text = "Ada error. Coba lagi ya."
     
     # Coba kirim dengan foto dulu (jika ada ---PHOTO:--- marker)
     photo_match = re.search(r'---PHOTO:(https?://[^\s]+)---', response)
@@ -2132,9 +2284,21 @@ async def process_update(update: dict):
             cb_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
             await handle_katalog(chat_id, f"/katalog {cb_args}")
         elif data.startswith("cart_"):
-            # Product button tap — acknowledge and save intent
-            # cart_add = single product, cart_N = specific product
-            await tg_send(chat_id, "📦 Produk tercatat! Gunakan /beli untuk checkout atau bilang 'simpen ini'.")
+            action = data.replace("cart_", "")
+            if action == "add":
+                await tg_send(chat_id, "🛒 Produk ditambahkan ke keranjang! Ketik /beli untuk checkout.")
+            elif action == "buy":
+                await tg_send(chat_id, "💳 Untuk beli, kirim /beli diikuti nama produk.\nAtau hubungi @fakhriazzam untuk bantuan.")
+            elif action == "buy_all":
+                await tg_send(chat_id, "💳 Semua produk akan diproses. Ketik /beli untuk checkout atau kirim nama + alamat.")
+            elif action == "skip":
+                await tg_send(chat_id, "👌 Baik, lewati saja. Cari produk lain? Ketik nama barangnya.")
+            elif action.isdigit():
+                await tg_send(chat_id, f"📦 Produk #{action} tercatat! Mau beli? Ketik /beli atau 'simpen ini'.")
+            else:
+                await tg_send(chat_id, "📦 Produk tercatat! Gunakan /beli untuk checkout atau bilang 'simpen ini'.")
+        elif data == "/help":
+            await handle_help(chat_id)
         return
 
     message = update.get("message")
@@ -2157,6 +2321,15 @@ async def process_update(update: dict):
     log.info(f"← {chat_id}: {text[:60]}")
 
     user_profile = await lookup_user_by_telegram_id(chat_id)
+
+    # ── Session expiry check (24h inactivity) ──
+    # Allow auth/reset commands even if session expired
+    if user_profile and command not in ("/start", "/login", "/register", "/unlink", "/reset"):
+        if not await _is_session_valid(chat_id):
+            await _notify_session_expired(chat_id)
+            return
+        # Refresh session timestamp
+        await _update_last_active(chat_id)
 
     if command == "/start":
         await handle_start(chat_id, args)
