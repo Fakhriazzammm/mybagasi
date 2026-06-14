@@ -20,6 +20,8 @@ Commands:
 """
 
 import asyncio
+import base64
+import io
 import json
 import logging
 import os
@@ -706,6 +708,55 @@ async def save_price_alert(user_id: str, product: str, target_price: int,
     }
     return await supabase_insert("price_alerts", data)
 
+async def fetch_cart_count(user_id: str) -> int:
+    """Fetch the number of items in user's cart."""
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/count_cart_items",
+                json={"p_user_id": user_id},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                return int(r.text)
+    except:
+        pass
+    # Fallback: count manually
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/cart_items",
+                params={"user_id": f"eq.{user_id}", "select": "id", "limit": "1000"},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                return len(r.json())
+    except:
+        pass
+    return 0
+
+async def build_user_keyboard(chat_id: int, user_profile: dict | None = None) -> dict:
+    """Build reply keyboard with dynamic cart count."""
+    cart_label = "🛒 Cart"
+    if user_profile:
+        user_id = user_profile.get("id")
+        if user_id:
+            count = await fetch_cart_count(user_id)
+            if count > 0:
+                cart_label = f"🛒 Cart ({count})"
+    return {
+        "keyboard": [
+            [{"text": "🔍 Cari Produk"}, {"text": "📦 Katalog"}],
+            [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
+            [{"text": "🧾 Tagihan"}, {"text": cart_label}],
+            [{"text": "🚚 Jadwal"}, {"text": "📋 Wishlist"}],
+            [{"text": "❓ Bantuan"}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
+    }
+
 async def fetch_user_quotations(user_id: str, limit: int = 5) -> list:
     """Fetch user's quotations from Supabase."""
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -811,6 +862,13 @@ KONVERSI & ESTIMASI:
 - Fee jasa: otomatis dihitung sistem (~6-10%)
 - Ongkir per kategori: fashion Rp125rb, elektronik Rp150rb, skincare Rp105rb, buku Rp60rb, food Rp150rb, general Rp125rb
 - Pajak: 11% dari (harga produk + fee jasa)
+
+KERANJANG BELANJA (CART):
+- MyBagasi punya fitur keranjang belanja, sinkron antara bot dan web
+- Kalau user bilang "masukkan ke keranjang", "simpan dulu", "add to cart", "beli nanti"
+  → langsung jalankan add_to_cart() dengan data produk yang diketahui
+- User bisa cek keranjang dengan "/cart" atau ketik "cart"
+- Checkout via dashboard: mybagasi.my.id/cart
 
 FORMAT JAWABAN PRODUK:
 
@@ -969,6 +1027,27 @@ TOOLS = [
                     "category": {"type": "string", "description": "Filter kategori (Fashion, Makeup, Sepatu, Gacha, Snack, Toys, Disney Store, Donqi Items)"}
                 },
                 "required": ["keyword"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_to_cart",
+            "description": "Tambahkan produk ke keranjang belanja user. Panggil jika user meminta 'masukkan ke keranjang', 'add to cart', atau 'beli nanti'. Data akan tersimpan di keranjang MyBagasi dan bisa dilihat di dashboard web maupun bot.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_name": {"type": "string", "description": "Nama produk (wajib)"},
+                    "price_jpy": {"type": "integer", "description": "Harga dalam JPY (opsional)"},
+                    "price_idr": {"type": "integer", "description": "Harga dalam IDR (opsional)"},
+                    "url": {"type": "string", "description": "URL marketplace (opsional)"},
+                    "image_url": {"type": "string", "description": "URL foto produk (opsional)"},
+                    "category": {"type": "string", "description": "Kategori produk: Fashion, Makeup, Sepatu, Gacha, Snack, Toys, Disney Store, Donqi Items (opsional)"},
+                    "quantity": {"type": "integer", "description": "Jumlah (default: 1)"},
+                    "notes": {"type": "string", "description": "Catatan tambahan (opsional)"}
+                },
+                "required": ["product_name"]
             }
         }
     }
@@ -1232,6 +1311,60 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
             log.error(f"search_catalog error: {e}")
             return json.dumps({"success": False, "items": [], "error": str(e)})
 
+    # ─── add_to_cart ────────────────────────────────────
+    elif tool_name == "add_to_cart":
+        if not user_id:
+            return json.dumps({"error": "User belum terautentikasi"})
+        product_name = args.get("product_name", "")
+        if not product_name:
+            return json.dumps({"error": "Nama produk diperlukan"})
+        log.info(f"Tool: add_to_cart '{product_name[:40]}...'")
+
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json", "Prefer": "return=representation"}
+        cart_item = {
+            "user_id": user_id,
+            "product_name": product_name,
+            "price_jpy": args.get("price_jpy", 0),
+            "price_idr": args.get("price_idr", 0),
+            "url": args.get("url", ""),
+            "image_url": args.get("image_url", ""),
+            "category": args.get("category", ""),
+            "quantity": args.get("quantity", 1),
+            "notes": args.get("notes", ""),
+            "source": "telegram_bot",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{SUPABASE_URL}/rest/v1/cart_items",
+                    json=cart_item,
+                    headers=headers,
+                )
+                if r.status_code in (200, 201):
+                    log.info(f"Cart item saved: {product_name[:40]}")
+                    # Fetch updated cart count
+                    count = await fetch_cart_count(user_id)
+                    count_msg = f"({count} item di keranjang)"
+                    # Send notification + update keyboard
+                    if chat_id:
+                        cart_short = product_name[:40]
+                        user_profile = {"id": user_id}
+                        user_kb = await build_user_keyboard(chat_id, user_profile)
+                        await tg_send(chat_id,
+                            f"✅ *{cart_short}* masuk keranjang! 🛒\n📦 *{count_msg}*\n\n"
+                            f"🔍 Lihat cart: tap tombol di bawah 👇",
+                            reply_markup=user_kb)
+                    return json.dumps({
+                        "success": True,
+                        "cart_count": count,
+                        "message": f"✓ {product_name} sudah masuk keranjang! 🛒 ({count} item)\n\nCek & checkout: mybagasi.my.id/cart"
+                    })
+                return json.dumps({"error": f"Gagal menyimpan ke keranjang: HTTP {r.status_code}"})
+        except Exception as e:
+            log.error(f"add_to_cart error: {e}")
+            return json.dumps({"error": "Gagal menyimpan ke keranjang"})
+
     return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
 async def ai_process(chat_id: int, user_message: str, user_profile: dict | None) -> str:
@@ -1379,22 +1512,15 @@ async def handle_start(chat_id: int, args: str):
         if existing:
             # Refresh session (update last_active_at)
             await _update_last_active(chat_id)
-            # Persistent reply keyboard di bawah chat
-            reply_kb = {
-                "keyboard": [
-                    [{"text": "🔍 Cari Produk"}],
-                    [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
-                    [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
-                    [{"text": "❓ Bantuan"}],
-                ],
-                "resize_keyboard": True,
-                "one_time_keyboard": False,
-            }
+            # Persistent reply keyboard with cart count badge
+            reply_kb = await build_user_keyboard(chat_id, existing)
             # Inline keyboard di dalam pesan
             inline_kb = {
                 "inline_keyboard": [
-                    [{"text": "👤 Akun Saya", "callback_data": "/status"}, {"text": "📦 Pesanan", "callback_data": "/status"}],
-                    [{"text": "🧾 Tagihan", "callback_data": "/status"}, {"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
+                    [{"text": "🔍 Cari Produk", "switch_inline_query_current_chat": ""}],
+                    [{"text": "👤 Akun Saya", "callback_data": "/status"}, {"text": "📦 Pesanan", "callback_data": "/pesanan"}],
+                    [{"text": "🧾 Tagihan", "callback_data": "/tagihan"}, {"text": "🛒 Cart", "callback_data": "/cart"}],
+                    [{"text": "📦 Katalog", "callback_data": "/katalog"}, {"text": "🚚 Jadwal", "callback_data": "/jadwal"}],
                     [{"text": "📋 Wishlist", "callback_data": "/wishlist"}, {"text": "❓ Bantuan", "callback_data": "/help"}],
                 ]
             }
@@ -1685,6 +1811,145 @@ async def handle_wishlist(chat_id: int):
         log.error(f"wishlist fetch error: {e}")
         await tg_send(chat_id, "❌ Gagal mengambil wishlist. Coba lagi nanti.")
 
+
+async def handle_cart(chat_id: int):
+    """Handle Cart button — show user's cart items."""
+    user = await lookup_user_by_telegram_id(chat_id)
+    if not user:
+        await tg_send(chat_id, "⚠️ Kamu harus daftar/login dulu. Ketik `/register` atau `/login`.")
+        return
+
+    uid = user["id"]
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/cart_items",
+                params={"user_id": f"eq.{uid}", "select": "id,product_name,price_jpy,price_idr,quantity,image_url,url,category,notes,created_at",
+                         "order": "created_at.desc", "limit": 20},
+                headers=headers,
+            )
+            items = r.json() if r.status_code == 200 else []
+
+        if not items:
+            await tg_send(chat_id,
+                "🛒 *Cart* — Kosong\n\n"
+                "Belum ada barang di keranjang.\n"
+                "Cari produk dulu dengan `/beli <keyword>`\n"
+                "Lalu minta AI: *\"masukkan ke keranjang\"*")
+            return
+
+        total_jpy = sum(i.get("price_jpy", 0) * i.get("quantity", 1) for i in items)
+        total_idr = sum(i.get("price_idr", 0) * i.get("quantity", 1) for i in items)
+        msg = f"🛒 *Cart ({len(items)} item)* — Total: ¥{total_jpy:,}" + (f" | Rp{total_idr:,}" if total_idr else "") + "\n\n"
+
+        for i, item in enumerate(items[:15], 1):
+            name = (item.get("product_name") or "")[:40]
+            qty = item.get("quantity", 1)
+            price_jpy = item.get("price_jpy", 0)
+            price_idr = item.get("price_idr", 0)
+            cat = item.get("category") or ""
+            notes = item.get("notes") or ""
+            
+            msg += f"{i}. *{name}*\n"
+            msg += f"   {qty}× ¥{price_jpy:,}" + (f" (Rp{price_idr:,})" if price_idr else "") + "\n"
+            if cat:
+                msg += f"   📂 {cat}\n"
+            if notes:
+                msg += f"   📝 {notes[:30]}\n"
+
+        msg += "\n📊 Lihat & checkout: mybagasi.my.id/cart"
+
+        # Build inline keyboard with remove buttons per item + clear all
+        inline_buttons = []
+        for i, item in enumerate(items[:10], 1):
+            item_id = item.get("id", "")
+            name = (item.get("product_name") or "")[:25]
+            inline_buttons.append([
+                {"text": f"❌ Hapus #{i}: {name}", "callback_data": f"cart_remove_{item_id}"}
+            ])
+        if len(items) > 1:
+            inline_buttons.append([
+                {"text": "🗑️ Hapus Semua", "callback_data": "cart_clear"}
+            ])
+        inline_buttons.append([
+            {"text": "🛒 Refresh Cart", "callback_data": "/cart"}
+        ])
+        inline_kb = {"inline_keyboard": inline_buttons}
+        await tg_send(chat_id, msg, reply_markup=inline_kb)
+    except Exception as e:
+        log.error(f"cart fetch error: {e}")
+        await tg_send(chat_id, "❌ Gagal mengambil keranjang. Coba lagi nanti.")
+
+
+async def handle_cart_remove(chat_id: int, item_id: str):
+    """Remove a specific item from the cart."""
+    user = await lookup_user_by_telegram_id(chat_id)
+    if not user:
+        await tg_send(chat_id, "⚠️ Kamu harus login dulu.")
+        return
+
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+               "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            # Verify ownership
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/cart_items",
+                params={"id": f"eq.{item_id}", "select": "id,product_name,quantity", "limit": 1},
+                headers=headers,
+            )
+            if r.status_code != 200 or not r.json():
+                await tg_send(chat_id, "❌ Item tidak ditemukan di keranjang.")
+                return
+            item = r.json()[0]
+
+            # Delete
+            await client.delete(
+                f"{SUPABASE_URL}/rest/v1/cart_items",
+                params={"id": f"eq.{item_id}"},
+                headers=headers,
+            )
+
+        product = item.get("product_name", "Produk")[:40]
+        await tg_send(chat_id, f"🗑️ *{product}* dihapus dari keranjang.")
+        log.info(f"Cart item removed: {item_id} for user {user['id'][:8]}")
+
+        # Reshow cart
+        await handle_cart(chat_id)
+    except Exception as e:
+        log.error(f"cart_remove error: {e}")
+        await tg_send(chat_id, "❌ Gagal menghapus item. Coba lagi.")
+
+
+async def handle_cart_clear(chat_id: int):
+    """Clear all items from the cart."""
+    user = await lookup_user_by_telegram_id(chat_id)
+    if not user:
+        await tg_send(chat_id, "⚠️ Kamu harus login dulu.")
+        return
+
+    uid = user["id"]
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+               "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.delete(
+                f"{SUPABASE_URL}/rest/v1/cart_items",
+                params={"user_id": f"eq.{uid}"},
+                headers=headers,
+            )
+        await tg_send(chat_id, "🗑️ *Semua item* dihapus dari keranjang.")
+        log.info(f"Cart cleared for user {uid[:8]}")
+
+        # Refresh keyboard with updated cart count
+        user_kb = await build_user_keyboard(chat_id, user)
+        await tg_send(chat_id, "🛒 Keranjang sudah kosong.", reply_markup=user_kb)
+    except Exception as e:
+        log.error(f"cart_clear error: {e}")
+        await tg_send(chat_id, "❌ Gagal menghapus keranjang. Coba lagi.")
+
+
 # ── Auth Command Handlers ─────────────────────────────────
 
 async def handle_register(chat_id: int):
@@ -1721,15 +1986,7 @@ async def handle_token_verification(chat_id: int, token: str):
     """Handle when user types a raw token code for verification."""
     existing = await lookup_user_by_telegram_id(chat_id)
     if existing:
-        user_kb = {
-            "keyboard": [
-                [{"text": "🔍 Cari Produk"}],
-                [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
-                [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
-                [{"text": "❓ Bantuan"}],
-            ],
-            "resize_keyboard": True,
-        }
+        user_kb = await build_user_keyboard(chat_id, existing)
         await tg_send(chat_id,
             f"✅ Akun kamu (*{existing['name']}*) sudah terhubung!",
             reply_markup=user_kb)
@@ -1750,15 +2007,7 @@ async def handle_token_verification(chat_id: int, token: str):
     success = await link_telegram(user["id"], chat_id)
     if success:
         _save_conv(chat_id, [], {"user_id": user["id"]}, user_id=user["id"])
-        user_kb = {
-            "keyboard": [
-                [{"text": "🔍 Cari Produk"}],
-                [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
-                [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
-                [{"text": "❓ Bantuan"}],
-            ],
-            "resize_keyboard": True,
-        }
+        user_kb = await build_user_keyboard(chat_id, user)
         await tg_send(chat_id,
             f"✅ *Verifikasi Berhasil!*\n\n"
             f"Selamat datang, *{user['name']}*! 🎉\n\n"
@@ -1847,16 +2096,8 @@ async def process_reg_step(chat_id: int, text: str):
         
         if link_success:
             _save_conv(chat_id, [], {"user_id": user_id}, user_id=user_id)
-            # Update reply keyboard for logged-in user
-            user_kb = {
-                "keyboard": [
-                    [{"text": "🔍 Cari Produk"}],
-                    [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
-                    [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
-                    [{"text": "❓ Bantuan"}],
-                ],
-                "resize_keyboard": True,
-            }
+            # Build reply keyboard with cart count badge
+            user_kb = await build_user_keyboard(chat_id, profile)
             await tg_send(chat_id,
                 f"✅ *Akun MyBagasi berhasil dibuat!*\n\n"
                 f"Selamat datang, *{state['name']}*! 🎉\n\n"
@@ -1928,15 +2169,8 @@ async def process_login_step(chat_id: int, text: str):
             success = await link_telegram(state["user_id"], chat_id)
             if success:
                 _save_conv(chat_id, [], {"user_id": state["user_id"]}, user_id=state["user_id"])
-                user_kb = {
-                    "keyboard": [
-                        [{"text": "🔍 Cari Produk"}],
-                        [{"text": "👤 Akun Saya"}, {"text": "📦 Pesanan"}],
-                        [{"text": "🧾 Tagihan"}, {"text": "📋 Wishlist"}],
-                        [{"text": "❓ Bantuan"}],
-                    ],
-                    "resize_keyboard": True,
-                }
+                login_profile = {"id": state["user_id"], "name": state["name"]}
+                user_kb = await build_user_keyboard(chat_id, login_profile)
                 await tg_send(chat_id,
                     f"✅ *Login Berhasil!*\n\n"
                     f"Selamat datang kembali, *{state['name']}*! 🎉\n\n"
@@ -1988,6 +2222,8 @@ async def handle_help(chat_id: int):
         "`/beli <keyword>` — Cari & beli\n"
         "`/ai-cari <produk>` — 🤖 AI cari otomatis di browser\n"
         "`/katalog` — Jelajahi katalog produk\n"
+        "`/jadwal` — 🚚 Jadwal pengiriman\n"
+        "`/cart` — 🛒 Lihat keranjang belanja\n"
         "`/reset` — Reset percakapan\n\n"
         "*Semua data tersimpan otomatis* ke dashboard:\n"
         "🌐 mybagasi.my.id/dashboard\n\n"
@@ -2154,6 +2390,72 @@ async def handle_katalog(chat_id: int, text: str):
             await tg_send_photo(chat_id, img_url, caption)
 
         await tg_send(chat_id, msg)
+
+
+async def handle_jadwal(chat_id: int):
+    """Handle Jadwal button — show active batch shipping schedules."""
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/batch_shipments",
+                params={
+                    "select": "id,name,route,departure_date,closes_at,capacity,price_per_kg,savings_percent,direction,status,max_weight_kg",
+                    "status": "in.(open,closing_soon)",
+                    "order": "departure_date.asc",
+                    "limit": 5,
+                },
+                headers=headers,
+            )
+            batches = r.json() if r.status_code == 200 else []
+
+        if not batches:
+            msg = (
+                "🚚 *Jadwal Pengiriman* — Belum ada jadwal aktif\n\n"
+                "Jadwal pengiriman gabungan (batch shipping) akan diumumkan "
+                "saat ada keberangkatan baru.\n\n"
+                "📊 Cek update: mybagasi.my.id/jadwal"
+            )
+            await tg_send(chat_id, msg)
+            return
+
+        direction_emoji = {
+            "japan_to_indonesia": "🇯🇵→🇮🇩",
+            "indonesia_to_japan": "🇮🇩→🇯🇵",
+        }
+        status_emoji = {
+            "open": "🟢",
+            "closing_soon": "🟡",
+        }
+
+        msg = "🚚 *Jadwal Pengiriman*\n\n"
+        for b in batches:
+            name = b.get("name", "Pengiriman")[:40]
+            route = b.get("route", "")
+            direction = direction_emoji.get(b.get("direction", ""), "🚚")
+            status = status_emoji.get(b.get("status", ""), "❓")
+            departure = (b.get("departure_date") or "")[:10]
+            closes = (b.get("closes_at") or "")[:10]
+            price = b.get("price_per_kg", 0)
+            savings = b.get("savings_percent", 0)
+
+            msg += f"{status} *{name}*\n"
+            msg += f"   {direction} {route}\n"
+            if departure:
+                msg += f"   📅 Berangkat: {departure}\n"
+            if closes:
+                msg += f"   ⏰ Tutup: {closes}\n"
+            msg += f"   💰 ¥{price:,}/kg (hemat {savings}%)\n\n"
+
+        msg += "📊 Lihat & daftar: mybagasi.my.id/jadwal"
+        await tg_send(chat_id, msg)
+    except Exception as e:
+        log.error(f"handle_jadwal error: {e}")
+        await tg_send(chat_id,
+            "🚚 *Jadwal Pengiriman*\n\n"
+            "Gagal memuat jadwal. Coba lagi nanti.\n\n"
+            "📊 Cek langsung: mybagasi.my.id/jadwal")
+
 
 def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None:
     """Auto-detect products in AI response and generate inline keyboard.
@@ -2748,6 +3050,202 @@ async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
         plain = re.sub(r'[*_`#\[\]]', '', clean_text)
         await tg_send(chat_id, plain)
 
+# ── Handle Photo Messages ───────────────────────────────────
+
+# Estimated weight per category (from shipping rates)
+CATEGORY_WEIGHT = {
+    "fashion": 0.5, "sepatu": 0.5, "pakaian": 0.5,
+    "elektronik": 0.5, "gadget": 0.5, "kamera": 0.5,
+    "skincare": 0.3, "makeup": 0.3, "kosmetik": 0.3,
+    "buku": 0.3, "majalah": 0.3,
+    "food": 0.5, "snack": 0.5, "minuman": 0.5,
+    "gacha": 0.2, "toys": 0.4, "boneka": 0.4,
+    "general": 0.5,
+}
+
+def _guess_weight(title: str, price_jpy: int = 0) -> tuple[float, str]:
+    """Guess weight in kg based on product title keywords."""
+    title_lower = title.lower()
+    for cat, weight in CATEGORY_WEIGHT.items():
+        if cat in title_lower:
+            return weight, cat
+    # Fallback: heavier if price > 20000 yen (more premium product)
+    if price_jpy > 20000:
+        return 1.0, "general (premium)"
+    return 0.5, "general"
+
+async def handle_photo(chat_id: int, file_id: str):
+    """Download photo, analyze with Gemini Vision, then search & return price in JPY + IDR."""
+    try:
+        # 1. Get file path from Telegram
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(tg_url("getFile"), params={"file_id": file_id})
+            if r.status_code != 200:
+                await tg_send(chat_id, "❌ Gagal membaca foto. Coba kirim ulang.")
+                return
+            file_path = r.json()["result"]["file_path"]
+
+        # 2. Download the file
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(file_url)
+            if r.status_code != 200:
+                await tg_send(chat_id, "❌ Gagal mengunduh foto.")
+                return
+            img_bytes = r.content
+
+        await tg_send(chat_id, "👀 *Menganalisis gambar & mencari harga...*")
+
+        # 3. Encode as base64 for Gemini Vision
+        b64 = base64.b64encode(img_bytes).decode("utf-8")
+
+        # 4. Gemini Vision — identify product + generate search keywords
+        body = {
+            "model": SUMOPOD_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Kamu adalah asisten belanja Jepang. Lihat foto produk ini. "
+                               "Return ONLY a JSON object with keys: product_name (nama produk Indonesia/Inggris), "
+                               "brand (merek), category (fashion/elektronik/skincare/buku/food/gacha/toys/general), "
+                               "search_keywords (3-5 kata kunci untuk cari produk ini di marketplace Jepang, dipisah koma). "
+                               "Contoh: {\"product_name\":\"Onitsuka Tiger Mexico 66\",\"brand\":\"Onitsuka Tiger\","
+                               "\"category\":\"fashion\",\"search_keywords\":\"Onitsuka Tiger Mexico 66, sepatu kasual\"}",
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Apa produk di foto ini?"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                        },
+                    ],
+                },
+            ],
+            "max_tokens": 300,
+            "temperature": 0.1,
+        }
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                f"{SUMOPOD_BASE_URL}/chat/completions",
+                json=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {SUMOPOD_API_KEY}",
+                },
+            )
+            if r.status_code != 200:
+                await tg_send(chat_id, "🔍 Produk terdeteksi. Ketik nama produknya buat saya cariin harga dari Jepang!")
+                return
+
+            data = r.json()
+            vision_text = data["choices"][0]["message"]["content"]
+
+        # 5. Parse the JSON from Gemini
+        import re as _re
+        json_match = _re.search(r'(\{[\s\S]*"product_name"[\s\S]*\})', vision_text)
+        if not json_match:
+            # Fallback: use raw response as product name
+            product_name = vision_text.strip()[:60]
+            search_kw = product_name
+            category = "general"
+        else:
+            try:
+                info = json.loads(json_match.group(1))
+                product_name = info.get("product_name", "").strip() or "Produk dari foto"
+                search_kw = info.get("search_keywords", product_name).strip()
+                category = info.get("category", "general").lower()
+            except json.JSONDecodeError:
+                product_name = vision_text.strip()[:60]
+                search_kw = product_name
+                category = "general"
+
+        # 6. Search via scraper API
+        await tg_send(chat_id, f"🔍 *{product_name}* — mencari harga di marketplace Jepang...")
+
+        async with httpx.AsyncClient(timeout=45) as client:
+            r = await client.post(f"{SCRAPER_URL}/search", json={"keyword": search_kw, "limit": 3})
+            if r.status_code != 200:
+                await tg_send(chat_id, f"📸 *{product_name}*\nGak nemu harga online. Coba ketik manual nama produknya.")
+                return
+            search_data = r.json()
+
+        items = search_data.get("items", [])
+        if not items:
+            await tg_send(chat_id, f"📸 *{product_name}*\nGak nemu harga online. Coba ketik manual nama produknya.")
+            return
+
+        # 7. Format results with price + weight
+        rate = 113  # Kurs dari user
+        lines = [f"📸 *{product_name}*\n"]
+
+        for i, item in enumerate(items[:3]):
+            title = (item.get("title") or "").strip() or "Produk"
+            price_jpy = item.get("price_jpy")
+            marketplace = item.get("marketplace", "Jepang") or "Jepang"
+            url = item.get("url", "")
+            img_url = ""
+            imgs = item.get("images") or []
+            if imgs:
+                img_url = imgs[0]
+
+            # Price conversion
+            if price_jpy and price_jpy > 0:
+                price_idr = round(price_jpy * rate)
+                display_jpy = f"¥{price_jpy:,}"
+                display_idr = f"Rp{price_idr:,}".replace(",", ".")
+            else:
+                price_display = item.get("price_display", "") or ""
+                display_jpy = price_display if price_display else "?"
+                display_idr = "?"
+                price_jpy = 0
+
+            # Weight estimate
+            weight, _ = _guess_weight(title, price_jpy or 0)
+
+            emoji_map = {0: "1️⃣", 1: "2️⃣", 2: "3️⃣"}
+            emoji = emoji_map.get(i, "•")
+
+            lines.append(
+                f"{emoji} *{title[:50]}*\n"
+                f"   💰 {display_jpy} ≈ *{display_idr}*\n"
+                f"   ⚖️ ~{weight:.1f} kg | 🏪 {marketplace}\n"
+            )
+            if url:
+                lines.append(f"   🔗 [Lihat Produk]({url})\n")
+
+        # Total row
+        total_jpy = sum(item.get("price_jpy") or 0 for item in items[:3] if item.get("price_jpy"))
+        total_idr = round(total_jpy * rate)
+        lines.append(
+            f"━━━━━━━━━━━━━━━━━\n"
+            f"💰 Kurs: Rp{rate:,} | ⚖️ Estimasi berat per kategori\n"
+            f"💵 Total: ≈ *Rp{total_idr:,}* (¥{total_jpy:,})\n".replace(",", ".")
+        )
+
+        # Send photo first if available, then text
+        first_item = items[0]
+        first_img = ""
+        imgs = first_item.get("images") or []
+        if imgs:
+            first_img = imgs[0]
+
+        full_text = "".join(lines)
+        if first_img:
+            await tg_send_photo(chat_id, first_img, f"📸 *{product_name}* — hasil pencarian:", reply_markup={
+                "inline_keyboard": [[{"text": "🛒 Mau Beli?", "callback_data": f"cart_add:{items[0].get('url','')}"}]]
+            })
+            await tg_send(chat_id, full_text)
+        else:
+            await tg_send(chat_id, full_text)
+
+    except Exception as e:
+        log.error(f"handle_photo error: {e}")
+        await tg_send(chat_id, "📸 Foto diterima! Ketik nama produknya biar saya cariin dari Jepang.")
+
+
 # ── Message Router ─────────────────────────────────────────
 
 async def process_update(update: dict):
@@ -2775,6 +3273,8 @@ async def process_update(update: dict):
             await handle_about(chat_id)
         elif data == "/wishlist":
             await handle_wishlist(chat_id)
+        elif data == "/cart":
+            await handle_cart(chat_id)
         elif data == "/status":
             await handle_status(chat_id)
         elif data == "/pesanan":
@@ -2788,6 +3288,8 @@ async def process_update(update: dict):
             cmd_parts = data.split(maxsplit=1)
             cb_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
             await handle_katalog(chat_id, f"/katalog {cb_args}")
+        elif data == "/jadwal":
+            await handle_jadwal(chat_id)
         elif data.startswith("cart_"):
             action = data.replace("cart_", "")
             if action == "add":
@@ -2798,6 +3300,11 @@ async def process_update(update: dict):
                 await tg_send(chat_id, "💳 Semua produk akan diproses. Ketik /beli untuk checkout atau kirim nama + alamat.")
             elif action == "skip":
                 await tg_send(chat_id, "👌 Baik, lewati saja. Cari produk lain? Ketik nama barangnya.")
+            elif action == "clear":
+                await handle_cart_clear(chat_id)
+            elif action.startswith("remove_"):
+                item_id = action.replace("remove_", "")
+                await handle_cart_remove(chat_id, item_id)
             elif action.isdigit():
                 await tg_send(chat_id, f"📦 Produk #{action} tercatat! Mau beli? Ketik /beli atau 'simpen ini'.")
             else:
@@ -2813,7 +3320,14 @@ async def process_update(update: dict):
     chat_id = message["chat"]["id"]
     text = (message.get("text") or "").strip()
     
+    # ── Handle non-text messages (photos, etc.) ──
     if not text:
+        photo = message.get("photo")
+        if photo:
+            # Get largest photo (last in array has highest resolution)
+            file_id = photo[-1]["file_id"]
+            asyncio.create_task(handle_photo(chat_id, file_id))
+            return
         return
 
     parts = text.split(maxsplit=1)
@@ -2894,6 +3408,11 @@ async def process_update(update: dict):
             await require_login(chat_id)
             return
         await handle_bclose(chat_id)
+    elif command == "/cart":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_cart(chat_id)
     elif command == "/ai-cari":
         if not user_profile:
             await require_login(chat_id)
@@ -2902,6 +3421,8 @@ async def process_update(update: dict):
         await handle_ai_cari(chat_id, search_text)
     elif command == "/katalog":
         await handle_katalog(chat_id, text)
+    elif command == "/jadwal":
+        await handle_jadwal(chat_id)
     elif command in ("/beli", "/ai", "/cari"):
         search_text = args if args else text
         if not user_profile:
@@ -2928,6 +3449,10 @@ async def process_update(update: dict):
             await tg_send(chat_id, "⚠️ Kamu harus daftar dulu. Ketik /register")
             return
         await tg_send(chat_id, "📝 Ketik nama produk yang mau dicari, misal: `onitsuka tiger`")
+    elif "Katalog" in text:
+        await handle_katalog(chat_id, "/katalog")
+    elif "Jadwal" in text:
+        await handle_jadwal(chat_id)
     elif any(kw in text for kw in ["Akun Saya"]):
         await handle_status(chat_id)
     elif "Pesanan" in text:
@@ -2936,6 +3461,11 @@ async def process_update(update: dict):
         await handle_tagihan(chat_id)
     elif "Wishlist" in text or "Wishlist" in text:
         await handle_wishlist(chat_id)
+    elif "Cart" in text or "Keranjang" in text or text == "/cart":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_cart(chat_id)
     elif "Bantuan" in text:
         await handle_help(chat_id)
     elif "Daftar" in text:
@@ -2967,11 +3497,11 @@ async def process_update(update: dict):
                 "Belum punya akun? Langsung daftar via `/register`!")
             return
         
-        # Auto-detect: "cari <produk>" → use AI browser instead of standard AI
+        # Auto-detect: cari <produk> -> standard AI with tool calling (reliable via scraper API)
+        # AI Browser via /ai-cari only for explicit manual requests
         cari_match = re.match(r'^(?:cari|carikan|search)\s+(.+)$', text.strip(), re.IGNORECASE)
         if cari_match:
-            search_goal = cari_match.group(1).strip()
-            await handle_ai_cari(chat_id, search_goal)
+            await handle_ai(chat_id, text, user_profile)
             return
         
         await handle_ai(chat_id, text, user_profile)
