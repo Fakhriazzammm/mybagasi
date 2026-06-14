@@ -3214,15 +3214,22 @@ async def process_update(update: dict):
 
                 # Parse product info from message
                 msg_text = callback.get("message", {}).get("text") or callback.get("message", {}).get("caption") or ""
-                prod_match = re.search(r'\*\*(.+?)\*\*', msg_text)
+                prod_match = re.search(r'\*(.+?)\*', msg_text)
                 product_name = prod_match.group(1).strip() if prod_match else "Produk dari bot"
+
+                # Try to parse price from message (JP¥X or JPY X)
+                price = 0
+                price_match = re.search(r'JP[¥Y]\s*([\d,.]+)', msg_text)
+                if price_match:
+                    price = int(price_match.group(1).replace(",", ""))
+                price_idr = round(price * 105) if price else 0
 
                 from datetime import datetime, timezone
                 cart_item = {
                     "id": uid[:8] + "_c_" + str(int(time.time())),
                     "user_id": uid,
                     "product_name": product_name[:40],
-                    "price_jpy": 0, "price_idr": 0,
+                    "price_jpy": price, "price_idr": price_idr,
                     "url": data.replace("cart_add:", "") if data.startswith("cart_add:") else "",
                     "image_url": "", "category": "",
                     "quantity": 1, "notes": "", "source": "telegram_bot",
