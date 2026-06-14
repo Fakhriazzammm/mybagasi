@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { useWishlist, useRemoveWishlistItem, useAddWishlistItem, useCreatePriceAlert, useCreateOrder } from "@/hooks";
 import { fmtRp } from "@/lib/format";
+import { calculatePriceEstimate } from "@/lib/pricing";
 import { toast } from "sonner";
 
 const Wishlist = () => {
@@ -47,13 +48,14 @@ const Wishlist = () => {
   const buyItem = async (w: any) => {
     if (!w.price_idr) return navigate(`/aipersonalshopper?url=${encodeURIComponent(w.url ?? "")}&query=${encodeURIComponent(w.name)}`);
     try {
+      const est = calculatePriceEstimate({ priceIdr: w.price_idr });
       const order = await orderMutation.mutateAsync({
         product: w.name,
         source: w.source ?? undefined,
-        service_fee: Math.round(w.price_idr * 0.08),
-        shipping_cost: 185000,
-        tax_customs: Math.round(w.price_idr * 0.1),
-        total: w.price_idr + Math.round(w.price_idr * 0.08) + 185000 + Math.round(w.price_idr * 0.1),
+        service_fee: est.fee,
+        shipping_cost: est.shipping,
+        tax_customs: est.tax,
+        total: est.total,
         notes: w.url ? `Dari wishlist: ${w.url}` : "Dari wishlist",
       });
       toast.success("Order draft dibuat");

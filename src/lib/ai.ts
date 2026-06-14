@@ -3,22 +3,11 @@ import type { ProductData } from "./scraper";
 import { scrapeProductWithFallback } from "./scrape-jobs";
 import { createInvoice } from "./mayar";
 import { appConfig } from "@/lib/runtime-config";
+import { calculatePriceEstimate } from "@/lib/pricing";
 
 const BASE_URL = appConfig.openAiBaseUrl;
 const MODEL = appConfig.openAiModel;
 const JPY_TO_IDR = appConfig.pricing.jpyToIdr;
-
-// Shipping rates by category (base_kg and JPY/kg)
-const SHIPPING_RATES: Record<string, { base_kg: number; price_jpy_per_kg: number }> = {
-  skincare: { base_kg: 0.3, price_jpy_per_kg: 750 },
-  obat: { base_kg: 0.3, price_jpy_per_kg: 700 },
-  food: { base_kg: 0.3, price_jpy_per_kg: 700 },
-  fashion: { base_kg: 0.5, price_jpy_per_kg: 700 },
-  sepatu: { base_kg: 0.8, price_jpy_per_kg: 600 },
-  jam: { base_kg: 0.4, price_jpy_per_kg: 700 },
-  elektronik: { base_kg: 0.5, price_jpy_per_kg: 800 },
-  general: { base_kg: 0.5, price_jpy_per_kg: 700 },
-};
 
 const SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten personal shopper untuk produk-produk dari Jepang.
 
@@ -386,20 +375,16 @@ function normalizeUrlCandidate(raw: string): string | null {
 }
 
 export function estimateAllInFromJPY(priceJPY: number, category = "general") {
-  const basePrice = toIDR(priceJPY);
-  // Fee: estimasi tier based (matching pricing.ts)
-  const feeEstimate = basePrice < 1000000 ? 100000 :
-    basePrice < 3000000 ? 300000 :
-    basePrice < 5000000 ? 500000 :
-    basePrice < 10000000 ? 1000000 : 2000000;
-  
-  const cat = category.toLowerCase().trim ? category.toLowerCase().trim() : category.toLowerCase();
-  const rate_info = SHIPPING_RATES[cat] ?? SHIPPING_RATES.general;
-  const shipping = Math.round(rate_info.base_kg * rate_info.price_jpy_per_kg * JPY_TO_IDR);
-
-  const tax = Math.round(basePrice * 0.11);
-  const total = basePrice + feeEstimate + shipping + tax;
-  return { basePrice, serviceFee: feeEstimate, shipping, tax, total, category };
+  const est = calculatePriceEstimate({ priceJpy: priceJPY, shippingCategory: category });
+  return {
+    basePrice: est.priceIdr,
+    serviceFee: est.fee,
+    shipping: est.shipping,
+    tax: est.tax,
+    total: est.total,
+    category: est.shippingCategory,
+    shippingNote: est.shippingNote,
+  };
 }
 
 // REMOVED: createSimilarProducts() — was generating fake/template product data.

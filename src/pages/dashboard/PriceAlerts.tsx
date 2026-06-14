@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/ui/button";
 import { usePriceAlerts, useCreatePriceAlert, useUpdatePriceAlert, usePausePriceAlert, useResumePriceAlert, useCreateOrder } from "@/hooks";
 import { fmtRp } from "@/lib/format";
+import { calculatePriceEstimate } from "@/lib/pricing";
 import { toast } from "sonner";
 
 const PriceAlerts = () => {
@@ -47,13 +48,14 @@ const PriceAlerts = () => {
   const buyNow = async (a: any) => {
     try {
       const current = a.current_price ?? a.target_price;
+      const est = calculatePriceEstimate({ priceIdr: current });
       const order = await orderMutation.mutateAsync({
         product: a.product,
         source: a.url ? new URL(a.url).hostname : undefined,
-        service_fee: Math.round(current * 0.08),
-        shipping_cost: 185000,
-        tax_customs: Math.round(current * 0.1),
-        total: current + Math.round(current * 0.08) + 185000 + Math.round(current * 0.1),
+        service_fee: est.fee,
+        shipping_cost: est.shipping,
+        tax_customs: est.tax,
+        total: est.total,
         notes: a.url ? `Dari price alert: ${a.url}` : "Dari price alert",
       });
       toast.success("Order draft dibuat");

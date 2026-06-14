@@ -355,9 +355,16 @@ _PRICING_CACHE_TTL = 300  # 5 menit
 async def _ensure_pricing_table():
     seed = [
         {"key": "exchange_rate", "value": {"rate": 105, "source": "hardcoded", "auto_update": True, "last_fetched": None}},
+        {"key": "profit_tiers", "value": {"tiers": [
+            {"min": 0, "max": 999999, "profit": 100000},
+            {"min": 1000000, "max": 2999999, "profit": 300000},
+            {"min": 3000000, "max": 4999999, "profit": 500000},
+            {"min": 5000000, "max": 9999999, "profit": 1000000},
+            {"min": 10000000, "max": 999999999, "profit": 2000000}
+        ]}},
+        {"key": "distribution_ratio", "value": {"fee": 33, "shipping": 34, "tax": 33, "description": "Distribusi profit ke fee/ongkir/pajak (%)"}},
         {"key": "shipping_cost", "value": {"cost": 250000, "description": "Ongkir Jepang ke Indonesia"}},
         {"key": "tax_rate", "value": {"rate": 0.11, "description": "Pajak & bea cukai 11%"}},
-        {"key": "fee_persen", "value": 7.0},
     ]
     for s in seed:
         try:
@@ -458,62 +465,98 @@ async def get_tax_rate() -> float:
     await refresh_pricing_cache()
     return _PRICING_CACHE_DATA.get("tax_rate", {}).get("rate", 0.11)
 
-async def get_fee_persen() -> float:
-    """Dapatkan persentase fee jasa dari pricing cache atau DB."""
-    await refresh_pricing_cache()
-    fee = _PRICING_CACHE_DATA.get("fee_persen")
-    if fee and isinstance(fee, (int, float)) and fee > 0:
-        return float(fee)
-    return _FALLBACK_FEE_PERSEN
+# Fallback profit tiers
+_FALLBACK_TIERS = [
+    {"min": 0, "max": 999999, "profit": 100000},
+    {"min": 1000000, "max": 2999999, "profit": 300000},
+    {"min": 3000000, "max": 4999999, "profit": 500000},
+    {"min": 5000000, "max": 9999999, "profit": 1000000},
+    {"min": 10000000, "max": 999999999, "profit": 2000000},
+]
 
-# Fallback fee persentase
-_FALLBACK_FEE_PERSEN = 7.0
+async def calculate_profit(price_idr: int) -> int:
+    """Dapatkan target profit dari tier pricing."""
+    tiers = await get_profit_tiers()
+    if not tiers:
+        tiers = _FALLBACK_TIERS
+    for tier in tiers:
+        if tier["min"] <= price_idr <= tier["max"]:
+            return tier["profit"]
+    if tiers:
+        return tiers[-1]["profit"]
+    return 100000
+
+async def get_profit_tiers() -> list:
+    """Get profit tiers from pricing cache."""
+    await refresh_pricing_cache()
+    return _PRICING_CACHE_DATA.get("profit_tiers", {}).get("tiers", [])
+
+async def get_distribution_ratio() -> dict:
+    """Dapatkan rasio distribusi profit (fee:shipping:tax)."""
+    await refresh_pricing_cache()
+    default = {"fee": 33, "shipping": 34, "tax": 33}
+    return _PRICING_CACHE_DATA.get("distribution_ratio", default)
 
 async def estimate_price_v2(price_jpy: int, category: str = "general") -> dict:
-    """Hitung estimasi harga all-in dengan komponen transparan.
+    """Hitung estimasi harga all-in — profit tier didistribusi ke fee/ongkir/pajak.
 
-    Sistem transparan:
-    - Fee jasa: % tetap dari base_idr (default 7%)
-    - Ongkir: biaya kirim real per kategori (tanpa markup)
-    - Pajak: 11% dari (harga + fee)
-    - Tidak ada profit/markup tersembunyi
+    Sistem:
+    - Ambil target profit dari tier pricing (berdasarkan harga IDR)
+    - Profit didistribusi ke 3 komponen (fee, ongkir, pajak) dgn rasio 33:34:33
+    - Ongkir: biaya real + markup dari profit
+    - Pajak: 11% standard + markup dari profit
+    - TIDAK ada baris 'Profit' — profit tersembunyi di fee+ongkir+pajak
     """
     rate = await get_exchange_rate()
     base_idr = price_jpy * rate
+    target_profit = await calculate_profit(base_idr)
     
-    # Fee jasa: persentase tetap dari harga dasar
-    fee_persen = await get_fee_persen()
-    if fee_persen <= 0:
-        fee_persen = 7.0  # fallback
-    fee_jasa = round(base_idr * fee_persen / 100)
+    # Dapatkan rasio distribusi dari DB
+    ratio = await get_distribution_ratio()
+    total_ratio = ratio.get("fee", 33) + ratio.get("shipping", 34) + ratio.get("tax", 33)
+    if total_ratio <= 0:
+        total_ratio = 100
     
-    # Ongkir real dari kategori (tanpa markup)
+    # Distribusi profit ke 3 komponen
+    fee_jasa = round(target_profit * ratio.get("fee", 33) / total_ratio)
+    ongkir_markup = round(target_profit * ratio.get("shipping", 34) / total_ratio)
+    pajak_markup = round(target_profit * ratio.get("tax", 33) / total_ratio)
+    
+    # Handle sisa pembulatan
+    remainder = target_profit - (fee_jasa + ongkir_markup + pajak_markup)
+    ongkir_markup += remainder  # Sisa masuk ke ongkir (paling flexible)
+    
+    # Ongkir real dari kategori + markup
     shipping_info = await get_shipping_by_category(category)
-    ongkir = shipping_info["cost"]
+    real_ongkir = shipping_info["cost"]
+    ongkir_display = real_ongkir + max(0, ongkir_markup)
     
-    # Pajak standard 11% dari (harga + fee)
+    # Pajak: standard + markup
     pajak_persen = await get_tax_rate()
-    pajak = round((base_idr + fee_jasa) * pajak_persen)
+    pajak_standard = round((base_idr + fee_jasa) * pajak_persen)
+    pajak_display = pajak_standard + max(0, pajak_markup)
     
-    total = base_idr + fee_jasa + ongkir + pajak
+    total = base_idr + fee_jasa + ongkir_display + pajak_display
+    fee_persen = round(fee_jasa / base_idr * 100, 1) if base_idr > 0 else 0
     
     return {
         "base_idr": base_idr,
         "fee_jasa": fee_jasa,
         "fee_persen": fee_persen,
-        "shipping": ongkir,
-        "shipping_real": ongkir,
-        "shipping_markup": 0,
+        "shipping": ongkir_display,
+        "shipping_real": real_ongkir,
+        "shipping_markup": ongkir_markup,
         "shipping_category": shipping_info["category"],
         "shipping_note": shipping_info["note"],
-        "pajak": pajak,
-        "pajak_standard": pajak,
-        "pajak_markup": 0,
+        "pajak": pajak_display,
+        "pajak_standard": pajak_standard,
+        "pajak_markup": pajak_markup,
         "pajak_persen": pajak_persen,
         "total": total,
         "rate": rate,
-        "_target_profit": 0,
-        "_distribution": {"fee": fee_jasa, "shipping_markup": 0, "tax_markup": 0},
+        # Hidden internal fields (not displayed)
+        "_target_profit": target_profit,
+        "_distribution": {"fee": fee_jasa, "shipping_markup": ongkir_markup, "tax_markup": pajak_markup},
     }
 
 async def save_quotation(user_id: str, product: str, price_jpy: int, source: str,

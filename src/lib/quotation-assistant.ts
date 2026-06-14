@@ -2,6 +2,7 @@ import { appConfig } from "@/lib/runtime-config";
 import { scrapeProductWithFallback } from "@/lib/scrape-jobs";
 import { searchProducts } from "@/lib/scraper";
 import type { ProductData } from "@/lib/scraper";
+import { calculatePriceEstimate } from "@/lib/pricing";
 
 export interface SmartQuotationInput {
   url?: string;
@@ -104,9 +105,6 @@ const confidenceLabel = (score: number): "High" | "Medium" | "Low" => {
 
 export async function generateSmartQuotation(input: SmartQuotationInput): Promise<SmartQuotationResult> {
   const rate = appConfig.pricing.jpyToIdr;
-  const feeRate = appConfig.pricing.serviceFeeRate;
-  const shipping = appConfig.pricing.shippingIdr;
-  const taxRate = appConfig.pricing.taxRate;
 
   let scraped: ProductData | undefined;
   if (input.url?.trim()) {
@@ -136,8 +134,10 @@ export async function generateSmartQuotation(input: SmartQuotationInput): Promis
   const priceHistory = summarizeHistory(comparablePrices.length > 0 ? comparablePrices : [productJpy]);
 
   const productIdr = Math.round(productJpy * rate);
-  const fee = Math.round(productIdr * feeRate);
-  const tax = Math.round((productIdr + fee) * taxRate);
+  const est = calculatePriceEstimate({ priceJpy: productJpy, shippingCategory: "general" });
+  const fee = est.fee;
+  const shipping = est.shipping;
+  const tax = est.tax;
   const membershipDiscount = Math.round(productIdr * 0.03);
   const pointsUsed = Math.min(25000, Math.round(productIdr * 0.01));
 
