@@ -10,18 +10,15 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from fastapi import APIRouter, HTTPException, Query
+
+from db import db
 
 router = APIRouter(prefix="/memory")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 MEMORY_DIR = os.path.join(DATA_DIR, "memory")
 LINK_PATH = os.path.join(DATA_DIR, "link.json")
-
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 def _ensure_memory_dir():
@@ -63,44 +60,20 @@ def _save_user_memory(memory: dict):
 
 
 async def _sync_to_supabase(telegram_id: str, memory: dict):
-    """Sync memory data to Supabase profiles table for linked users. Graceful on failure."""
-    if not SUPABASE_URL or not SERVICE_KEY:
-        return  # Supabase not configured — skip silently
-
+    """Sync memory data to the profiles table via db helper. Graceful on failure."""
     try:
-        if not os.path.exists(LINK_PATH):
-            return
-        with open(LINK_PATH, "r") as f:
-            links = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        return  # Can't read links — skip
-
-    auth_id = links.get(telegram_id)
-    if not auth_id:
-        return  # User not linked — nothing to sync
-
-    url = f"{SUPABASE_URL}/rest/v1/profiles"
-    headers = {
-        "apikey": SERVICE_KEY,
-        "Authorization": f"Bearer {SERVICE_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {"memory": json.dumps(memory)}
-
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.patch(
-                url,
-                headers=headers,
-                params={"id": f"eq.{auth_id}"},
-                json=payload,
-            )
-        # Log non-2xx but don't raise — graceful degradation
-        if resp.status_code >= 400:
-            print(f"[memory_sync] Supabase patch returned {resp.status_code}: {resp.text[:200]}")
+        profile = db.get("profiles", {"telegram_id": str(telegram_id)})
+        if profile is None:
+            return  # No matching profile — nothing to sync
+        db.update(
+            "profiles",
+            {"memory": json.dumps(memory)},
+            "telegram_id",
+            str(telegram_id),
+        )
     except Exception as exc:
-        print(f"[memory_sync] Supabase sync failed for {telegram_id}: {exc}")
-        # Graceful — JSON already saved, no re-raise
+        print(f"[memory_sync] Sync failed for {telegram_id}: {exc}")
+        # Graceful — JSON already saved to disk, no re-raise
 
 
 # ─── Save a key-value pair ──────────────────────────────

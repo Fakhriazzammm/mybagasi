@@ -39,6 +39,9 @@ import browser_session as browser
 # SQLite cache for per-user data persistence
 import db_cache
 
+# Database helper (local SQLite + Supabase fallback)
+from db import db
+
 # ── Configuration ──────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
@@ -209,47 +212,22 @@ async def tg_send_photo(chat_id: int, photo_url: str, caption: str, reply_markup
 # ── Supabase Auth Helpers ─────────────────────────────────
 
 async def lookup_user_by_token(token: str) -> dict | None:
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"telegram_token": f"eq.{token}", "select": "id,name,email,telegram_id,telegram_token,role", "limit": 1},
-                headers=headers,
-            )
-            if r.status_code == 200 and r.json():
-                return r.json()[0]
-            return None
+        return db.get("profiles", {"telegram_token": token})
     except Exception as e:
         log.error(f"lookup_user error: {e}")
         return None
 
 async def link_telegram(user_id: str, telegram_chat_id: int) -> bool:
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.patch(
-                f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"id": f"eq.{user_id}"},
-                json={"telegram_id": telegram_chat_id, "last_active_at": datetime.now(timezone.utc).isoformat()},
-                headers=headers,
-            )
-            return r.status_code in (200, 204)
+        return db.update("profiles", {"telegram_id": str(telegram_chat_id), "last_active_at": datetime.now(timezone.utc).isoformat()}, "id", user_id)
     except Exception as e:
         log.error(f"link_telegram error: {e}")
         return False
 
 async def unlink_telegram(telegram_chat_id: int) -> bool:
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.patch(
-                f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"telegram_id": f"eq.{telegram_chat_id}"},
-                json={"telegram_id": None},
-                headers=headers,
-            )
-            return r.status_code in (200, 204)
+        return db.update("profiles", {"telegram_id": ""}, "telegram_id", str(telegram_chat_id))
     except Exception as e:
         log.error(f"unlink_telegram error: {e}")
         return False
@@ -267,14 +245,7 @@ async def _update_last_active(chat_id: int):
     now = time.time()
     SESSION_CACHE[chat_id] = now
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal"}
-            await client.patch(
-                f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"telegram_id": f"eq.{chat_id}"},
-                json={"last_active_at": datetime.now(timezone.utc).isoformat()},
-                headers=headers,
-            )
+        db.update("profiles", {"last_active_at": datetime.now(timezone.utc).isoformat()}, "telegram_id", str(chat_id))
     except Exception as e:
         log.warning(f"update_last_active error: {e}")
 
@@ -318,17 +289,8 @@ async def _notify_session_expired(chat_id: int):
 
 
 async def lookup_user_by_telegram_id(telegram_chat_id: int) -> dict | None:
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"telegram_id": f"eq.{telegram_chat_id}", "select": "id,name,email,telegram_id,telegram_token,role,last_active_at", "limit": 1},
-                headers=headers,
-            )
-            if r.status_code == 200 and r.json():
-                return r.json()[0]
-            return None
+        return db.get("profiles", {"telegram_id": str(telegram_chat_id)})
     except Exception as e:
         log.error(f"lookup_user_by_telegram_id error: {e}")
         return None
@@ -364,60 +326,26 @@ async def register_user_via_admin_api(name: str, email: str, password: str) -> d
 
 async def get_profile_by_email(email: str) -> dict | None:
     """Lookup profile by email address."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"email": f"eq.{email.lower()}", "select": "id,name,email,telegram_id,telegram_token,role", "limit": 1},
-                headers=headers,
-            )
-            if r.status_code == 200 and r.json():
-                return r.json()[0]
-            return None
+        return db.get("profiles", {"email": email.lower()})
     except Exception as e:
         log.error(f"get_profile_by_email error: {e}")
         return None
 
 async def rotate_telegram_token(user_id: str) -> str | None:
-    """Generate a new telegram_token for a user via DB RPC function."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    """Generate a new telegram_token for a user via DB update."""
+    import random
+    import string
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(
-                f"{SUPABASE_URL}/rest/v1/rpc/rotate_telegram_token",
-                json={"p_user_id": user_id},
-                headers=headers,
-            )
-            if r.status_code == 200:
-                return r.text.strip().strip('"')
-            return None
+        new_token = ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+        if db.update("profiles", {"telegram_token": new_token}, "id", user_id):
+            return new_token
+        return None
     except Exception as e:
         log.error(f"rotate_token error: {e}")
         return None
 
 # ── Supabase Data Persistence ─────────────────────────────
-
-_supabase_headers = lambda: {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
-_supabase_headers_return = lambda: {**_supabase_headers(), "Prefer": "return=representation"}
-
-async def supabase_insert(table: str, data: dict) -> dict | None:
-    """Generic INSERT into Supabase and return the created record."""
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(
-                f"{SUPABASE_URL}/rest/v1/{table}",
-                json=data,
-                headers=_supabase_headers_return(),
-            )
-            if r.status_code in (200, 201):
-                rows = r.json()
-                return rows[0] if rows else None
-            log.warning(f"INSERT {table} HTTP {r.status_code}: {r.text[:200]}")
-            return None
-    except Exception as e:
-        log.error(f"INSERT {table} error: {e}")
-        return None
 
 # ── Pricing System ──────────────────────────────────────────
 _PRICING_CACHE_DATA: dict = {}
@@ -425,7 +353,6 @@ _PRICING_CACHE_AT = 0.0
 _PRICING_CACHE_TTL = 300  # 5 menit
 
 async def _ensure_pricing_table():
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
     seed = [
         {"key": "exchange_rate", "value": {"rate": 105, "source": "hardcoded", "auto_update": True, "last_fetched": None}},
         {"key": "profit_tiers", "value": {"tiers": [
@@ -439,27 +366,24 @@ async def _ensure_pricing_table():
         {"key": "tax_rate", "value": {"rate": 0.11, "description": "Pajak & bea cukai 11%"}},
         {"key": "distribution_ratio", "value": {"fee": 33, "shipping": 34, "tax": 33, "description": "Distribusi profit ke fee/ongkir/pajak (%)"}},
     ]
-    async with httpx.AsyncClient(timeout=10) as client:
-        for s in seed:
-            r = await client.post(f"{SUPABASE_URL}/rest/v1/pricing_config", json=s, headers={**headers, "Prefer": "resolution=merge-duplicates"})
-            if r.status_code == 404:
-                log.warning("pricing_config table not found, using hardcoded defaults")
-                return
+    for s in seed:
+        try:
+            if not db.get("pricing_config", {"key": s["key"]}):
+                db.insert("pricing_config", s)
+        except Exception:
+            pass
 
 async def refresh_pricing_cache():
     global _PRICING_CACHE_DATA, _PRICING_CACHE_AT
     now = time.time()
     if now - _PRICING_CACHE_AT < _PRICING_CACHE_TTL:
         return
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"{SUPABASE_URL}/rest/v1/pricing_config", headers=headers, params={"select": "key,value"})
-            if r.status_code == 200 and r.json():
-                for item in r.json():
-                    _PRICING_CACHE_DATA[item["key"]] = item["value"]
-                _PRICING_CACHE_AT = now
-                log.info(f"Pricing config refreshed: {len(_PRICING_CACHE_DATA)} keys")
+        rows = db.query("pricing_config", limit=100)
+        for item in rows:
+            _PRICING_CACHE_DATA[item["key"]] = item["value"]
+        _PRICING_CACHE_AT = now
+        log.info(f"Pricing config refreshed: {len(_PRICING_CACHE_DATA)} keys")
     except Exception as e:
         log.warning(f"Failed to refresh pricing config: {e}")
 
@@ -500,11 +424,8 @@ async def _fetch_live_rate() -> int:
                         rate = round(idr)
                         log.info(f"Live JPY/IDR rate: {rate}")
                         try:
-                            await client.patch(
-                                f"{SUPABASE_URL}/rest/v1/pricing_config?key=eq.exchange_rate",
-                                json={"value": {"rate": rate, "source": url.split('/')[2], "auto_update": True, "last_fetched": datetime.datetime.now(datetime.timezone.utc).isoformat()}},
-                                headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"},
-                            )
+                            val = {"rate": rate, "source": url.split('/')[2], "auto_update": True, "last_fetched": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+                            db.update("pricing_config", {"value": val}, "key", "exchange_rate")
                         except:
                             pass
                         return rate
@@ -655,7 +576,9 @@ async def save_quotation(user_id: str, product: str, price_jpy: int, source: str
         "total": est["total"],
         "status": "active",
     }
-    return await supabase_insert("quotations", data)
+    data["id"] = user_id[:8] + "_q_" + str(int(time.time()))
+    ok = db.insert("quotations", data)
+    return data if ok else None
 
 async def save_order(user_id: str, product: str, price_jpy: int, total: int,
                      source: str = "telegram_bot", quotation_id: str | None = None,
@@ -679,12 +602,15 @@ async def save_order(user_id: str, product: str, price_jpy: int, total: int,
         "notes": f"[Telegram Bot] {customer_name[:50]}\n{notes[:200]}" if notes else f"[Telegram Bot] {customer_name[:50]}" if customer_name else "Telegram Bot",
         "eta": None,
     }
-    return await supabase_insert("orders", data)
+    data["id"] = user_id[:8] + "_o_" + str(int(time.time()))
+    ok = db.insert("orders", data)
+    return data if ok else None
 
 async def save_wishlist_item(user_id: str, name: str, url: str | None = None,
                               price_idr: int | None = None, source: str | None = None) -> dict | None:
-    """Save a wishlist item to Supabase."""
+    """Save a wishlist item to DB."""
     data = {
+        "id": user_id[:8] + "_w_" + str(int(time.time())),
         "user_id": user_id,
         "emoji": "🛍️",
         "name": name[:200],
@@ -693,12 +619,14 @@ async def save_wishlist_item(user_id: str, name: str, url: str | None = None,
         "source": source or "telegram_bot",
         "note": "Dari Telegram Bot",
     }
-    return await supabase_insert("wishlist_items", data)
+    ok = db.insert("wishlist_items", data)
+    return data if ok else None
 
 async def save_price_alert(user_id: str, product: str, target_price: int,
                             url: str | None = None, current_price: int | None = None) -> dict | None:
-    """Save a price alert to Supabase."""
+    """Save a price alert to DB."""
     data = {
+        "id": user_id[:8] + "_p_" + str(int(time.time())),
         "user_id": user_id,
         "product": product[:200],
         "url": url or None,
@@ -706,35 +634,15 @@ async def save_price_alert(user_id: str, product: str, target_price: int,
         "target_price": target_price,
         "status": "monitoring",
     }
-    return await supabase_insert("price_alerts", data)
+    ok = db.insert("price_alerts", data)
+    return data if ok else None
 
 async def fetch_cart_count(user_id: str) -> int:
     """Fetch the number of items in user's cart."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{SUPABASE_URL}/rest/v1/rpc/count_cart_items",
-                json={"p_user_id": user_id},
-                headers=headers,
-            )
-            if r.status_code == 200:
-                return int(r.text)
+        return db.count("cart_items", {"user_id": user_id})
     except:
-        pass
-    # Fallback: count manually
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/cart_items",
-                params={"user_id": f"eq.{user_id}", "select": "id", "limit": "1000"},
-                headers=headers,
-            )
-            if r.status_code == 200:
-                return len(r.json())
-    except:
-        pass
-    return 0
+        return 0
 
 async def build_user_keyboard(chat_id: int, user_profile: dict | None = None) -> dict:
     """Build reply keyboard with dynamic cart count."""
@@ -758,37 +666,17 @@ async def build_user_keyboard(chat_id: int, user_profile: dict | None = None) ->
     }
 
 async def fetch_user_quotations(user_id: str, limit: int = 5) -> list:
-    """Fetch user's quotations from Supabase."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    """Fetch user's quotations from DB."""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/quotations",
-                params={"user_id": f"eq.{user_id}", "select": "id,product,price_jpy,total,status,created_at,source",
-                         "order": "created_at.desc", "limit": limit},
-                headers=headers,
-            )
-            if r.status_code == 200:
-                return r.json()
-            return []
+        return db.query("quotations", {"user_id": user_id}, order_by="created_at DESC", limit=limit)
     except Exception as e:
         log.error(f"fetch_quotations error: {e}")
         return []
 
 async def fetch_user_orders(user_id: str, limit: int = 5) -> list:
-    """Fetch user's orders from Supabase."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    """Fetch user's orders from DB."""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/orders",
-                params={"user_id": f"eq.{user_id}", "select": "id,product,total,status,created_at,source",
-                         "order": "created_at.desc", "limit": limit},
-                headers=headers,
-            )
-            if r.status_code == 200:
-                return r.json()
-            return []
+        return db.query("orders", {"user_id": user_id}, order_by="created_at DESC", limit=limit)
     except Exception as e:
         log.error(f"fetch_orders error: {e}")
         return []
@@ -1307,9 +1195,8 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
             return json.dumps({"error": "Nama produk diperlukan"})
         log.info(f"Tool: add_to_cart '{product_name[:40]}...'")
 
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-                    "Content-Type": "application/json", "Prefer": "return=representation"}
         cart_item = {
+            "id": user_id[:8] + "_c_" + str(int(time.time())),
             "user_id": user_id,
             "product_name": product_name,
             "price_jpy": args.get("price_jpy", 0),
@@ -1322,32 +1209,26 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
             "source": "telegram_bot",
         }
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.post(
-                    f"{SUPABASE_URL}/rest/v1/cart_items",
-                    json=cart_item,
-                    headers=headers,
-                )
-                if r.status_code in (200, 201):
-                    log.info(f"Cart item saved: {product_name[:40]}")
-                    # Fetch updated cart count
-                    count = await fetch_cart_count(user_id)
-                    count_msg = f"({count} item di keranjang)"
-                    # Send notification + update keyboard
-                    if chat_id:
-                        cart_short = product_name[:40]
-                        user_profile = {"id": user_id}
-                        user_kb = await build_user_keyboard(chat_id, user_profile)
-                        await tg_send(chat_id,
-                            f"✅ *{cart_short}* masuk keranjang! 🛒\n📦 *{count_msg}*\n\n"
-                            f"🔍 Lihat cart: tap tombol di bawah 👇",
-                            reply_markup=user_kb)
-                    return json.dumps({
-                        "success": True,
-                        "cart_count": count,
-                        "message": f"✓ {product_name} sudah masuk keranjang! 🛒 ({count} item)\n\nCek & checkout: mybagasi.my.id/cart"
-                    })
-                return json.dumps({"error": f"Gagal menyimpan ke keranjang: HTTP {r.status_code}"})
+            if db.insert("cart_items", cart_item):
+                log.info(f"Cart item saved: {product_name[:40]}")
+                # Fetch updated cart count
+                count = await fetch_cart_count(user_id)
+                count_msg = f"({count} item di keranjang)"
+                # Send notification + update keyboard
+                if chat_id:
+                    cart_short = product_name[:40]
+                    user_profile = {"id": user_id}
+                    user_kb = await build_user_keyboard(chat_id, user_profile)
+                    await tg_send(chat_id,
+                        f"✅ *{cart_short}* masuk keranjang! 🛒\n📦 *{count_msg}*\n\n"
+                        f"🔍 Lihat cart: tap tombol di bawah 👇",
+                        reply_markup=user_kb)
+                return json.dumps({
+                    "success": True,
+                    "cart_count": count,
+                    "message": f"✓ {product_name} sudah masuk keranjang! 🛒 ({count} item)\n\nCek & checkout: mybagasi.my.id/cart"
+                })
+            return json.dumps({"error": "Gagal menyimpan ke keranjang"})
         except Exception as e:
             log.error(f"add_to_cart error: {e}")
             return json.dumps({"error": "Gagal menyimpan ke keranjang"})
@@ -1687,20 +1568,8 @@ async def handle_tagihan(chat_id: int):
         return
 
     uid = user["id"]
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/bills",
-                params={
-                    "user_id": f"eq.{uid}",
-                    "select": "id,status,total_idr,total_jpy,invoice_url,items_summary,created_at,paid_at,expires_at",
-                    "order": "created_at.desc",
-                    "limit": 10,
-                },
-                headers=headers,
-            )
-            bills = r.json() if r.status_code == 200 else []
+        bills = db.query("bills", {"user_id": uid}, order_by="created_at DESC", limit=10)
 
         if not bills:
             await tg_send(chat_id,
@@ -1764,16 +1633,8 @@ async def handle_wishlist(chat_id: int):
         return
     
     uid = user["id"]
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/wishlist_items",
-                params={"user_id": f"eq.{uid}", "select": "id,name,url,price_idr,source,created_at",
-                         "order": "created_at.desc", "limit": 10},
-                headers=headers,
-            )
-            items = r.json() if r.status_code == 200 else []
+        items = db.query("wishlist_items", {"user_id": uid}, order_by="created_at DESC", limit=10)
         
         if not items:
             await tg_send(chat_id,
@@ -1807,16 +1668,8 @@ async def handle_cart(chat_id: int):
         return
 
     uid = user["id"]
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/cart_items",
-                params={"user_id": f"eq.{uid}", "select": "id,product_name,price_jpy,price_idr,quantity,image_url,url,category,notes,created_at",
-                         "order": "created_at.desc", "limit": 20},
-                headers=headers,
-            )
-            items = r.json() if r.status_code == 200 else []
+        items = db.query("cart_items", {"user_id": uid}, order_by="created_at DESC", limit=20)
 
         if not items:
             await tg_send(chat_id,
@@ -1876,27 +1729,15 @@ async def handle_cart_remove(chat_id: int, item_id: str):
         await tg_send(chat_id, "⚠️ Kamu harus login dulu.")
         return
 
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-               "Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            # Verify ownership
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/cart_items",
-                params={"id": f"eq.{item_id}", "select": "id,product_name,quantity", "limit": 1},
-                headers=headers,
-            )
-            if r.status_code != 200 or not r.json():
-                await tg_send(chat_id, "❌ Item tidak ditemukan di keranjang.")
-                return
-            item = r.json()[0]
+        # Verify item exists
+        item = db.get("cart_items", {"id": item_id})
+        if not item:
+            await tg_send(chat_id, "❌ Item tidak ditemukan di keranjang.")
+            return
 
-            # Delete
-            await client.delete(
-                f"{SUPABASE_URL}/rest/v1/cart_items",
-                params={"id": f"eq.{item_id}"},
-                headers=headers,
-            )
+        # Delete
+        db.delete("cart_items", {"id": item_id})
 
         product = item.get("product_name", "Produk")[:40]
         await tg_send(chat_id, f"🗑️ *{product}* dihapus dari keranjang.")
@@ -1917,15 +1758,8 @@ async def handle_cart_clear(chat_id: int):
         return
 
     uid = user["id"]
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-               "Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.delete(
-                f"{SUPABASE_URL}/rest/v1/cart_items",
-                params={"user_id": f"eq.{uid}"},
-                headers=headers,
-            )
+        db.delete("cart_items", {"user_id": uid})
         await tg_send(chat_id, "🗑️ *Semua item* dihapus dari keranjang.")
         log.info(f"Cart cleared for user {uid[:8]}")
 
@@ -2056,17 +1890,10 @@ async def process_reg_step(chat_id: int, text: str):
         # Baca profile yang auto-created oleh trigger (dapatkan telegram_token)
         profile = None
         for attempt in range(5):
-            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    r = await client.get(
-                        f"{SUPABASE_URL}/rest/v1/profiles",
-                        params={"id": f"eq.{user_id}", "select": "id,name,email,telegram_token", "limit": 1},
-                        headers=headers,
-                    )
-                    if r.status_code == 200 and r.json():
-                        profile = r.json()[0]
-                        break
+                profile = db.get("profiles", {"id": user_id})
+                if profile:
+                    break
             except:
                 pass
             await asyncio.sleep(0.5)
@@ -2244,29 +2071,13 @@ async def handle_katalog(chat_id: int, text: str):
     /katalog → daftar kategori dengan jumlah produk
     /katalog <nama> → 5 produk pertama dari kategori
     """
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     parts = text.split(maxsplit=1)
     category_name = parts[1].strip() if len(parts) > 1 else ""
 
     if not category_name:
         # ── Show category list ──
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                # Fetch all active catalog items
-                r = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/catalog_items",
-                    params={
-                        "select": "category",
-                        "active": "eq.true",
-                        "category": "not.is.null",
-                        "limit": 1000,
-                    },
-                    headers=headers,
-                )
-                if r.status_code != 200:
-                    await tg_send(chat_id, "⚠️ Gagal memuat katalog. Coba lagi nanti.")
-                    return
-                rows = r.json()
+            rows = db.query("catalog_items", limit=1000)
         except Exception as e:
             log.error(f"handle_katalog categories error: {e}")
             await tg_send(chat_id, "⚠️ Gagal memuat katalog. Coba lagi nanti.")
@@ -2320,22 +2131,7 @@ async def handle_katalog(chat_id: int, text: str):
     else:
         # ── Show products from specific category ──
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/catalog_items",
-                    params={
-                        "select": "id,name,category,price_jpy,images,url,description",
-                        "active": "eq.true",
-                        "category": f"eq.{category_name}",
-                        "order": "sort_order.asc.nullslast",
-                        "limit": 5,
-                    },
-                    headers=headers,
-                )
-                if r.status_code != 200:
-                    await tg_send(chat_id, f"⚠️ Gagal memuat kategori {category_name}.")
-                    return
-                items = r.json()
+            items = db.query("catalog_items", {"category": category_name}, order_by="sort_order ASC", limit=5)
         except Exception as e:
             log.error(f"handle_katalog category '{category_name}' error: {e}")
             await tg_send(chat_id, f"⚠️ Gagal memuat kategori {category_name}.")
@@ -2381,20 +2177,8 @@ async def handle_katalog(chat_id: int, text: str):
 
 async def handle_jadwal(chat_id: int):
     """Handle Jadwal button — show active batch shipping schedules."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{SUPABASE_URL}/rest/v1/batch_shipments",
-                params={
-                    "select": "id,name,route,departure_date,closes_at,capacity,price_per_kg,savings_percent,direction,status,max_weight_kg",
-                    "status": "in.(open,closing_soon)",
-                    "order": "departure_date.asc",
-                    "limit": 5,
-                },
-                headers=headers,
-            )
-            batches = r.json() if r.status_code == 200 else []
+        batches = db.query("batch_shipments", limit=5, order_by="departure_date ASC")
 
         if not batches:
             msg = (
