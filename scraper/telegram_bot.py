@@ -738,13 +738,15 @@ TUGAS KAMU (URUTAN WAJIB):
 4️⃣ Beri estimasi harga all-in (harga + fee + ongkir + pajak)
 - ⛔ Hindari Yahoo Auction dan PayPay Flea Market (lelang/preloved) — Yahoo Shopping store tetap boleh ✅
 
-KONVERSI & ESTIMASI (Gunakan angka ini PERSIS):
-- Kurs: 1 JPY = Rp 105
-- Fee jasa: 7% dari harga (Rp harga × 7%)
-- Ongkir per kategori: fashion Rp125rb, elektronik Rp150rb, skincare Rp105rb, buku Rp60rb, food Rp150rb, general Rp125rb
-- Pajak: 11% dari (harga + fee) → (Rp harga + Rp fee) × 11%
-- Total = harga + fee + ongkir + pajak
-- Contoh: JP¥6.589 → Rp691.845 → fee Rp48.429 → ongkir Rp125rb → pajak (691.845+48.429)×11%=Rp81.430 → Total Rp946.704
+KONVERSI & ESTIMASI:
+- search_products / search_catalog mengembalikan item dengan field _est_*
+- Pakai angka dari _est_* untuk format estimasi:
+  * Harga: [_est_base_idr]
+  * Fee Jasa: [_est_fee] 
+  * Ongkir: [_est_shipping] (kategori: [_est_shipping_category])
+  * Pajak: [_est_tax]
+  * Total: [_est_total]
+- JANGAN hitung manual — copas langsung angka dari _est_*
 
 ALUR PEMBELIAN (WAJIB DIKUASAI):
 1. User cari produk → kamu tampilkan 1 produk + CTA
@@ -992,6 +994,27 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
             return json.dumps({"error": "Kata kunci diperlukan"})
         log.info(f"Tool: search_products '{keyword}' limit={limit}")
         result = await scraper_search(keyword, limit)
+        
+        # Inject real pricing data from estimate_price_v2 into each item
+        if result.get("success") and result.get("items"):
+            for item in result["items"]:
+                try:
+                    price_jpy = item.get("price_jpy") or 0
+                    cat = item.get("category") or auto_categorize(
+                        item.get("title") or keyword, 
+                        item.get("description") or "", keyword
+                    )
+                    est = await estimate_price_v2(price_jpy, cat) if price_jpy > 0 else None
+                    if est:
+                        item["_est_base_idr"] = est["base_idr"]
+                        item["_est_fee"] = est["fee_jasa"]
+                        item["_est_shipping"] = est["shipping"]
+                        item["_est_shipping_category"] = est["shipping_category"]
+                        item["_est_tax"] = est["pajak"]
+                        item["_est_total"] = est["total"]
+                        item["_est_rate"] = est["rate"]
+                except Exception:
+                    pass
         
         # Auto-save best result as quotation
         if user_id and result.get("success") and result.get("items"):
