@@ -2119,63 +2119,69 @@ async def handle_katalog(chat_id: int, text: str):
     category_name = parts[1].strip() if len(parts) > 1 else ""
 
     if not category_name:
-        # ── Show category list ──
+        # ── Show category list (via API) ──
         try:
-            rows = db.query("catalog_items", limit=1000)
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{SCRAPER_URL}/catalog/categories")
+                if r.status_code != 200:
+                    await tg_send(chat_id, "⚠️ Gagal memuat katalog. Coba lagi nanti.")
+                    return
+                data = r.json()
+                categories = data.get("categories", [])
         except Exception as e:
             log.error(f"handle_katalog categories error: {e}")
             await tg_send(chat_id, "⚠️ Gagal memuat katalog. Coba lagi nanti.")
             return
 
-        # Group by category and count
-        cat_counts: dict[str, int] = {}
-        for row in rows:
-            cat = row.get("category", "")
-            if cat:
-                cat_counts[cat] = cat_counts.get(cat, 0) + 1
-
-        if not cat_counts:
+        if not categories:
             await tg_send(chat_id, "📦 *Katalog* — Belum ada produk tersedia.")
             return
 
-        # Sort categories
-        sorted_cats = sorted(cat_counts.items(), key=lambda x: -x[1])
-
         icon_map = {
             "Fashion": "👕",
-            "Makeup": "💄",
-            "Sepatu": "👟",
-            "Gacha": "🎁",
-            "Snack": "🍪",
-            "Toys": "🧸",
-            "Disney Store": "🏰",
-            "Donqi Items": "🛍️",
+            "Sepatu & Sandal": "👟",
+            "Jam Tangan": "⌚",
+            "Skincare & Kosmetik": "💄",
+            "Kesehatan & Obat": "💊",
+            "Makanan & Minuman": "🍜",
+            "Lainnya": "📦",
         }
 
         msg = "📦 *Katalog Produk MyBagasi*\n\n"
-        for cat, count in sorted_cats:
-            icon = icon_map.get(cat, "📂")
-            msg += f"{icon} *{cat}* ({count} produk)\n"
+        for cat in categories:
+            name = cat["name"]
+            count = cat["count"]
+            icon = icon_map.get(name, "📂")
+            msg += f"{icon} *{name}* ({count} produk)\n"
 
-        msg += "\nKetik `/katalog fashion` untuk lihat produk kategori tertentu."
-        msg += "\nAtau `/katalog gacha` untuk lihat produk Gacha."
+        msg += "\nKetik `/katalog <nama kategori>` untuk lihat produk."
 
         # Inline keyboard
         inline_buttons = []
-        for cat, _ in sorted_cats[:6]:
-            icon = icon_map.get(cat, "📂")
+        for cat in categories[:6]:
+            name = cat["name"]
+            icon = icon_map.get(name, "📂")
             inline_buttons.append([{
-                "text": f"{icon} Lihat {cat}",
-                "callback_data": f"/katalog {cat}"
+                "text": f"{icon} Lihat {name}",
+                "callback_data": f"/katalog {name}"
             }])
         inline_kb = {"inline_keyboard": inline_buttons}
 
         await tg_send(chat_id, msg, reply_markup=inline_kb)
 
     else:
-        # ── Show products from specific category ──
+        # ── Show products from specific category (via API) ──
         try:
-            items = db.query("catalog_items", {"category": category_name}, order_by="sort_order ASC", limit=5)
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    f"{SCRAPER_URL}/catalog/category",
+                    params={"name": category_name, "limit": 5},
+                )
+                if r.status_code != 200:
+                    await tg_send(chat_id, f"⚠️ Gagal memuat kategori {category_name}.")
+                    return
+                data = r.json()
+                items = data.get("items", [])
         except Exception as e:
             log.error(f"handle_katalog category '{category_name}' error: {e}")
             await tg_send(chat_id, f"⚠️ Gagal memuat kategori {category_name}.")
