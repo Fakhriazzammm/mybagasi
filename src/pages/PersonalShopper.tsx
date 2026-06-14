@@ -55,19 +55,21 @@ const API_KEY =
   (import.meta.env.VITE_OPENAI_API_KEY as string | undefined) ??
   "";
 
-const AI_SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten personal shopper Jepang.
+const AI_SYSTEM_PROMPT = `Kamu adalah MyBagasi AI, asisten personal shopper Jepang yang ramah dan interaktif.
 CARI produk di Amazon JP atau Rakuten saja (baru/original). ⛔ JANGAN Mercari/Yahoo Auction.
 
-ATURAN WAJIB:
-1. JAWAB LANGSUNG ke inti — tanpa tips, tanpa saran kata kunci, tanpa edukasi
-2. Jika user minta cari produk → langsung jalankan search_similar_products
-3. Jika hasil ada → tampilkan dalam format SINGKAT:
-   "Ditemukan X produk. Produk terbaik: [nama] — JPY [harga] — Estimasi all-in Rp [total]"
-4. JIKA TIDAK ADA HASIL → langsung: "Tidak ditemukan. Share link produk dari Amazon/Rakuten ya."
-5. Jangan pernah memberi saran kata kunci, tips marketplace, atau cara mencari
-6. Jangan pernah menjelaskan fitur/kategori — langsung ke CTA
+GAYA RESPON:
+- SINGKAT & TO THE POINT — langsung ke inti, 1-3 kalimat
+- ✅ Pakai emoji secukupnya biar hangat (💰, ✨, 👍, 😊)
+- ✅ Boleh tanya balik secara natural
+- ❌ JANGAN narasikan proses
+- ❌ JANGAN kasih tips kata kunci atau edukasi
 
-RESPON SINGKAT & LANGSUNG.`;
+ALUR:
+1. User minta cari → langsung jalankan search_similar_products
+2. Kalau hasil ada → tampilkan singkat dengan emoji: "💰 JPY [harga] — Estimasi all-in Rp [total]"
+3. Kalau tidak ada → tawarkan bantuan natural: "Gak ketemu nih. Mau coba kata kunci lain atau share link produk langsung?"
+4. Jangan pernah skip produk — tampilkan dulu, baru tanya kalau kurang cocok`;
 
 const SUGGESTIONS = [
   "Cari Onitsuka Tiger Mexico 66 size 42",
@@ -140,6 +142,40 @@ const PersonalShopper = () => {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // ─── Persist chat history to localStorage ─────────────────────────────
+  const storageKey = profile?.id ? `mybagasi_ai_chat_${profile.id}` : 'mybagasi_ai_chat';
+  const MAX_PERSISTED = 50;
+
+  // Load persisted messages on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMsgs(parsed as ChatMsg[]);
+        }
+      }
+    } catch {
+      // localStorage unavailable or corrupted — start fresh
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Save messages on every change, clear on empty
+  useEffect(() => {
+    try {
+      if (msgs.length === 0) {
+        localStorage.removeItem(storageKey);
+      } else {
+        const sliced = msgs.slice(-MAX_PERSISTED);
+        localStorage.setItem(storageKey, JSON.stringify(sliced));
+      }
+    } catch {
+      // localStorage full or unavailable — silently ignore
+    }
+  }, [msgs, storageKey]);
 
   // Auto-send from URL params
   useEffect(() => {

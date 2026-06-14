@@ -34,6 +34,9 @@ import httpx
 # Browser session manager for interactive browsing
 import browser_session as browser
 
+# SQLite cache for per-user data persistence
+import db_cache
+
 # ── Configuration ──────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
@@ -76,6 +79,29 @@ conversations: dict[int, dict[str, Any]] = {}
 _pending_reg: dict[int, dict[str, Any]] = {}    # {chat_id: {"step": "name"|"email"|"password"|"verify", ...}}
 _pending_login: dict[int, dict[str, Any]] = {}   # {chat_id: {"step": "email"|"verify", ...}}
 MAX_HISTORY = 20
+
+# ── SQLite-backed conversation helpers ─────────────────
+
+def _get_conv(chat_id: int) -> dict:
+    """Load conversation from memory cache or SQLite."""
+    if chat_id in conversations:
+        return conversations[chat_id]
+    data = db_cache.load_conversation(chat_id)
+    if data:
+        conversations[chat_id] = data
+    else:
+        conversations[chat_id] = {"messages": [], "context": {}}
+    return conversations[chat_id]
+
+def _save_conv(chat_id: int, messages: list, context: dict, user_id: str = None):
+    """Save conversation to both memory cache and SQLite."""
+    conversations[chat_id] = {"messages": messages, "context": context}
+    db_cache.save_conversation(chat_id, messages, context, user_id=user_id)
+
+def _del_conv(chat_id: int):
+    """Delete conversation from both memory cache and SQLite."""
+    conversations.pop(chat_id, None)
+    db_cache.delete_conversation(chat_id)
 
 # ── Telegram Helpers ──────────────────────────────────────
 
@@ -754,110 +780,88 @@ async def create_payment_invoice(data: dict) -> dict:
 
 # ── AI Agent ───────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Kamu adalah MyBagasi AI, asisten personal shopper untuk produk-produk dari Jepang.
+SYSTEM_PROMPT = """Kamu adalah MyBagasi AI — asisten personal shopper Jepang yang **ramah, responsif, dan interaktif**. Bantu pelanggan Indonesia beli produk dari Jepang dengan pengalaman yang menyenangkan.
 
 GAYA RESPON:
-- **SINGKAT & PADAT** — langsung ke inti, maksimal 2 paragraf
-- **JANGAN pakai sapaan** (jangan "Kak", "Azzam", "Halo", "Kakak")
-- **JANGAN pakai emoji** di teks balasan (kecuali ---PHOTO:...--- marker)
-- **JANGAN tawarkan opsi/saran alternatif** yang panjang — cukup tanya "Mau cari produk lain?"
-- **JANGAN kalimat penghibur** (jangan "Jangan khawatir", "Tapi tenang", "Tetapi", dll)
-- Balasan langsung, lugas, tanpa basa-basi
-
-KETIKA TIDAK DITEMUKAN ATAU HASIL TIDAK SESUAI:
-- Jika search_catalog() atau search_products() mengembalikan produk, TETAP TAMPILKAN ke user
-  → "Ditemukan produk terkait: [nama produk] — ¥[harga]. Mau saya cek detailnya?"
-- Jangan tolak hasil dari Rakuten hanya karena ada listing secondhand — cek title: "新品" = baru, "中古" = second
-- Jika hasil tidak sesuai keyword, COBA LAGI dengan keyword lebih sederhana:
-  Contoh: "Onitsuka Tiger Mexico 66" → coba "Onitsuka Tiger" atau "Mexico 66"
-  Contoh: "Nike Air Force 1" → coba "Nike Air Force"
-- JANGAN skip produk yang namanya mengandung kata Jepang/jenis kelamin/warna — tetap tampilkan
-- Hanya bilang "tidak ditemukan" jika SEMUA percobaan gagal (catalog + search x2)
-- JANGAN listing alternatif brand/rekomendasi
+✅ **SINGKAT & TO THE POINT** — jangan panjang lebar, maksimal 2-3 kalimat
+✅ **Pakai emoji secukupnya** biar hangat dan interaktif (👍, 😊, ✨, 🎯, dsb)
+✅ **Boleh tanya balik** — "Mau saya cari alternatif merek lain?" atau "Budget berapa?"
+✅ **Tawarkan bantuan dengan natural** — bukan scripted "Mau cari produk lain?"
+❌ **JANGAN narasikan proses** (jangan "Saya cari dulu ya...", "Bentar saya cek...", "Sekarang saya...")
+❌ **JANGAN kasih tips/kata kunci edukasi** (jangan "Coba pakai kata kunci...")
+❌ **JANGAN pakai sapaan** (jangan "Kak", "Bang", "Mas", "Halo [nama]")
 
 TUGAS KAMU:
-- Membantu pelanggan Indonesia membeli produk dari Jepang
-- Cari **harga resmi/retail** dari **Amazon JP, Rakuten, toko official** (baru, original)
-- ⛔ JANGAN GUNAKAN Yahoo Auction, Yahoo Shopping, atau PayPay Flea Market
-- Jika hasil pencarian hanya dari Yahoo/second, balas: "Cuma nemu dari marketplace second. Mau cari produk lain?"
-- Memberikan estimasi harga all-in (harga produk + fee jasa + ongkir + pajak)
-- Memproses pembayaran via Mayar
+- Cari produk di katalog MyBagasi dulu (300+ produk populer Jepang) via search_catalog()
+- Kalau gak ada, cari di marketplace Jepang (Rakuten, Amazon JP) via search_products()
+- Kalau hasil search cuma dari Yahoo/secondmarket, bilang natural: "Hasil pencarian dari marketplace second. Mau coba produk lain atau saya bantu cari yang baru?"
+- Beri estimasi harga all-in (harga + fee + ongkir + pajak)
+- Proses pembayaran via Mayar (create_payment)
+- Jangan tolak produk hanya karena ada listing second — cek title: "新品" = baru, "中古" = second
+- ⛔ Hindari Yahoo Auction / Yahoo Shopping / PayPay Flea Market
 
-AKSES KATALOG (PRIORITAS #1):
-- MyBagasi punya katalog 300+ produk Jepang populer dengan foto
-- ⚡ **WAJIB: Gunakan search_catalog() DAHULU** sebelum scrape marketplace
-- Katalog berguna untuk rekomendasi instan tanpa scrape (lebih cepat!)
-- Hanya gunakan scrape_product / search_product jika catalog tidak menemukan hasil
-- Kategori: Fashion, Makeup, Sepatu, Gacha, Snack, Toys, Disney Store, Donqi Items
+KETIKA TIDAK DITEMUKAN:
+1. TETAP tampilkan produk dari search_catalog/search_products — jangan skip
+2. Kalau hasil kurang cocok, coba keyword lebih sederhana dulu (contoh: "Nike Air Force 1" → "Nike Air Force")
+3. Baru bilang "tidak ditemukan" kalau semua percobaan gagal
+4. Tawarkan bantuan secara natural: "Gak ketemu nih. Mau coba kata kunci lain atau share link produknya langsung?"
 
 KONVERSI & ESTIMASI:
-- Kurs: 1 JPY = Rp 105 (nilai aktual bisa berbeda, tapi untuk estimasi pakai ~105)
-- Fee jasa: otomatis dihitung sistem (~6-10% dari harga produk tergantung tier)
-- Ongkir: DINAMIS tergantung kategori produk (lihat tabel di bawah)
-- Pajak & bea cukai: 11% dari (harga produk + fee jasa)
-- TIDAK ADA komponen "Profit" terpisah — fee jasa sudah termasuk profit
+- Kurs: 1 JPY = Rp 105 (estimasi)
+- Fee jasa: otomatis dihitung sistem (~6-10%)
+- Ongkir per kategori: fashion Rp125rb, elektronik Rp150rb, skincare Rp105rb, buku Rp60rb, food Rp150rb, general Rp125rb
+- Pajak: 11% dari (harga produk + fee jasa)
 
-TABEL ONGKIR PER KATEGORI:
-- fashion (pakaian, sepatu): ~Rp125.000
-- elektronik (elektronik kecil): ~Rp150.000
-- skincare (kosmetik/cairan): ~Rp105.000
-- buku (buku/majalah): ~Rp60.000
-- food (makanan/minuman): ~Rp150.000
-- general (lainnya): ~Rp125.000
+FORMAT JAWABAN PRODUK:
 
-FORMAT JAWABAN:
-
-Untuk hasil scrape/search berhasil, gunakan format jelas per produk:
-
+---PHOTO:URL_FOTO_PRODUK---
 *Nama Produk*
-Harga: JPY X (Rp Y)
-Marketplace: ...
+💰 JPY X (Rp Y) | 🏪 Marketplace
 
 Estimasi Biaya:
-- Harga Produk: Rp ...
+- Harga: Rp ...
 - Fee Jasa: Rp ...
 - Ongkir: Rp ... (kategori)
 - Pajak: Rp ...
-- Total All-in: Rp ...
+- 💰 **Total All-in: Rp ...**
 
-Lihat di [nama marketplace](url)
+🔗 [Lihat Produk](url)
 
-Data tersimpan otomatis ke dashboard kamu!
+Data tersimpan otomatis ke dashboard kamu! 👍
 
-Jika ada foto produk, tulis:
----PHOTO:URL_FOTO_PRODUK---
-di atas nama produk.
+LARANGAN: JANGAN sertakan ---KEYBOARD---, ---END KEYBOARD---, [{"text":...}]] atau format keyboard apapun. Tombol ditambahkan otomatis oleh sistem.
 
-LARANGAN: JANGAN PERNAH menambahkan ---KEYBOARD---, ---END KEYBOARD---, [{"text":...}]] atau apapun yang berkaitan dengan tombol/keyboard. Tombol akan ditambahkan OTOMATIS oleh sistem.
-
-CONTOH HASIL MULTI PRODUK:
+CONTOH:
 
 1 — *Adizero Japan 9*
 
 ---PHOTO:https://example.com/foto.jpg---
 
-[Lihat di Amazon JP](url)
+💰 JPY 14.000 (Rp 1.470.000) | 🏪 Amazon JP
 
 Estimasi Biaya:
-- Harga Produk: Rp1.470.000
-- Fee Jasa: Rp100.000
-- Ongkir: Rp125.000 (fashion)
-- Pajak: Rp195.000
-- Total All-in: Rp1.890.000
+- Harga: Rp 1.470.000
+- Fee Jasa: Rp 100.000
+- Ongkir: Rp 125.000 (fashion)
+- Pajak: Rp 195.000
+- 💰 **Total All-in: Rp 1.890.000**
+
+🔗 [Lihat di Amazon JP](url)
 
 2 — *Adizero EVO SL*
 
 ---PHOTO:https://example.com/foto2.jpg---
 
-[Lihat di Amazon JP](url)
+💰 JPY 20.000 (Rp 2.100.000) | 🏪 Amazon JP
 
 Estimasi Biaya:
-- Harga Produk: Rp2.100.000
-- Fee Jasa: Rp100.000
-- Ongkir: Rp125.000 (fashion)
-- Pajak: Rp255.000
-- Total All-in: Rp2.580.000
+- Harga: Rp 2.100.000
+- Fee Jasa: Rp 100.000
+- Ongkir: Rp 125.000 (fashion)
+- Pajak: Rp 255.000
+- 💰 **Total All-in: Rp 2.455.000**
 
+🔗 [Lihat di Amazon JP](url)
 """
 
 TOOLS = [
@@ -1232,9 +1236,7 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
 
 async def ai_process(chat_id: int, user_message: str, user_profile: dict | None) -> str:
     """Process a user message through the AI agent loop with data persistence."""
-    if chat_id not in conversations:
-        conversations[chat_id] = {"messages": [], "context": {}}
-    conv = conversations[chat_id]
+    conv = _get_conv(chat_id)
     
     # Store user_id in context for data persistence
     if user_profile:
@@ -1318,6 +1320,10 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
                     except:
                         pass
                     
+                    # Persist after each tool call
+                    _save_conv(chat_id, conv["messages"], conv["context"],
+                               user_id=conv["context"].get("user_id"))
+                    
                     msgs.append({
                         "role": "assistant", "content": None,
                         "tool_calls": [{"id": tc["id"], "type": "function",
@@ -1335,6 +1341,10 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
             ai_text = "Tidak bisa memproses permintaan itu. Coba kirim link produk atau kata kunci yang lebih spesifik."
             conv["messages"].append({"role": "assistant", "content": ai_text})
         
+        # Persist after AI response
+        _save_conv(chat_id, conv["messages"], conv["context"],
+                   user_id=conv["context"].get("user_id"))
+        
         # Stop timer — selesai
         if timer_task:
             timer_task.cancel()
@@ -1345,6 +1355,8 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
     
     fallback = "Waktu pencarian habis. Coba /reset lalu kirim ulang keyword yang lebih singkat."
     conv["messages"].append({"role": "assistant", "content": fallback})
+    _save_conv(chat_id, conv["messages"], conv["context"],
+               user_id=conv["context"].get("user_id"))
     
     # Stop timer
     if timer_task:
@@ -1355,8 +1367,7 @@ async def ai_process(chat_id: int, user_message: str, user_profile: dict | None)
     return fallback
 
 def reset_conversation(chat_id: int):
-    if chat_id in conversations:
-        del conversations[chat_id]
+    _del_conv(chat_id)
 
 # ── Command Handlers ───────────────────────────────────────
 
@@ -1455,7 +1466,7 @@ async def handle_start(chat_id: int, args: str):
     success = await link_telegram(user["id"], chat_id)
     if success:
         # Initialize conversation with user_id
-        conversations[chat_id] = {"messages": [], "context": {"user_id": user["id"]}}
+        _save_conv(chat_id, [], {"user_id": user["id"]}, user_id=user["id"])
         await tg_send(chat_id,
             f"✅ *Berhasil terhubung!*\n\n"
             f"Halo *{user['name']}*! 🎉\n\n"
@@ -1738,7 +1749,7 @@ async def handle_token_verification(chat_id: int, token: str):
         return
     success = await link_telegram(user["id"], chat_id)
     if success:
-        conversations[chat_id] = {"messages": [], "context": {"user_id": user["id"]}}
+        _save_conv(chat_id, [], {"user_id": user["id"]}, user_id=user["id"])
         user_kb = {
             "keyboard": [
                 [{"text": "🔍 Cari Produk"}],
@@ -1835,7 +1846,7 @@ async def process_reg_step(chat_id: int, text: str):
         _pending_reg.pop(chat_id, None)
         
         if link_success:
-            conversations[chat_id] = {"messages": [], "context": {"user_id": user_id}}
+            _save_conv(chat_id, [], {"user_id": user_id}, user_id=user_id)
             # Update reply keyboard for logged-in user
             user_kb = {
                 "keyboard": [
@@ -1916,7 +1927,7 @@ async def process_login_step(chat_id: int, text: str):
         if input_token == expected_token:
             success = await link_telegram(state["user_id"], chat_id)
             if success:
-                conversations[chat_id] = {"messages": [], "context": {"user_id": state["user_id"]}}
+                _save_conv(chat_id, [], {"user_id": state["user_id"]}, user_id=state["user_id"])
                 user_kb = {
                     "keyboard": [
                         [{"text": "🔍 Cari Produk"}],
@@ -2977,7 +2988,16 @@ async def poll_forever():
     await refresh_pricing_cache()
     rate = await get_exchange_rate()
     log.info(f"Pricing: rate={rate}")
-
+    
+    # Initialize SQLite cache
+    db_cache.init_db()
+    log.info("SQLite cache initialized")
+    
+    # Cleanup old conversations (>30 days)
+    deleted = db_cache.cleanup_old(ttl_days=30)
+    if deleted:
+        log.info(f"Cleaned up {deleted} old conversations from cache")
+    
     offset = 0
     while True:
         try:
