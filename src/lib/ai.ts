@@ -21,18 +21,8 @@ TUGAS KAMU:
 
 KONVERSI & ESTIMASI:
 - Kurs: 1 JPY = Rp 105 (nilai aktual bisa berbeda, tapi untuk estimasi pakai ~105)
-- Fee jasa: otomatis dihitung sistem (~6-10% dari harga produk tergantung tier)
-- Ongkir: DINAMIS tergantung kategori produk (lihat tabel di bawah)
-- Pajak & bea cukai: 11% dari (harga produk + fee jasa)
-- TIDAK ADA komponen "Profit" terpisah — fee jasa sudah termasuk profit
-
-TABEL ONGKIR PER KATEGORI:
-- fashion (pakaian, sepatu): ~Rp125.000
-- elektronik (elektronik kecil): ~Rp150.000
-- skincare (kosmetik/cairan): ~Rp105.000
-- buku (buku/majalah): ~Rp60.000
-- food (makanan/minuman): ~Rp150.000
-- general (lainnya): ~Rp125.000
+- Fee jasa, ongkir, dan pajak: otomatis dihitung sistem berdasarkan tier harga
+- Pajak & bea cukai: sudah termasuk dalam komponen di atas
 
 FORMAT WAJIB untuk produk hasil scrape/cari:
 
@@ -375,15 +365,15 @@ function normalizeUrlCandidate(raw: string): string | null {
 }
 
 export function estimateAllInFromJPY(priceJPY: number, category = "general") {
-  const est = calculatePriceEstimate({ priceJpy: priceJPY, shippingCategory: category });
+  const est = calculatePriceEstimate({ priceJpy: priceJPY });
   return {
     basePrice: est.priceIdr,
     serviceFee: est.fee,
     shipping: est.shipping,
     tax: est.tax,
     total: est.total,
-    category: est.shippingCategory,
-    shippingNote: est.shippingNote,
+    category,
+    shippingNote: "",
   };
 }
 

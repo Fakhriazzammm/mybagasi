@@ -134,7 +134,7 @@ export async function generateSmartQuotation(input: SmartQuotationInput): Promis
   const priceHistory = summarizeHistory(comparablePrices.length > 0 ? comparablePrices : [productJpy]);
 
   const productIdr = Math.round(productJpy * rate);
-  const est = calculatePriceEstimate({ priceJpy: productJpy, shippingCategory: "general" });
+  const est = calculatePriceEstimate({ priceJpy: productJpy });
   const fee = est.fee;
   const shipping = est.shipping;
   const tax = est.tax;

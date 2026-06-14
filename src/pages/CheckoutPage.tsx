@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createInvoice } from "@/lib/mayar";
 import { supabase } from "@/lib/supabase";
 import { appConfig } from "@/lib/runtime-config";
-import { calculatePriceEstimate, formatRp, getShippingRate } from "@/lib/pricing";
+import { calculatePriceEstimate, formatRp } from "@/lib/pricing";
 import {
   CreditCard,
   ExternalLink,
@@ -55,26 +55,10 @@ function calculateCartTotals(items: CartItemState[]) {
   }));
   const totalItemPrice = itemSubtotals.reduce((s, i) => s + i.subtotal, 0);
 
-  // Fee (tiered logic matching pricing.ts)
-  const feeService =
-    totalItemPrice < 1_000_000
-      ? 100_000
-      : totalItemPrice < 3_000_000
-        ? 300_000
-        : totalItemPrice < 5_000_000
-          ? 500_000
-          : totalItemPrice < 10_000_000
-            ? 1_000_000
-            : 2_000_000;
+  // Hitung fee/ongkir/pajak dari profit tier — konsisten dengan pricing.ts
+  const est = calculatePriceEstimate({ priceIdr: totalItemPrice });
 
-  // Use the first item's shipping category, fallback to general
-  const shippingCategory = items[0]?.shipping_category ?? "general";
-  const shipping = getShippingRate(shippingCategory, appConfig.pricing.jpyToIdr);
-
-  const tax = Math.round(totalItemPrice * 0.11);
-  const grandTotal = totalItemPrice + feeService + shipping + tax;
-
-  return { itemSubtotals, totalItemPrice, feeService, shipping, tax, grandTotal };
+  return { itemSubtotals, totalItemPrice, feeService: est.fee, shipping: est.shipping, tax: est.tax, grandTotal: est.total };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

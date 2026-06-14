@@ -74,7 +74,6 @@ export function ProductDetailModal({
     () =>
       calculatePriceEstimate({
         priceJpy,
-        shippingCategory: item.shipping_category ?? undefined,
       }),
     [priceJpy, item.shipping_category],
   );
