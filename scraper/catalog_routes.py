@@ -11,6 +11,7 @@ import re
 import sqlite3
 from typing import Any
 
+from db import auto_categorize
 from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/catalog")
@@ -83,11 +84,16 @@ async def catalog_search(
         # ── Attempt 1: FTS5 full-text search ──
         items = _fts_search(conn, keyword, category, limit)
         if items:
-            return {"items": items, "total": len(items)}
+            return {"items": items, "source": "catalog", "total": len(items)}
 
         # ── Attempt 2: ILIKE fallback ──
         items = _ilike_search(conn, keyword, category, limit)
-        return {"items": items, "total": len(items)}
+        if items:
+            return {"items": items, "source": "catalog", "total": len(items)}
+
+        # ── Attempt 3: product_memory search ──
+        memory_items = _memory_search(conn, keyword, category, limit)
+        return {"items": memory_items, "source": "memory", "total": len(memory_items)}
     finally:
         conn.close()
 
@@ -144,6 +150,27 @@ def _ilike_search(conn: sqlite3.Connection, keyword: str, category: str | None, 
 
     rows = conn.execute(sql, params).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def _memory_search(conn: sqlite3.Connection, keyword: str, category: str | None, limit: int) -> list[dict]:
+    """Search product_memory table (auto-collected from user searches)."""
+    try:
+        like_pat = f"%{keyword}%"
+        sql = "SELECT * FROM product_memory WHERE 1=1"
+        params: list[Any] = [like_pat, like_pat, like_pat, like_pat]
+
+        if category:
+            sql += " AND category = ?"
+            params.append(category)
+
+        sql += " AND (name LIKE ? OR name_jp LIKE ? OR description LIKE ? OR aliases LIKE ?)"
+        sql += " ORDER BY search_count DESC, price_jpy ASC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(sql, params).fetchall()
+        return [_row_to_dict(r) for r in rows]
+    except Exception:
+        return []
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -304,3 +331,28 @@ async def catalog_memory(
         return {"items": items, "total": total}
     finally:
         conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 6. POST & GET /auto-categorize  —  Auto-determine category
+# ══════════════════════════════════════════════════════════════════════
+
+@router.post("/auto-categorize")
+async def catalog_auto_categorize(data: dict):
+    """Auto-determine category for a product name/description."""
+    name = data.get("name", "")
+    description = data.get("description", "")
+    keywords = data.get("keywords", "")
+    category = auto_categorize(name, description, keywords)
+    return {"category": category}
+
+
+@router.get("/auto-categorize")
+async def catalog_auto_categorize_get(
+    name: str = Query(...),
+    description: str = Query(""),
+    keywords: str = Query(""),
+):
+    """Auto-determine category for a product (GET version)."""
+    category = auto_categorize(name, description, keywords)
+    return {"category": category}

@@ -40,7 +40,7 @@ import browser_session as browser
 import db_cache
 
 # Database helper (local SQLite + Supabase fallback)
-from db import db
+from db import db, auto_categorize
 
 # ── Configuration ──────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -1053,23 +1053,40 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
                         item.get("title") or "",
                         item.get("price_jpy") or 0
                     )
+                    item_name = item.get("title") or keyword
+                    item_desc = item.get("description") or ""
+                    item_keywords = keyword
+
+                    # Auto-categorize if category is generic/incomplete
+                    raw_category = item.get("category") or ""
+                    if not raw_category or raw_category.lower() in ("general", "other", "lainnya", ""):
+                        raw_category = auto_categorize(item_name, item_desc, item_keywords)
+
+                    # Save image locally
+                    imgs = item.get("images") or []
+                    local_imgs = imgs
+                    if imgs and imgs[0]:
+                        local_img = await _save_memory_image(imgs[0], item.get("url") or "")
+                        if local_img:
+                            local_imgs = [local_img]
+
                     mem_data = {
-                        "name": item.get("title") or keyword,
+                        "name": item_name,
                         "price_jpy": item.get("price_jpy") or 0,
                         "price_idr": round((item.get("price_jpy") or 0) * JPY_TO_IDR),
                         "marketplace": item.get("marketplace") or "Jepang",
                         "url": item.get("url") or "",
-                        "category": item.get("category") or "general",
-                        "shipping_category": item.get("shipping_category") or "general",
+                        "category": raw_category,
+                        "shipping_category": raw_category,
                         "weight_kg": item_weight,
-                        "images": json.dumps(item.get("images") or []),
-                        "description": item.get("description") or "",
+                        "images": json.dumps(local_imgs),
+                        "description": item_desc,
                         "source": "search",
                         "confidence": "medium",
                     }
                     db.save_product_memory(mem_data)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"Failed to save to product memory: {e}")
         
         return json.dumps(result)
 
@@ -2851,6 +2868,8 @@ async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
 async def _save_memory_image(img_url: str, product_url: str = "") -> str | None:
     """Download image from URL and save to catalog references directory.
     Returns local relative path like /images/references/memory/{id}.jpg or None."""
+    if not img_url or img_url.startswith("/images/references/"):
+        return None  # Already local
     if not img_url:
         return None
     import hashlib
@@ -3113,18 +3132,26 @@ async def handle_photo(chat_id: int, file_id: str):
                     item.get("title") or item.get("name") or "",
                     item.get("price_jpy") or 0
                 )
+                item_name = item.get("title") or item.get("name") or product_name
+                item_desc = item.get("description") or ""
+
+                # Auto-categorize if category is empty or generic
+                raw_category = category or ""
+                if not raw_category or raw_category.lower() in ("general", "other", "lainnya", ""):
+                    raw_category = auto_categorize(item_name, item_desc, product_name)
+
                 mem_data = {
-                    "name": item.get("title") or item.get("name") or product_name,
+                    "name": item_name,
                     "name_jp": name_jp if item is items[0] else "",
                     "price_jpy": item.get("price_jpy") or 0,
                     "price_idr": round((item.get("price_jpy") or 0) * 113),
                     "marketplace": item.get("marketplace") or "Jepang",
                     "url": item.get("url") or "",
-                    "category": category,
-                    "shipping_category": category,
+                    "category": raw_category,
+                    "shipping_category": raw_category,
                     "weight_kg": item_weight,
                     "images": json.dumps(item.get("images") or []),
-                    "description": item.get("description") or "",
+                    "description": item_desc,
                     "source": "photo",
                     "confidence": "medium",
                 }

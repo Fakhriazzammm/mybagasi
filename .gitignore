@@ -1,47 +1,45 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-.env
-.env.*
-!.env.example
-
-# Environment files
-.env
-.env.*
-
-# Data files (runtime generated)
-scraper/data/images/
-scraper/data/*.json
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-supabase/.temp/
-
-# Python / scraper artifacts
-scraper/.venv/
-**/__pycache__/
-*.pyc
 .backups/
 .claude/worktrees/ecstatic-bassi-5a4a80/
 .claude/worktrees/gallant-brahmagupta-a241be/
-temp/
+# Data files (runtime generated)
+dist
+dist-ssr
+.DS_Store
+# Editor directories and files
+.env
+.env.*
+!.env.example
+# Environment files
+.idea
+lerna-debug.log*
+*.local
+*.log
+logs
+# Logs
+*.njsproj
+node_modules
+npm-debug.log*
+*.ntvs*
+pnpm-debug.log*
+*.pyc
+**/__pycache__/
+# Python / scraper artifacts
+scraper/app.db-shm
+scraper/app.db-wal
+scraper/catalog.db-shm
+scraper/catalog.db-wal
 scraper/data/cart.json
+scraper/data/images/
+scraper/data/*.json
+scraper/.venv/
+*.sln
+*.suo
+supabase/.temp/
+*.sw?
+temp/
 .vercel
+.vscode/*
+!.vscode/extensions.json
+yarn-debug.log*
+yarn-error.log*

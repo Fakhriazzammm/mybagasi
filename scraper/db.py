@@ -27,6 +27,7 @@ log = logging.getLogger("mybagasi.db")
 
 # ── Config ──────────────────────────────────────────────────────
 DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
+CATALOG_DB_PATH = os.path.join(os.path.dirname(__file__), "catalog.db")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 _SUPABASE_AVAILABLE = bool(SUPABASE_URL and SUPABASE_KEY)
@@ -234,6 +235,39 @@ CREATE TABLE IF NOT EXISTS product_memory (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_url ON product_memory(url);
 CREATE INDEX IF NOT EXISTS idx_memory_name ON product_memory(name);
 """
+
+# ══════════════════════════════════════════════════════════════════
+# Auto-categorize helper
+# ══════════════════════════════════════════════════════════════════
+
+
+def auto_categorize(name: str, description: str = "", keywords: str = "") -> str:
+    """Auto-determine category based on product name/description/keywords.
+    Maps to existing catalog categories: Fashion, Sepatu & Sandal, Jam Tangan,
+    Skincare & Kosmetik, Kesehatan & Obat, Makanan & Minuman, Lainnya"""
+    text = f"{name} {description} {keywords}".lower()
+
+    # Define keyword→category mapping (order matters: most specific first)
+    rules = [
+        (["jam", "watch", "arloji", "chrono", "seiko", "casio", "g-shock", "smartwatch"], "Jam Tangan"),
+        (["sepatu", "sandal", "sneaker", "boot", "shoe", "slipper", "loafer", "nike", "adidas", "puma", "new balance", "asics", "onitsuka"], "Sepatu & Sandal"),
+        (["skincare", "serum", "moisturizer", "sunscreen", "toner", "facial wash", "retinol", "vitamin c", "niacinamide", "essence", "sheet mask", "face mask"], "Skincare & Kosmetik"),
+        (["kosmetik", "makeup", "lipstick", "foundation", "concealer", "eyeshadow", "blush", "bedak", "cushion"], "Skincare & Kosmetik"),
+        (["obat", "vitamin", "supplement", "health", "medical", "kesehatan", "herbal", "propolis", "madu", "jahe"], "Kesehatan & Obat"),
+        (["makanan", "minuman", "snack", "food", "drink", "candy", "chocolate", "instant noodle", "keripik", "biskuit", "ramen", "matcha", "tea", "coffee"], "Makanan & Minuman"),
+        (["baju", "kaos", "kemeja", "jaket", "hoodie", "sweater", "dress", "celana", "jeans", "outer", "t-shirt", "shirt", "pants", "blouse", "cardigan", "down jacket", "blazer", "kaos kaki", "socks"], "Fashion"),
+        (["tas", "bag", "backpack", "sling bag", "tote", "dompet", "wallet"], "Fashion"),
+        (["elektronik", "gadget", "hp", "laptop", "camera", "headphone", "earphone", "charger", "cable", "kabel", "battery"], "Lainnya"),
+        (["fashion", "aksesoris", "scarf", "sunglasses", "ring", "necklace", "gelang"], "Fashion"),
+    ]
+
+    for keywords_list, category in rules:
+        for kw in keywords_list:
+            if kw in text:
+                return category
+
+    return "Lainnya"
+
 
 # ══════════════════════════════════════════════════════════════════
 # Core Database Class
@@ -524,6 +558,32 @@ class Database:
                 merged = list(existing_aliases | new_aliases)
                 update_data["aliases"] = json.dumps(merged)
                 self._update_sqlite("product_memory", update_data, "id", eid)
+                # Sync to catalog.db
+                try:
+                    catalog_conn = sqlite3.connect(CATALOG_DB_PATH)
+                    catalog_conn.execute("PRAGMA journal_mode=WAL")
+                    catalog_conn.commit()
+                    update_data_filtered = {k: v for k, v in update_data.items() if k != 'id'}
+                    sets = ", ".join(f"{k} = ?" for k in update_data_filtered.keys())
+                    vals = []
+                    for k, v in update_data_filtered.items():
+                        if isinstance(v, (list, dict)):
+                            vals.append(json.dumps(v))
+                        else:
+                            vals.append(v)
+                    vals.append(eid)
+                    catalog_conn.execute(
+                        f"UPDATE product_memory SET {sets} WHERE id = ?",
+                        vals,
+                    )
+                    catalog_conn.commit()
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        catalog_conn.close()
+                    except:
+                        pass
                 return eid
 
         # ── Check by name similarity ──
@@ -570,6 +630,32 @@ class Database:
                                 existing_aliases.add(ename.lower())
                             update_data["aliases"] = json.dumps(list(existing_aliases))
                             self._update_sqlite("product_memory", update_data, "id", eid)
+                            # Sync to catalog.db
+                            try:
+                                catalog_conn = sqlite3.connect(CATALOG_DB_PATH)
+                                catalog_conn.execute("PRAGMA journal_mode=WAL")
+                                catalog_conn.commit()
+                                update_data_filtered = {k: v for k, v in update_data.items() if k != 'id'}
+                                sets = ", ".join(f"{k} = ?" for k in update_data_filtered.keys())
+                                vals = []
+                                for k, v in update_data_filtered.items():
+                                    if isinstance(v, (list, dict)):
+                                        vals.append(json.dumps(v))
+                                    else:
+                                        vals.append(v)
+                                vals.append(eid)
+                                catalog_conn.execute(
+                                    f"UPDATE product_memory SET {sets} WHERE id = ?",
+                                    vals,
+                                )
+                                catalog_conn.commit()
+                            except Exception:
+                                pass
+                            finally:
+                                try:
+                                    catalog_conn.close()
+                                except:
+                                    pass
                             return eid
 
         # ── Insert new ──
@@ -589,6 +675,37 @@ class Database:
         if aliases:
             insert_data["aliases"] = json.dumps(list(aliases))
         self._insert_sqlite("product_memory", insert_data)
+
+        # Also sync to catalog.db for catalog search
+        try:
+            catalog_conn = sqlite3.connect(CATALOG_DB_PATH)
+            catalog_conn.row_factory = sqlite3.Row
+            # Ensure table exists
+            catalog_conn.execute("PRAGMA journal_mode=WAL")
+            catalog_conn.commit()
+
+            # Use INSERT OR REPLACE
+            cols = ", ".join(insert_data.keys())
+            placeholders = ", ".join(["?"] * len(insert_data))
+            values = []
+            for v in insert_data.values():
+                if isinstance(v, (list, dict)):
+                    values.append(json.dumps(v))
+                else:
+                    values.append(v)
+            catalog_conn.execute(
+                f"INSERT OR REPLACE INTO product_memory ({cols}) VALUES ({placeholders})",
+                values,
+            )
+            catalog_conn.commit()
+        except Exception:
+            pass
+        finally:
+            try:
+                catalog_conn.close()
+            except:
+                pass
+
         return pid
 
     def all(self, table: str, order_by: str | None = None) -> list[dict]:
