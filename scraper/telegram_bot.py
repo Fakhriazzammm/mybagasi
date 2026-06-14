@@ -3204,14 +3204,40 @@ async def process_update(update: dict):
             await handle_jadwal(chat_id)
         elif data.startswith("cart_"):
             action = data.replace("cart_", "")
-            if action == "add":
-                await tg_send(chat_id, "🛒 Produk ditambahkan ke keranjang! Ketik /beli untuk checkout.")
+            if action == "add" or data == "cart_add":
+                # "cart_add" (bare button) or "cart_add:URL"
+                user = await lookup_user_by_telegram_id(chat_id)
+                if not user:
+                    await tg_send(chat_id, "⚠️ Kamu harus daftar/login dulu. Ketik /register")
+                    return
+                uid = user["id"]
+
+                # Parse product info from message
+                msg_text = callback.get("message", {}).get("text") or callback.get("message", {}).get("caption") or ""
+                prod_match = re.search(r'\*\*(.+?)\*\*', msg_text)
+                product_name = prod_match.group(1).strip() if prod_match else "Produk dari bot"
+
+                from datetime import datetime, timezone
+                cart_item = {
+                    "id": uid[:8] + "_c_" + str(int(time.time())),
+                    "user_id": uid,
+                    "product_name": product_name[:40],
+                    "price_jpy": 0, "price_idr": 0,
+                    "url": data.replace("cart_add:", "") if data.startswith("cart_add:") else "",
+                    "image_url": "", "category": "",
+                    "quantity": 1, "notes": "", "source": "telegram_bot",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                if db.insert("cart_items", cart_item):
+                    await tg_send(chat_id, f"✅ {product_name[:30]} masuk keranjang! 🛒\nKetik /cart untuk lihat & checkout.")
+                else:
+                    await tg_send(chat_id, "❌ Gagal simpan ke keranjang. Coba lagi.")
             elif action == "buy":
-                await tg_send(chat_id, "💳 Untuk beli, kirim /beli diikuti nama produk.\nAtau hubungi @fakhriazzam untuk bantuan.")
+                await tg_send(chat_id, "💳 Untuk beli, kirim /beli diikuti nama produk. Atau hubungi @fakhriazzam.")
             elif action == "buy_all":
                 await tg_send(chat_id, "💳 Semua produk akan diproses. Ketik /beli untuk checkout atau kirim nama + alamat.")
             elif action == "skip":
-                await tg_send(chat_id, "👌 Baik, lewati saja. Cari produk lain? Ketik nama barangnya.")
+                await tg_send(chat_id, "👌 Baik, skip dulu. Cari produk lain? Ketik nama barangnya.")
             elif action == "clear":
                 await handle_cart_clear(chat_id)
             elif action.startswith("remove_"):
