@@ -362,7 +362,7 @@ async def _ensure_pricing_table():
             {"min": 5000000, "max": 9999999, "profit": 1000000},
             {"min": 10000000, "max": 999999999, "profit": 2000000}
         ]}},
-        {"key": "distribution_ratio", "value": {"fee": 33, "shipping": 34, "tax": 33, "description": "Distribusi profit ke fee/ongkir/pajak (%)"}},
+        {"key": "distribution_ratio", "value": {"fee": 40, "shipping": 35, "tax": 25, "description": "Distribusi profit ke fee/ongkir/pajak (%)"}},
         {"key": "shipping_cost", "value": {"cost": 250000, "description": "Ongkir Jepang ke Indonesia"}},
         {"key": "tax_rate", "value": {"rate": 0.11, "description": "Pajak & bea cukai 11%"}},
     ]
@@ -494,7 +494,7 @@ async def get_profit_tiers() -> list:
 async def get_distribution_ratio() -> dict:
     """Dapatkan rasio distribusi profit (fee:shipping:tax)."""
     await refresh_pricing_cache()
-    default = {"fee": 33, "shipping": 34, "tax": 33}
+    default = {"fee": 40, "shipping": 35, "tax": 25}
     return _PRICING_CACHE_DATA.get("distribution_ratio", default)
 
 async def estimate_price_v2(price_jpy: int, category: str = "general") -> dict:

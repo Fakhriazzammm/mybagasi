@@ -20,8 +20,8 @@ const PROFIT_TIERS: { min: number; max: number; profit: number }[] = [
   { min: 10000000, max: 999999999, profit: 2000000 },
 ];
 
-/** Distribusi profit — fee:ongkir:pajak = 33:34:33 */
-const DISTRIBUTION_RATIO = { fee: 33, shipping: 34, tax: 33 };
+/** Distribusi profit — fee:ongkir:pajak = 40:35:25 (acak, gak kelihatan rata) */
+const DISTRIBUTION_RATIO = { fee: 40, shipping: 35, tax: 25 };
 
 function calculateTargetProfit(priceIdr: number): number {
   for (const tier of PROFIT_TIERS) {
