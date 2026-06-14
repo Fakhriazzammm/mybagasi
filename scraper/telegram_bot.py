@@ -31,6 +31,9 @@ from typing import Any
 
 import httpx
 
+# Browser session manager for interactive browsing
+import browser_session as browser
+
 # ── Configuration ──────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
@@ -39,6 +42,11 @@ SCRAPER_URL = "http://localhost:8000"
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+# Sumopod (Gemini 2.5 Flash via Sumopod) — for browser vision & AI-driven browsing
+SUMOPOD_API_KEY = os.getenv("SUMOPOD_API_KEY", "")
+SUMOPOD_BASE_URL = os.getenv("SUMOPOD_BASE_URL", "https://ai.sumopod.com/v1")
+SUMOPOD_MODEL = os.getenv("SUMOPOD_MODEL", "gemini/gemini-2.5-flash")
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 POLL_TIMEOUT = 30
@@ -73,6 +81,17 @@ MAX_HISTORY = 20
 
 def tg_url(method: str) -> str:
     return f"{TELEGRAM_API}/{method}"
+
+
+async def require_login(chat_id: int):
+    """Send login prompt."""
+    await tg_send(chat_id,
+        "⚠️ *Kamu harus terhubung ke MyBagasi* untuk fitur ini.\n\n"
+        "• `/register` — Daftar akun baru\n"
+        "• `/login` — Login ke akun yang sudah ada\n"
+        "• `/start KODE` — Hubungkan akun via kode")
+
+
 
 async def tg_send(chat_id: int, text: str, parse_mode: str = "Markdown", reply_markup: dict | None = None) -> dict | None:
     try:
@@ -2208,6 +2227,197 @@ def detect_product_buttons(text: str, multi_button: bool = False) -> dict | None
     return None
 
 
+
+# ═══════════════════════════════════
+# Browser Interactive Browsing
+# ═══════════════════════════════════
+
+async def handle_browse(chat_id: int, url: str):
+    """Open a URL in the user's browser session."""
+    if not url:
+        await tg_send(chat_id, 
+            "🌐 *Browser*\n\n"
+            "Gunakan: `/browse <url>`\n"
+            "Contoh: `/browse https://amazon.co.jp`\n\n"
+            "Setelah terbuka, gunakan `/snap` untuk lihat elemen interaktif.")
+        return
+
+    status_msg = await tg_send(chat_id, f"🌐 *Membuka:* {url[:50]}...")
+    msg_id = status_msg["result"]["message_id"] if status_msg and status_msg.get("ok") else None
+    
+    await tg_typing(chat_id)
+    result = await browser.navigate(chat_id, url)
+    
+    if result.get("success"):
+        elements = result.get("interactive_elements", [])
+        title = result.get("title", "")[:80]
+        count = result.get("element_count", 0)
+        
+        msg = (
+            f"🌐 *{title}*\n"
+            f"🔗 `{result['url']}`\n"
+            f"📋 Elemen interaktif: *{count}*\n\n"
+            f"Gunakan:\n"
+            f"• `/snap` — lihat semua elemen\n"
+            f"• `/screenshot` — tangkap layar\n"
+            f"• `/click @e1` — klik elemen\n"
+            f"• `/type @e5 teks` — ketik\n"
+            f"• `/scroll down` — scroll"
+        )
+        if msg_id:
+            await tg_edit(chat_id, msg_id, msg)
+        else:
+            await tg_send(chat_id, msg)
+    else:
+        err = result.get("error", "Unknown error")
+        error_msg = f"❌ *Gagal membuka halaman*\n\n{err}"
+        if msg_id:
+            await tg_edit(chat_id, msg_id, error_msg)
+        else:
+            await tg_send(chat_id, error_msg)
+
+
+async def handle_bclick(chat_id: int, selector: str):
+    """Click an element by @ref or text."""
+    if not selector:
+        await tg_send(chat_id,
+            "🖱️ *Click*\n\n"
+            "Gunakan: `/click @e1` (ref dari `/snap`)\n"
+            "Atau: `/click Cari` (text match)")
+        return
+    
+    await tg_typing(chat_id)
+    result = await browser.click_element(chat_id, selector)
+    
+    if result.get("success"):
+        target = result.get("target", selector)
+        new_url = result.get("url", "")
+        msg = f"🖱️ *Klik:* {target}\n"
+        if new_url:
+            msg += f"📍 URL: `{new_url[:80]}`"
+        await tg_send(chat_id, msg)
+    else:
+        await tg_send(chat_id, f"❌ *Click gagal*\n\n{result.get('error', 'Elemen tidak ditemukan')}")
+
+
+async def handle_btype(chat_id: int, args: str):
+    """Type text into an input field."""
+    if not args or " " not in args:
+        await tg_send(chat_id,
+            "⌨️ *Type*\n\n"
+            "Gunakan: `/type @e5 teks yang ingin diketik`\n"
+            "Contoh: `/type @e3 hoodie`")
+        return
+    
+    parts = args.split(maxsplit=1)
+    selector = parts[0]
+    text = parts[1]
+    
+    await tg_typing(chat_id)
+    result = await browser.type_text(chat_id, selector, text)
+    
+    if result.get("success"):
+        target = result.get("target", selector)
+        length = result.get("text_length", 0)
+        await tg_send(chat_id, f"⌨️ *Diketik:* {target}\n📝 `{length}` karakter")
+    else:
+        await tg_send(chat_id, f"❌ *Type gagal*\n\n{result.get('error', 'Input tidak ditemukan')}")
+
+
+async def handle_bscroll(chat_id: int, direction: str = "down"):
+    """Scroll the page."""
+    if direction not in ("down", "up"):
+        direction = "down"
+    
+    await tg_typing(chat_id)
+    result = await browser.scroll_page(chat_id, direction)
+    
+    if result.get("success"):
+        pct = result.get("scroll_pct", 0)
+        await tg_send(chat_id, f"📜 *Scroll {direction}* — posisi: ~{pct}%")
+    else:
+        await tg_send(chat_id, f"❌ *Scroll gagal*\n\n{result.get('error')}")
+
+
+async def handle_bscreenshot(chat_id: int):
+    """Take a screenshot and send it to Telegram."""
+    await tg_typing(chat_id)
+    result = await browser.take_screenshot(chat_id)
+    
+    if result.get("success"):
+        filepath = result["filepath"]
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                with open(filepath, "rb") as f:
+                    r = await client.post(
+                        tg_url("sendPhoto"),
+                        data={"chat_id": chat_id},
+                        files={"photo": f},
+                    )
+                    if r.status_code == 200:
+                        return
+            await tg_send(chat_id, f"📸 *Screenshot siap*\nPath: `{filepath}`")
+        except Exception as e:
+            await tg_send(chat_id, f"📸 Screenshot diambil\n`{filepath}`")
+    else:
+        await tg_send(chat_id, f"❌ *Screenshot gagal*\n\n{result.get('error')}")
+
+
+async def handle_bsnap(chat_id: int):
+    """Show interactive elements of the current page."""
+    await tg_typing(chat_id)
+    result = await browser.snapshot(chat_id)
+    
+    if not result.get("success"):
+        await tg_send(chat_id, f"❌ {result.get('error', 'Belum ada halaman yang dibuka. Gunakan /browse <url>')}")
+        return
+    
+    title = result.get("title", "")[:60]
+    url = result.get("url", "")
+    elements = result.get("interactive_elements", [])
+    text_preview = result.get("text_preview", "")
+    
+    msg_lines = [f"📋 *{title}*", f"🔗 `{url[:60]}`", ""]
+    
+    if elements:
+        shown = 0
+        for el in elements[:25]:
+            desc = el.get("desc", "")
+            if desc:
+                msg_lines.append(f"`{desc}`")
+                shown += 1
+        if len(elements) > 25:
+            msg_lines.append(f"*... +{len(elements) - 25} elemen lagi (total {len(elements)})*")
+    else:
+        msg_lines.append("_Tidak ada elemen interaktif terdeteksi_")
+    
+    if len(elements) <= 10 and text_preview:
+        preview = text_preview[:500]
+        msg_lines.extend(["", "📄 *Teks halaman:*", f"```\n{preview}\n```"])
+    
+    msg_lines.append("")
+    msg_lines.append("💡 `/click @e1` untuk klik elemen")
+    
+    msg = "\n".join(msg_lines)
+    
+    if len(msg) > 4000:
+        short_msg = (
+            f"📋 *{title}*\n"
+            f"🔗 `{url[:60]}`\n"
+            f"Elemen: *{len(elements)}*\n"
+            f"Halaman terlalu panjang. Fitur akan di-improve."
+        )
+        await tg_send(chat_id, short_msg)
+    else:
+        await tg_send(chat_id, msg)
+
+
+async def handle_bclose(chat_id: int):
+    """Close the user's browser session."""
+    result = await browser.close_session(chat_id)
+    await tg_send(chat_id, "🚫 *Browser session ditutup*\n\nGunakan `/browse <url>` untuk mulai lagi.")
+
+
 async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
     if not DEEPSEEK_API_KEY:
         await tg_send(chat_id, "❌ AI Personal Shopper belum dikonfigurasi.")
@@ -2354,6 +2564,41 @@ async def process_update(update: dict):
         _pending_reg.pop(chat_id, None)
         _pending_login.pop(chat_id, None)
         await tg_send(chat_id, "🔄 Percakapan di-reset. Mulai lagi yuk!")
+    elif command == "/browse":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_browse(chat_id, args)
+    elif command == "/click":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_bclick(chat_id, args)
+    elif command == "/type":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_btype(chat_id, args)
+    elif command == "/scroll":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_bscroll(chat_id, args)
+    elif command == "/screenshot":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_bscreenshot(chat_id)
+    elif command == "/snap":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_bsnap(chat_id)
+    elif command == "/bclose":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        await handle_bclose(chat_id)
     elif command == "/katalog":
         await handle_katalog(chat_id, text)
     elif command in ("/beli", "/ai", "/cari"):
@@ -2504,3 +2749,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         log.info("Bot stopped by user")
+        asyncio.run(browser.cleanup_all())
