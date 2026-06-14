@@ -2191,38 +2191,60 @@ async def handle_katalog(chat_id: int, text: str):
             await tg_send(chat_id, f"📦 *{category_name}* — Belum ada produk di kategori ini.")
             return
 
-        # Send first item as photo message
-        first = items[0]
-        images = first.get("images") or []
-        img_url = ""
-        if isinstance(images, list) and len(images) > 0:
-            img_url = images[0]
-        elif isinstance(images, str):
-            img_url = images
+        # ── Send as photo album (media group) ──
+        media_items = []
+        text_items = []
+        for item in items[:5]:
+            images = item.get("images") or []
+            img_url = ""
+            if isinstance(images, list) and len(images) > 0:
+                img_url = images[0]
+            elif isinstance(images, str):
+                img_url = images
 
-        msg = f"📦 *{category_name}* — {len(items)} produk teratas\n\n"
-        for i, item in enumerate(items[:5], 1):
             name = (item.get("name") or "")[:40]
             price = item.get("price_jpy", 0)
-            item_url = item.get("url") or ""
-            short_desc = (item.get("description") or "")[:60]
-            msg += f"{i}. *{name}*\n"
+            caption = f"*{name}*"
             if price:
-                msg += f"   💰 JP¥{price:,}\n"
-            if short_desc:
-                msg += f"   📝 {short_desc}\n"
-            if item_url:
-                msg += f"   🔗 {item_url[:60]}...\n"
-            msg += "\n"
+                caption += f"\n💰 JP¥{price:,}"
 
-        msg += f"🔍 Cari produk lain dengan `/beli <keyword>`"
+            if img_url and img_url.startswith(("http://", "https://", "/images/")):
+                # Make relative paths absolute for Telegram
+                if img_url.startswith("/"):
+                    img_url = f"https://mybagasi.my.id{img_url}"
+                media_items.append({
+                    "type": "photo",
+                    "media": img_url,
+                    "caption": caption,
+                    "parse_mode": "Markdown",
+                })
+                continue
 
-        reply_markup = None
-        if img_url:
-            caption = f"📦 *{(first.get('name') or '')[:40]}*\n💰 JP¥{first.get('price_jpy', 0):,}"
-            await tg_send_photo(chat_id, img_url, caption)
+            # No image — add to text list
+            text_items.append(f"• *{name}*" + (f" — JP¥{price:,}" if price else ""))
 
-        await tg_send(chat_id, msg)
+        # Send album (max 10 per group)
+        if media_items:
+            for batch_start in range(0, len(media_items), 10):
+                batch = media_items[batch_start:batch_start+10]
+                try:
+                    async with httpx.AsyncClient(timeout=15) as client:
+                        await client.post(
+                            tg_url("sendMediaGroup"),
+                            json={
+                                "chat_id": chat_id,
+                                "media": batch,
+                            },
+                        )
+                except Exception as e:
+                    log.warning(f"sendMediaGroup error: {e}")
+
+        # Send text-only items if any remain
+        if text_items:
+            await tg_send(chat_id, f"📦 *{category_name}* — {len(items)} produk:\n\n" + "\n".join(text_items))
+
+        # Search tip
+        await tg_send(chat_id, f"🔍 Cari produk lain dengan `/beli <keyword>`")
 
 
 async def handle_jadwal(chat_id: int):
