@@ -1251,31 +1251,18 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
             return json.dumps({"error": "Kata kunci diperlukan"})
         log.info(f"Tool: search_catalog '{keyword}' category='{category}'")
 
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        limit = 10
-        like_pat = f"%{keyword}%"
-        or_clause = (
-            f"name.ilike.{like_pat},"
-            f"description.ilike.{like_pat}"
-        )
-        params = {
-            "select": "id,name,category,price_jpy,images,description,url",
-            "active": "eq.true",
-            "or": f"({or_clause})",
-            "limit": str(limit),
-        }
-        if category:
-            params["category"] = f"eq.{category}"
-
         try:
             async with httpx.AsyncClient(timeout=15) as client:
+                params = {"keyword": keyword, "limit": "10"}
+                if category:
+                    params["category"] = category
                 r = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/catalog_items",
+                    f"{SCRAPER_URL}/catalog/search",
                     params=params,
-                    headers=headers,
                 )
                 if r.status_code == 200:
-                    items = r.json()
+                    data = r.json()
+                    items = data.get("items", [])
                 else:
                     items = []
 
