@@ -515,9 +515,9 @@ def _extract_price(text: str) -> int | None:
 
 async def _parse_item_with_ai(text: str) -> dict | None:
     """Use DeepSeek AI to parse item text into structured data."""
-    api_key = os.getenv("DEEPSEEK_API_KEY", "")
-    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    api_key = os.getenv("SUMOPOD_API_KEY", "")
+    base_url = "https://ai.sumopod.com/v1"
+    model = "gemini/gemini-2.5-flash"
 
     if not api_key:
         return None

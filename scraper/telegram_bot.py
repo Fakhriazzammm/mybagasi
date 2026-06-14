@@ -39,9 +39,9 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SCRAPER_URL = "http://localhost:8000"
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+SUMOPOD_API_KEY = os.getenv("SUMOPOD_API_KEY", "")
+SUMOPOD_BASE_URL = os.getenv("SUMOPOD_BASE_URL", "https://api.deepseek.com/v1")
+SUMOPOD_MODEL = os.getenv("SUMOPOD_MODEL", "deepseek-chat")
 
 # Sumopod (Gemini 2.5 Flash via Sumopod) — for browser vision & AI-driven browsing
 SUMOPOD_API_KEY = os.getenv("SUMOPOD_API_KEY", "")
@@ -970,7 +970,7 @@ TOOLS = [
 
 async def call_deepseek(messages: list[dict], with_tools: bool = True) -> dict:
     body = {
-        "model": DEEPSEEK_MODEL,
+        "model": SUMOPOD_MODEL,
         "messages": messages,
         "max_tokens": 1500,
         "temperature": 0.7,
@@ -982,8 +982,8 @@ async def call_deepseek(messages: list[dict], with_tools: bool = True) -> dict:
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             r = await client.post(
-                f"{DEEPSEEK_BASE_URL}/chat/completions",
-                headers={"Content-Type": "application/json", "Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+                f"{SUMOPOD_BASE_URL}/chat/completions",
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {SUMOPOD_API_KEY}"},
                 json=body,
             )
             if r.status_code == 200:
@@ -2423,7 +2423,7 @@ async def handle_bclose(chat_id: int):
 
 
 async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
-    if not DEEPSEEK_API_KEY:
+    if not SUMOPOD_API_KEY:
         await tg_send(chat_id, "❌ AI Personal Shopper belum dikonfigurasi.")
         return
     await tg_typing(chat_id)
@@ -2722,21 +2722,21 @@ async def main():
         log.error("SUPABASE_URL dan SUPABASE_KEY wajib diatur")
         sys.exit(1)
 
-    if DEEPSEEK_API_KEY:
-        log.info(f"DeepSeek AI: {DEEPSEEK_MODEL} via {DEEPSEEK_BASE_URL}")
+    if SUMOPOD_API_KEY:
+        log.info("Sumopod AI: gemini/gemini-2.5-flash via https://ai.sumopod.com/v1")
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.post(
-                    f"{DEEPSEEK_BASE_URL}/chat/completions",
-                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
-                    json={"model": DEEPSEEK_MODEL, "messages": [{"role": "user", "content": "test"}], "max_tokens": 5},
+                    f"{SUMOPOD_BASE_URL}/chat/completions",
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {SUMOPOD_API_KEY}"},
+                    json={"model": SUMOPOD_MODEL, "messages": [{"role": "user", "content": "test"}], "max_tokens": 5},
                 )
                 if r.status_code == 200:
                     log.info("DeepSeek AI connection OK")
         except:
             log.warning("DeepSeek check failed")
     else:
-        log.warning("DEEPSEEK_API_KEY tidak diatur")
+        log.warning("SUMOPOD_API_KEY tidak diatur")
 
     try:
         async with httpx.AsyncClient(timeout=5) as client:

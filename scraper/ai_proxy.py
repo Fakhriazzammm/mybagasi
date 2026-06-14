@@ -1,5 +1,4 @@
-"""
-AI Proxy — routes /api/ai/chat through the backend to DeepSeek (same as bot Telegram)
+"""AI Proxy — routes /api/ai/chat through the backend to Sumopod (same as bot Telegram)
 so browser-side CORS issues are avoided. The API key lives server-side only.
 """
 import os, json
@@ -10,9 +9,9 @@ import httpx
 
 router = APIRouter(prefix="/ai")
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE = (os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1").rstrip("/")
-DEFAULT_MODEL = os.getenv("AI_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-chat"
+SUMOPOD_API_KEY = os.getenv("SUMOPOD_API_KEY", "")
+SUMOPOD_BASE = (os.getenv("SUMOPOD_BASE_URL") or "https://ai.sumopod.com/v1").rstrip("/")
+DEFAULT_MODEL = os.getenv("AI_MODEL") or os.getenv("SUMOPOD_MODEL") or "gemini/gemini-2.5-flash"
 APP_BASE_URL = (os.getenv("VITE_APP_BASE_URL") or "").rstrip("/")
 
 class ChatMessage(BaseModel):
@@ -35,7 +34,7 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def ai_chat(req: ChatRequest):
-    if not DEEPSEEK_API_KEY:
+    if not SUMOPOD_API_KEY:
         return ChatResponse(success=False, error="AI API key tidak dikonfigurasi di server.")
 
     msgs = []
@@ -54,11 +53,11 @@ async def ai_chat(req: ChatRequest):
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                f"{DEEPSEEK_BASE}/chat/completions",
+                f"{SUMOPOD_BASE}/chat/completions",
                 json=body,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Authorization": f"Bearer {SUMOPOD_API_KEY}",
                 },
             )
             if resp.status_code != 200:

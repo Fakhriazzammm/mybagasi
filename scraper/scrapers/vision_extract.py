@@ -162,7 +162,7 @@ async def extract_product_via_screenshot_ai(
         user_content.append({"type": "image_url", "image_url": {"url": image_data_url}})
 
     body = {
-        "model": "gpt-4o-mini",
+        "model": "gemini/gemini-2.5-flash",
         "temperature": 0,
         "max_tokens": 400,
         "messages": [

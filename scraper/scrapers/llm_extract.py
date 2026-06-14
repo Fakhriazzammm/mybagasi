@@ -1,5 +1,4 @@
-"""
-LLM-based product extraction using DeepSeek direct API.
+"""LLM-based product extraction using Sumopod AI (Gemini 2.5 Flash).
 Falls back when BS4/Crawl4AI can't extract price/images from markdown.
 """
 from __future__ import annotations
@@ -15,9 +14,9 @@ from .models import ProductData, parse_jpy
 
 log = logging.getLogger("mybagasi_llm")
 
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+SUMOPOD_API_KEY = os.environ.get("SUMOPOD_API_KEY", "")
+SUMOPOD_BASE_URL = os.environ.get("SUMOPOD_BASE_URL", "https://ai.sumopod.com/v1")
+SUMOPOD_MODEL = os.environ.get("SUMOPOD_MODEL", "gemini/gemini-2.5-flash")
 
 PROMPT = """You are a product extractor for a Japanese shopping assistant.
 Extract product information from the markdown content below.
@@ -51,8 +50,8 @@ async def llm_extract_product(url: str, markdown: str) -> ProductData | None:
     """Extract product info from markdown using DeepSeek API.
     Returns ProductData if successful, None if failed or no product found.
     """
-    if not DEEPSEEK_API_KEY:
-        log.warning("DEEPSEEK_API_KEY not configured, skipping LLM extraction")
+    if not SUMOPOD_API_KEY:
+        log.warning("SUMOPOD_API_KEY not configured, skipping LLM extraction")
         return None
 
     if not markdown or len(markdown.strip()) < 50:
@@ -62,7 +61,7 @@ async def llm_extract_product(url: str, markdown: str) -> ProductData | None:
     content = markdown[:8000] if len(markdown) > 8000 else markdown
 
     payload = {
-        "model": DEEPSEEK_MODEL,
+        "model": SUMOPOD_MODEL,
         "messages": [
             {"role": "system", "content": "You extract product data from web page content. Return only JSON."},
             {"role": "user", "content": PROMPT.format(url=url, content=content)},
@@ -75,9 +74,9 @@ async def llm_extract_product(url: str, markdown: str) -> ProductData | None:
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
-                f"{DEEPSEEK_BASE_URL}/chat/completions",
+                f"{SUMOPOD_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Authorization": f"Bearer {SUMOPOD_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json=payload,
