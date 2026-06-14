@@ -2877,11 +2877,18 @@ async def handle_photo(chat_id: int, file_id: str):
                 {
                     "role": "system",
                     "content": "Kamu adalah asisten belanja Jepang. Lihat foto produk ini. "
-                               "Return ONLY a JSON object with keys: product_name (nama produk Indonesia/Inggris), "
-                               "brand (merek), category (fashion/elektronik/skincare/buku/food/gacha/toys/general), "
-                               "search_keywords (3-5 kata kunci untuk cari produk ini di marketplace Jepang, dipisah koma). "
-                               "Contoh: {\"product_name\":\"Onitsuka Tiger Mexico 66\",\"brand\":\"Onitsuka Tiger\","
-                               "\"category\":\"fashion\",\"search_keywords\":\"Onitsuka Tiger Mexico 66, sepatu kasual\"}",
+                               "Jika ada tulisan Jepang di foto, BACA dan TERJEMAHKAN ke Indonesia. "
+                               "Return ONLY a JSON object with keys: "
+                               "product_name (nama produk dalam Indonesia/Inggris), "
+                               "japanese_name (nama asli dalam bahasa Jepang jika ada, kosong jika tidak), "
+                               "japanese_text (teks Jepang yang terbaca di foto, terjemahan Indonesianya), "
+                               "brand (merek), "
+                               "category (fashion/elektronik/skincare/buku/food/gacha/toys/general), "
+                               "search_keywords (3-5 kata kunci untuk cari produk ini di marketplace Jepang, pakai nama Jepang asli jika ada, dipisah koma). "
+                               "Contoh: {\"product_name\":\"Onitsuka Tiger Mexico 66\",\"japanese_name\":\"オニツカタイガー メキシコ66\","
+                               "\"japanese_text\":\"オニツカタイガー → Onitsuka Tiger, メキシコ66 → Mexico 66\","
+                               "\"brand\":\"Onitsuka Tiger\",\"category\":\"fashion\","
+                               "\"search_keywords\":\"Onitsuka Tiger Mexico 66, オニツカタイガー メキシコ66, sepatu kasual\"}",
                 },
                 {
                     "role": "user",
@@ -2918,8 +2925,14 @@ async def handle_photo(chat_id: int, file_id: str):
         import re as _re
         json_match = _re.search(r'(\{[\s\S]*"product_name"[\s\S]*\})', vision_text)
         if not json_match:
-            # Fallback: use raw response as product name
-            product_name = vision_text.strip()[:60]
+            # Fallback: clean the vision text to remove JSON artifacts
+            raw = vision_text.strip()
+            # Remove markdown code fences if any
+            raw = _re.sub(r'```(?:json)?\s*', '', raw).strip()
+            # Remove leading/trailing braces that look like partial JSON
+            raw = _re.sub(r'^\{[\s\S]*?"product_name"\s*:\s*"', '', raw)
+            raw = _re.sub(r'"[^}]*\}', '', raw)
+            product_name = raw[:60].strip() or "Produk dari foto"
             search_kw = product_name
             category = "general"
         else:
@@ -2928,8 +2941,14 @@ async def handle_photo(chat_id: int, file_id: str):
                 product_name = info.get("product_name", "").strip() or "Produk dari foto"
                 search_kw = info.get("search_keywords", product_name).strip()
                 category = info.get("category", "general").lower()
+                # Extra safety: clean product_name from any JSON artifacts
+                product_name = product_name.replace('"', '').replace('{', '').replace('}', '')
             except json.JSONDecodeError:
-                product_name = vision_text.strip()[:60]
+                raw = vision_text.strip()
+                raw = _re.sub(r'```(?:json)?\s*', '', raw).strip()
+                raw = _re.sub(r'^\{[\s\S]*?"product_name"\s*:\s*"', '', raw)
+                raw = _re.sub(r'"[^}]*\}', '', raw)
+                product_name = raw[:60].strip() or "Produk dari foto"
                 search_kw = product_name
                 category = "general"
 
@@ -2951,6 +2970,15 @@ async def handle_photo(chat_id: int, file_id: str):
         # 7. Format results with price + weight
         rate = 113  # Kurs dari user
         lines = [f"📸 *{product_name}*\n"]
+
+        # Add Japanese translation if available
+        try:
+            if info.get("japanese_text"):
+                lines.append(f"   🇯🇵 *Terjemahan:* {info['japanese_text']}\n")
+            elif info.get("japanese_name"):
+                lines.append(f"   🇯🇵 *Nama Jepang:* {info['japanese_name']}\n")
+        except NameError:
+            pass  # info variable not available in fallback path
 
         for i, item in enumerate(items[:3]):
             title = (item.get("title") or "").strip() or "Produk"
