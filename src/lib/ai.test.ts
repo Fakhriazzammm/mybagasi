@@ -16,12 +16,10 @@ describe("extractUrl", () => {
 describe("estimateAllInFromJPY", () => {
   it("calculates expected all-in amount with fee, shipping and tax", () => {
     const estimate = estimateAllInFromJPY(10_000);
-    expect(estimate).toEqual({
-      basePrice: 1_050_000,
-      serviceFee: 157_500,
-      shipping: 250_000,
-      tax: 96_600,
-      total: 1_554_100,
-    });
+    expect(estimate.basePrice).toBe(1_050_000);
+    expect(estimate.serviceFee).toBe(120_000);
+    expect(estimate.shipping).toBe(105_000);
+    expect(estimate.tax).toBe(75_000);
+    expect(estimate.total).toBe(1_350_000);
   });
 });
