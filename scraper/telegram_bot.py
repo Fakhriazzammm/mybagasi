@@ -764,8 +764,13 @@ GAYA RESPON:
 - **JANGAN kalimat penghibur** (jangan "Jangan khawatir", "Tapi tenang", "Tetapi", dll)
 - Balasan langsung, lugas, tanpa basa-basi
 
-KETIKA TIDAK DITEMUKAN:
-- Balas singkat: "Produk [nama] tidak ditemukan. Mau cari produk lain?"
+KETIKA TIDAK DITEMUKAN ATAU HASIL TIDAK SESUAI:
+- Jika search_catalog() atau search_products() mengembalikan produk, TETAP TAMPILKAN ke user
+  → "Ditemukan produk terkait: [nama produk] — ¥[harga]. Mau saya cek detailnya?"
+- Jika hasil tidak sesuai keyword, COBA LAGI dengan keyword lebih sederhana:
+  Contoh: "Onitsuka Tiger Mexico 66" → coba "Onitsuka Tiger" atau "Mexico 66"
+  Contoh: "Nike Air Force 1" → coba "Nike Air Force"
+- Hanya bilang "tidak ditemukan" jika SEMUA percobaan gagal (catalog + search x2)
 - JANGAN listing alternatif brand/rekomendasi
 
 TUGAS KAMU:
@@ -1163,16 +1168,15 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
 
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
         limit = 10
-        like_pat = f"*{keyword}*"
+        like_pat = f"%{keyword}%"
         or_clause = (
             f"name.ilike.{like_pat},"
-            f"description.ilike.{like_pat},"
-            f"tags.cs.{{{keyword}}}"
+            f"description.ilike.{like_pat}"
         )
         params = {
             "select": "id,name,category,price_jpy,images,description,url",
             "active": "eq.true",
-            "or": or_clause,
+            "or": f"({or_clause})",
             "limit": str(limit),
         }
         if category:
