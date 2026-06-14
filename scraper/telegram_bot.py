@@ -1044,6 +1044,33 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
                     result["_quotation_saved"] = True
                     log.info(f"Quotation saved from search: {saved['id']}")
         
+        # Save search results to product memory (fire-and-forget)
+        if result.get("success") and result.get("items"):
+            for item in result["items"]:
+                try:
+                    from datetime import datetime, timezone
+                    item_weight, _ = _guess_weight(
+                        item.get("title") or "",
+                        item.get("price_jpy") or 0
+                    )
+                    mem_data = {
+                        "name": item.get("title") or keyword,
+                        "price_jpy": item.get("price_jpy") or 0,
+                        "price_idr": round((item.get("price_jpy") or 0) * JPY_TO_IDR),
+                        "marketplace": item.get("marketplace") or "Jepang",
+                        "url": item.get("url") or "",
+                        "category": item.get("category") or "general",
+                        "shipping_category": item.get("shipping_category") or "general",
+                        "weight_kg": item_weight,
+                        "images": json.dumps(item.get("images") or []),
+                        "description": item.get("description") or "",
+                        "source": "search",
+                        "confidence": "medium",
+                    }
+                    db.save_product_memory(mem_data)
+                except Exception:
+                    pass
+        
         return json.dumps(result)
 
     # ─── save_to_wishlist ─────────────────────────────────
@@ -2821,6 +2848,44 @@ async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
         plain = re.sub(r'[*_`#\[\]]', '', clean_text)
         await tg_send(chat_id, plain)
 
+async def _save_memory_image(img_url: str, product_url: str = "") -> str | None:
+    """Download image from URL and save to catalog references directory.
+    Returns local relative path like /images/references/memory/{id}.jpg or None."""
+    if not img_url:
+        return None
+    import hashlib
+    try:
+        # Create directory
+        mem_dir = "/opt/mybagasi/public/images/references/memory"
+        os.makedirs(mem_dir, exist_ok=True)
+
+        # Generate unique filename based on URL
+        url_hash = hashlib.md5((img_url + product_url).encode()).hexdigest()[:12]
+        ext = ".jpg"
+        if "png" in img_url.lower():
+            ext = ".png"
+        elif "webp" in img_url.lower():
+            ext = ".webp"
+        local_path = f"{mem_dir}/{url_hash}{ext}"
+
+        # Skip if already cached
+        if os.path.exists(local_path):
+            return f"/images/references/memory/{url_hash}{ext}"
+
+        # Download
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            r = await client.get(img_url)
+            if r.status_code == 200 and len(r.content) > 1000:
+                with open(local_path, "wb") as f:
+                    f.write(r.content)
+                log.info(f"Saved memory image: {local_path}")
+                return f"/images/references/memory/{url_hash}{ext}"
+        return None
+    except Exception as e:
+        log.warning(f"Save memory image error: {e}")
+        return None
+
+
 # ── Handle Photo Messages ───────────────────────────────────
 
 # Estimated weight per category (from shipping rates)
@@ -2924,6 +2989,7 @@ async def handle_photo(chat_id: int, file_id: str):
         # 5. Parse the JSON from Gemini
         import re as _re
         json_match = _re.search(r'(\{[\s\S]*"product_name"[\s\S]*\})', vision_text)
+        name_jp = ""
         if not json_match:
             # Fallback: clean the vision text to remove JSON artifacts
             raw = vision_text.strip()
@@ -3039,6 +3105,38 @@ async def handle_photo(chat_id: int, file_id: str):
             await tg_send(chat_id, full_text)
         else:
             await tg_send(chat_id, full_text)
+
+        # ── Save all results to product memory ──
+        for item in items:
+            try:
+                item_weight, _ = _guess_weight(
+                    item.get("title") or item.get("name") or "",
+                    item.get("price_jpy") or 0
+                )
+                mem_data = {
+                    "name": item.get("title") or item.get("name") or product_name,
+                    "name_jp": name_jp if item is items[0] else "",
+                    "price_jpy": item.get("price_jpy") or 0,
+                    "price_idr": round((item.get("price_jpy") or 0) * 113),
+                    "marketplace": item.get("marketplace") or "Jepang",
+                    "url": item.get("url") or "",
+                    "category": category,
+                    "shipping_category": category,
+                    "weight_kg": item_weight,
+                    "images": json.dumps(item.get("images") or []),
+                    "description": item.get("description") or "",
+                    "source": "photo",
+                    "confidence": "medium",
+                }
+                # Save image locally if URL exists
+                imgs = item.get("images") or []
+                if imgs and imgs[0]:
+                    local_img = await _save_memory_image(imgs[0], mem_data.get("url", ""))
+                    if local_img:
+                        mem_data["images"] = json.dumps([local_img])
+                db.save_product_memory(mem_data)
+            except Exception as e:
+                log.warning(f"Failed to save to product memory: {e}")
 
     except Exception as e:
         log.error(f"handle_photo error: {e}")

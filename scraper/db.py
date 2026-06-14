@@ -206,8 +206,34 @@ CREATE TABLE IF NOT EXISTS scrape_jobs (
     created_at TEXT DEFAULT '',
     completed_at TEXT DEFAULT ''
 );
-"""
 
+CREATE TABLE IF NOT EXISTS product_memory (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_jp TEXT DEFAULT '',
+    aliases TEXT DEFAULT '[]',
+    price_jpy INTEGER DEFAULT 0,
+    price_idr INTEGER DEFAULT 0,
+    currency TEXT DEFAULT 'JPY',
+    marketplace TEXT DEFAULT '',
+    url TEXT DEFAULT '',
+    category TEXT DEFAULT '',
+    sub_category TEXT DEFAULT '',
+    shipping_category TEXT DEFAULT '',
+    weight_kg REAL DEFAULT 0,
+    images TEXT DEFAULT '[]',
+    description TEXT DEFAULT '',
+    tags TEXT DEFAULT '[]',
+    source TEXT DEFAULT 'scrape',
+    confidence TEXT DEFAULT 'medium',
+    search_count INTEGER DEFAULT 1,
+    last_searched_at TEXT DEFAULT '',
+    created_at TEXT DEFAULT '',
+    updated_at TEXT DEFAULT ''
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_url ON product_memory(url);
+CREATE INDEX IF NOT EXISTS idx_memory_name ON product_memory(name);
+"""
 
 # ══════════════════════════════════════════════════════════════════
 # Core Database Class
@@ -454,6 +480,116 @@ class Database:
         """Count rows matching optional filter."""
         items = self.query(table, where, limit=10000)
         return len(items)
+
+    def save_product_memory(self, product: dict) -> str:
+        """Save a product to memory with auto-dedup.
+        
+        Dedup rules:
+        1. Same URL → update existing, increment search_count
+        2. Same name (token match) + same marketplace + price within 20% → merge aliases
+        3. Completely new → insert
+        
+        Returns: product id (existing or new)
+        """
+        import uuid
+        now = datetime.now(timezone.utc).isoformat()
+        url = (product.get("url") or "").strip()
+        name = (product.get("name") or "").strip()
+        marketplace = (product.get("marketplace") or "").strip()
+        price_jpy = product.get("price_jpy") or 0
+
+        # ── Check by URL ──
+        if url:
+            existing = self.get("product_memory", {"url": url})
+            if existing:
+                eid = existing["id"]
+                # Merge new data
+                update_data = dict(product)
+                update_data.pop("id", None)
+                update_data.pop("created_at", None)
+                update_data["search_count"] = (existing.get("search_count") or 0) + 1
+                update_data["last_searched_at"] = now
+                update_data["updated_at"] = now
+                # Merge aliases
+                existing_aliases = set()
+                try:
+                    existing_aliases = set(json.loads(existing.get("aliases") or "[]"))
+                except Exception:
+                    pass
+                new_aliases = set()
+                if name:
+                    new_aliases.add(name.lower().strip())
+                if product.get("name_jp"):
+                    new_aliases.add(product["name_jp"].strip())
+                merged = list(existing_aliases | new_aliases)
+                update_data["aliases"] = json.dumps(merged)
+                self._update_sqlite("product_memory", update_data, "id", eid)
+                return eid
+
+        # ── Check by name similarity ──
+        if name and marketplace:
+            # Tokenize the name into words
+            name_tokens = set(name.lower().split())
+            if len(name_tokens) >= 2:
+                similar = self._query_sqlite("product_memory",
+                    where={"marketplace": marketplace} if marketplace else None,
+                    limit=50)
+                for existing in similar:
+                    ename = (existing.get("name") or "").lower()
+                    etokens = set(ename.split())
+                    # Check overlap ratio
+                    if name_tokens and etokens:
+                        overlap = len(name_tokens & etokens)
+                        min_len = min(len(name_tokens), len(etokens))
+                        if min_len > 0 and overlap / min_len >= 0.6:
+                            # Also check price is within 20%
+                            eprice = existing.get("price_jpy") or 0
+                            if eprice > 0 and price_jpy > 0:
+                                ratio = max(eprice, price_jpy) / min(eprice, price_jpy)
+                                if ratio > 1.2:
+                                    continue  # Price too different, not same product
+                            # Match found — update
+                            eid = existing["id"]
+                            update_data = dict(product)
+                            update_data.pop("id", None)
+                            update_data.pop("created_at", None)
+                            update_data["search_count"] = (existing.get("search_count") or 0) + 1
+                            update_data["last_searched_at"] = now
+                            update_data["updated_at"] = now
+                            # Merge aliases
+                            existing_aliases = set()
+                            try:
+                                existing_aliases = set(json.loads(existing.get("aliases") or "[]"))
+                            except Exception:
+                                pass
+                            existing_aliases.add(name.lower().strip())
+                            if product.get("name_jp"):
+                                existing_aliases.add(product["name_jp"].strip())
+                            # Also add existing name as alias for the new name
+                            if ename and ename.lower() != name.lower():
+                                existing_aliases.add(ename.lower())
+                            update_data["aliases"] = json.dumps(list(existing_aliases))
+                            self._update_sqlite("product_memory", update_data, "id", eid)
+                            return eid
+
+        # ── Insert new ──
+        pid = product.get("id") or str(uuid.uuid4())
+        insert_data = dict(product)
+        insert_data["id"] = pid
+        insert_data["created_at"] = insert_data.get("created_at") or now
+        insert_data["updated_at"] = now
+        insert_data["search_count"] = insert_data.get("search_count") or 1
+        insert_data["last_searched_at"] = now
+        # Build aliases
+        aliases = set()
+        if name:
+            aliases.add(name.lower().strip())
+        if product.get("name_jp"):
+            aliases.add(product["name_jp"].strip())
+        if aliases:
+            insert_data["aliases"] = json.dumps(list(aliases))
+        self._insert_sqlite("product_memory", insert_data)
+        return pid
 
     def all(self, table: str, order_by: str | None = None) -> list[dict]:
         """Get all rows from a table."""

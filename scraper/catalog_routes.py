@@ -23,6 +23,30 @@ def _get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only = 1")
+    # Ensure memory table exists (created by db.py normally, but safe to ensure here)
+    try:
+        conn.execute("SELECT 1 FROM product_memory LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("PRAGMA query_only = 0")
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS product_memory (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, name_jp TEXT DEFAULT '',
+                aliases TEXT DEFAULT '[]', price_jpy INTEGER DEFAULT 0,
+                price_idr INTEGER DEFAULT 0, currency TEXT DEFAULT 'JPY',
+                marketplace TEXT DEFAULT '', url TEXT DEFAULT '',
+                category TEXT DEFAULT '', sub_category TEXT DEFAULT '',
+                shipping_category TEXT DEFAULT '', weight_kg REAL DEFAULT 0,
+                images TEXT DEFAULT '[]', description TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]', source TEXT DEFAULT 'scrape',
+                confidence TEXT DEFAULT 'medium', search_count INTEGER DEFAULT 1,
+                last_searched_at TEXT DEFAULT '', created_at TEXT DEFAULT '',
+                updated_at TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_url ON product_memory(url);
+            CREATE INDEX IF NOT EXISTS idx_memory_name ON product_memory(name);
+        """)
+        conn.execute("PRAGMA query_only = 1")
+        conn.commit()
     return conn
 
 
@@ -217,5 +241,66 @@ async def catalog_featured(limit: int = Query(12, ge=1, le=50)):
 
         items = [_row_to_dict(r) for r in rows]
         return {"items": items, "total": len(items)}
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 5. GET /memory  —  Community product memory (auto-collected)
+# ══════════════════════════════════════════════════════════════════════
+
+@router.get("/memory")
+async def catalog_memory(
+    search: str | None = Query(None),
+    category: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    sort: str = Query("search_count", regex="^(search_count|price_jpy|name|last_searched_at)$"),
+):
+    """Get products from community memory. Search by keyword or category."""
+    from db import db
+    from datetime import datetime, timezone
+    import json
+
+    conn = _get_db()
+    try:
+        # Build query
+        sql = "SELECT * FROM product_memory WHERE 1=1"
+        count_sql = "SELECT COUNT(*) FROM product_memory WHERE 1=1"
+        params: list[Any] = []
+        count_params: list[Any] = []
+
+        if search:
+            like = f"%{search}%"
+            sql += " AND (name LIKE ? OR name_jp LIKE ? OR description LIKE ? OR aliases LIKE ?)"
+            count_sql += " AND (name LIKE ? OR name_jp LIKE ? OR description LIKE ? OR aliases LIKE ?)"
+            params.extend([like, like, like, like])
+            count_params.extend([like, like, like, like])
+
+        if category:
+            sql += " AND category = ?"
+            count_sql += " AND category = ?"
+            params.append(category)
+            count_params.append(category)
+
+        # Order
+        order_map = {
+            "search_count": "search_count DESC",
+            "price_jpy": "price_jpy ASC",
+            "name": "name ASC",
+            "last_searched_at": "last_searched_at DESC",
+        }
+        sql += f" ORDER BY {order_map.get(sort, 'search_count DESC')}"
+
+        # Count
+        total = conn.execute(count_sql, count_params).fetchone()[0]
+
+        # Items
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = conn.execute(sql, params).fetchall()
+
+        items = [_row_to_dict(r) for r in rows]
+        return {"items": items, "total": total}
     finally:
         conn.close()
