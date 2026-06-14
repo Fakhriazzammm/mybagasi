@@ -7,8 +7,6 @@ export interface PriceEstimate {
   shipping: number;
   tax: number;
   total: number;
-  shippingCategory: string;
-  shippingNote: string;
 }
 
 /**
@@ -22,21 +20,8 @@ const PROFIT_TIERS: { min: number; max: number; profit: number }[] = [
   { min: 10000000, max: 999999999, profit: 2000000 },
 ];
 
-/** Distribusi profit — fee:ongkir:pajak = 33:34:33 (rata) */
+/** Distribusi profit — fee:ongkir:pajak = 33:34:33 */
 const DISTRIBUTION_RATIO = { fee: 33, shipping: 34, tax: 33 };
-
-/**
- * Shipping rates — IDR-based, per category.
- * HARUS konsisten dengan bot: scraper/telegram_bot.py _SHIPPING_RATES
- */
-const SHIPPING_RATES: Record<string, { base_kg: number; price_per_kg: number; note: string }> = {
-  skincare:  { base_kg: 0.3, price_per_kg: 350000, note: "Kosmetik/cairan" },
-  fashion:   { base_kg: 0.5, price_per_kg: 250000, note: "Pakaian, sepatu" },
-  elektronik: { base_kg: 0.5, price_per_kg: 300000, note: "Elektronik kecil" },
-  buku:      { base_kg: 0.3, price_per_kg: 200000, note: "Buku/majalah" },
-  food:      { base_kg: 0.5, price_per_kg: 300000, note: "Makanan/minuman" },
-  general:   { base_kg: 0.5, price_per_kg: 250000, note: "Lainnya" },
-};
 
 function calculateTargetProfit(priceIdr: number): number {
   for (const tier of PROFIT_TIERS) {
@@ -45,26 +30,6 @@ function calculateTargetProfit(priceIdr: number): number {
     }
   }
   return PROFIT_TIERS[PROFIT_TIERS.length - 1].profit;
-}
-
-function distributeProfit(targetProfit: number) {
-  const total = DISTRIBUTION_RATIO.fee + DISTRIBUTION_RATIO.shipping + DISTRIBUTION_RATIO.tax;
-  const fee = Math.round(targetProfit * DISTRIBUTION_RATIO.fee / total);
-  let shippingMarkup = Math.round(targetProfit * DISTRIBUTION_RATIO.shipping / total);
-  const taxMarkup = Math.round(targetProfit * DISTRIBUTION_RATIO.tax / total);
-  // Sisa pembulatan masuk ke shipping (paling flexible)
-  const remainder = targetProfit - (fee + shippingMarkup + taxMarkup);
-  shippingMarkup += remainder;
-  return { fee, shippingMarkup, taxMarkup };
-}
-
-export function getShippingRate(category: string): { cost: number; note: string } {
-  const cat = category.toLowerCase().trim();
-  const rate_info = SHIPPING_RATES[cat] ?? SHIPPING_RATES.general;
-  return {
-    cost: Math.round(rate_info.base_kg * rate_info.price_per_kg),
-    note: rate_info.note,
-  };
 }
 
 export function formatRp(amount: number): string {
@@ -86,22 +51,19 @@ export function formatJpy(amount: number): string {
 }
 
 /**
- * Single source of truth untuk estimasi harga di frontend.
- * HARUS menghasilkan angka yang SAMA persis dengan bot estimate_price_v2().
+ * Single source of truth untuk estimasi harga.
+ * HARUS sama persis dengan bot estimate_price_v2().
  *
- * SISTEM:
- * - Ambil target profit dari tier (berdasarkan harga IDR)
- * - Profit didistribusi ke fee/ongkir/pajak dgn rasio 33:34:33
- * - Ongkir: biaya real + markup dari profit
- * - Pajak: 11% standard + markup dari profit
- * - Tidak ada baris 'Profit' terpisah
+ * Sistem:
+ * - Profit dari tier didistribusi 33:34:33 ke fee/ongkir/pajak
+ * - Fee, ongkir, pajak = bagian dari profit (bukan persentase/tambahan)
+ * - Total = harga barang + fee + ongkir + pajak
  */
 export function calculatePriceEstimate(params: {
   priceJpy?: number;
   priceIdr?: number;
-  shippingCategory?: string;
 }): PriceEstimate {
-  const { priceJpy, priceIdr, shippingCategory } = params;
+  const { priceJpy, priceIdr } = params;
 
   const jpyToIdr = appConfig.pricing.jpyToIdr;
 
@@ -111,25 +73,18 @@ export function calculatePriceEstimate(params: {
   const resolvedPriceJpy: number =
     priceJpy ?? (priceIdr != null ? Math.round(priceIdr / jpyToIdr) : 0);
 
-  // Hitung target profit dari tier
+  // Profit dari tier
   const targetProfit = calculateTargetProfit(resolvedPriceIdr);
 
-  // Distribusi profit 33:34:33
-  const dist = distributeProfit(targetProfit);
+  // Distribusi 33:34:33
+  const total = DISTRIBUTION_RATIO.fee + DISTRIBUTION_RATIO.shipping + DISTRIBUTION_RATIO.tax;
+  const fee = Math.round(targetProfit * DISTRIBUTION_RATIO.fee / total);
+  let shipping = Math.round(targetProfit * DISTRIBUTION_RATIO.shipping / total);
+  const tax = Math.round(targetProfit * DISTRIBUTION_RATIO.tax / total);
 
-  // Fee jasa = bagian profit yang dialokasikan untuk fee
-  const fee = dist.fee;
-
-  // Ongkir real + markup
-  const { cost: realShipping, note: shippingNote } = getShippingRate(shippingCategory ?? "general");
-  const shipping = realShipping + Math.max(0, dist.shippingMarkup);
-
-  // Pajak standard + markup
-  const taxRate = appConfig.pricing.taxRate;
-  const taxStandard = Math.round((resolvedPriceIdr + fee) * taxRate);
-  const tax = taxStandard + Math.max(0, dist.taxMarkup);
-
-  const total = resolvedPriceIdr + fee + shipping + tax;
+  // Sisa pembulatan masuk ke shipping
+  const remainder = targetProfit - (fee + shipping + tax);
+  shipping += remainder;
 
   return {
     priceJpy: resolvedPriceJpy,
@@ -137,8 +92,6 @@ export function calculatePriceEstimate(params: {
     fee,
     shipping,
     tax,
-    total,
-    shippingCategory: shippingCategory ?? "general",
-    shippingNote,
+    total: resolvedPriceIdr + fee + shipping + tax,
   };
 }

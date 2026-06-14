@@ -498,65 +498,53 @@ async def get_distribution_ratio() -> dict:
     return _PRICING_CACHE_DATA.get("distribution_ratio", default)
 
 async def estimate_price_v2(price_jpy: int, category: str = "general") -> dict:
-    """Hitung estimasi harga all-in — profit tier didistribusi ke fee/ongkir/pajak.
+    """Hitung estimasi — profit tier didistribusi sebagai fee/ongkir/pajak.
 
     Sistem:
-    - Ambil target profit dari tier pricing (berdasarkan harga IDR)
-    - Profit didistribusi ke 3 komponen (fee, ongkir, pajak) dgn rasio 33:34:33
-    - Ongkir: biaya real + markup dari profit
-    - Pajak: 11% standard + markup dari profit
-    - TIDAK ada baris 'Profit' — profit tersembunyi di fee+ongkir+pajak
+    - Ambil target profit dari tier pricing
+    - Profit itu SEKALIGUS fee jasa + ongkir + pajak
+    - Distribusi rata 33:34:33 ke fee, ongkir, pajak
+    - Total = harga barang + fee + ongkir + pajak
+    - Tidak ada tambahan ongkir real, tidak ada pajak 11%
     """
     rate = await get_exchange_rate()
     base_idr = price_jpy * rate
     target_profit = await calculate_profit(base_idr)
     
-    # Dapatkan rasio distribusi dari DB
+    # Distribusi profit 33:34:33 ke fee, ongkir, pajak
     ratio = await get_distribution_ratio()
     total_ratio = ratio.get("fee", 33) + ratio.get("shipping", 34) + ratio.get("tax", 33)
     if total_ratio <= 0:
         total_ratio = 100
     
-    # Distribusi profit ke 3 komponen
     fee_jasa = round(target_profit * ratio.get("fee", 33) / total_ratio)
-    ongkir_markup = round(target_profit * ratio.get("shipping", 34) / total_ratio)
-    pajak_markup = round(target_profit * ratio.get("tax", 33) / total_ratio)
+    ongkir = round(target_profit * ratio.get("shipping", 34) / total_ratio)
+    pajak = round(target_profit * ratio.get("tax", 33) / total_ratio)
     
-    # Handle sisa pembulatan
-    remainder = target_profit - (fee_jasa + ongkir_markup + pajak_markup)
-    ongkir_markup += remainder  # Sisa masuk ke ongkir (paling flexible)
+    # Handle sisa pembulatan — masuk ke ongkir
+    remainder = target_profit - (fee_jasa + ongkir + pajak)
+    ongkir += remainder
     
-    # Ongkir real dari kategori + markup
-    shipping_info = await get_shipping_by_category(category)
-    real_ongkir = shipping_info["cost"]
-    ongkir_display = real_ongkir + max(0, ongkir_markup)
-    
-    # Pajak: standard + markup
-    pajak_persen = await get_tax_rate()
-    pajak_standard = round((base_idr + fee_jasa) * pajak_persen)
-    pajak_display = pajak_standard + max(0, pajak_markup)
-    
-    total = base_idr + fee_jasa + ongkir_display + pajak_display
+    total = base_idr + fee_jasa + ongkir + pajak
     fee_persen = round(fee_jasa / base_idr * 100, 1) if base_idr > 0 else 0
     
     return {
         "base_idr": base_idr,
         "fee_jasa": fee_jasa,
         "fee_persen": fee_persen,
-        "shipping": ongkir_display,
-        "shipping_real": real_ongkir,
-        "shipping_markup": ongkir_markup,
-        "shipping_category": shipping_info["category"],
-        "shipping_note": shipping_info["note"],
-        "pajak": pajak_display,
-        "pajak_standard": pajak_standard,
-        "pajak_markup": pajak_markup,
-        "pajak_persen": pajak_persen,
+        "shipping": ongkir,
+        "shipping_real": ongkir,
+        "shipping_markup": ongkir,
+        "shipping_category": category,
+        "shipping_note": "",
+        "pajak": pajak,
+        "pajak_standard": pajak,
+        "pajak_markup": pajak,
+        "pajak_persen": round(pajak / (base_idr + fee_jasa) * 100, 1) if (base_idr + fee_jasa) > 0 else 0,
         "total": total,
         "rate": rate,
-        # Hidden internal fields (not displayed)
         "_target_profit": target_profit,
-        "_distribution": {"fee": fee_jasa, "shipping_markup": ongkir_markup, "tax_markup": pajak_markup},
+        "_distribution": {"fee": fee_jasa, "shipping": ongkir, "tax": pajak},
     }
 
 async def save_quotation(user_id: str, product: str, price_jpy: int, source: str,
