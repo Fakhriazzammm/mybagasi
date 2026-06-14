@@ -17,6 +17,7 @@ Supported actions:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -113,7 +114,7 @@ async def _close_session(chat_id: int):
 # Public API
 # ═══════════════════════════════════
 
-async def navigate(chat_id: int, url: str, timeout: int = 30) -> dict[str, Any]:
+async def navigate(chat_id: int, url: str, timeout: int = 45) -> dict[str, Any]:
     """Navigate to URL and return page snapshot info."""
     page, _ = await _get_or_create_page(chat_id)
 
@@ -470,3 +471,205 @@ async def cleanup_all():
     for chat_id in list(_sessions.keys()):
         await _close_session(chat_id)
     log.info("All browser sessions cleaned up")
+
+
+# ═══════════════════════════════════
+# AI-Driven Browser (like Hermes)
+# ═══════════════════════════════════
+
+async def _screenshot_b64(chat_id: int) -> dict:
+    """Take screenshot and return as base64 + page info."""
+    page, session = await _get_or_create_page(chat_id)
+    try:
+        # Screenshot as bytes
+        screenshot_bytes = await page.screenshot(full_page=False, type="jpeg", quality=70)
+        b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+        
+        # Get page text
+        text = await page.evaluate("() => document.body?.innerText?.slice(0, 5000) || ''")
+        title = await page.title()
+        url = page.url
+        
+        # Get interactive elements
+        interactive = await page.evaluate("""() => {
+            const els = document.querySelectorAll(
+                'a[href], button, input:not([type=hidden]), textarea, select, ' +
+                '[role=button], [onclick], [tabindex]:not([tabindex=-1]), ' +
+                'label, [contenteditable=true]'
+            );
+            const items = [];
+            let ref = 1;
+            for (const el of els) {
+                if (el.offsetHeight === 0) continue;
+                const tag = el.tagName.toLowerCase();
+                const t = (el.textContent || '').trim().slice(0, 60);
+                const href = el.getAttribute('href') || '';
+                const placeholder = el.getAttribute('placeholder') || '';
+                const role = el.getAttribute('role') || '';
+                items.push({ref, tag, text: t || href.slice(0,40) || placeholder || role});
+                ref++;
+                if (ref > 30) break;
+            }
+            return items;
+        }""")
+        
+        return {
+            "success": True,
+            "base64": b64,
+            "title": title,
+            "url": url,
+            "text_preview": text[:3000],
+            "elements": interactive,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def ai_browse(
+    chat_id: int,
+    goal: str,
+    vision_fn,
+    max_steps: int = 10,
+    status_fn=None,
+) -> dict:
+    """
+    AI-driven browser loop — like Hermes browser tools.
+    
+    Args:
+        chat_id: Telegram user chat ID
+        goal: What to find (e.g. "cari Onitsuka Tiger Mexico 66 di Rakuten")
+        vision_fn: async callable(screenshot_b64, page_text, elements, goal, history)
+                   -> dict {action, ...}
+        max_steps: Max browsing iterations
+        status_fn: Optional async callable(str) to update status message
+        
+    Returns:
+        dict with success, summary, product info
+    """
+    log.info(f"AI browse started for chat {chat_id}: goal='{goal}'")
+    
+    # Step history for context
+    history = []
+    
+    # Navigate to Rakuten search as starting point
+    from urllib.parse import quote
+    search_url = f"https://search.rakuten.co.jp/search/mall/{quote(goal)}/"
+    
+    nav_result = await navigate(chat_id, search_url, timeout=30)
+    if not nav_result.get("success"):
+        # Fallback to Amazon
+        search_url = f"https://www.amazon.co.jp/s?k={quote(goal + ' japan')}"
+        nav_result = await navigate(chat_id, search_url, timeout=30)
+        if not nav_result.get("success"):
+            # Fallback to Google
+            search_url = f"https://www.google.com/search?q={quote(goal + ' japan buy')}"
+            await navigate(chat_id, search_url, timeout=30)
+    
+    history.append({"step": "start", "url": search_url})
+    
+    if status_fn:
+        await status_fn("🌐 *Membuka halaman...*")
+    
+    for step in range(1, max_steps + 1):
+        if status_fn:
+            await status_fn(f"🤔 *Langkah {step}/{max_steps} — menganalisis halaman...*")
+        
+        # 1. Screenshot + page context
+        ss = await _screenshot_b64(chat_id)
+        if not ss.get("success"):
+            history.append({"step": step, "error": ss.get("error")})
+            continue
+        
+        # 2. Ask Gemini Vision what to do
+        vision_result = await vision_fn(
+            screenshot_b64=ss["base64"],
+            page_text=ss["text_preview"],
+            elements=ss.get("elements", []),
+            goal=goal,
+            url=ss["url"],
+            title=ss["title"],
+            history=history,
+            step=step,
+            max_steps=max_steps,
+        )
+        
+        if not vision_result or "action" not in vision_result:
+            history.append({"step": step, "error": "Vision returned invalid response"})
+            if status_fn:
+                await status_fn("❌ *Gagal menganalisis halaman. Coba lagi.*")
+            return {"success": False, "error": "Vision analysis failed", "history": history}
+        
+        action = vision_result["action"]
+        reason = vision_result.get("reason", "")
+        
+        log.info(f"AI browse step {step}: {action} — {reason[:80]}")
+        history.append({"step": step, "action": action, "reason": reason})
+        
+        # 3. Execute action
+        if action == "done":
+            if status_fn:
+                await status_fn("✅ *Selesai!*")
+            return {
+                "success": True,
+                "summary": vision_result.get("summary", "Produk ditemukan."),
+                "product_name": vision_result.get("product_name", ""),
+                "product_price": vision_result.get("product_price", ""),
+                "product_url": ss["url"],
+                "steps": step,
+                "history": history,
+            }
+        
+        elif action == "navigate":
+            url = vision_result.get("url", "")
+            if url:
+                if status_fn:
+                    await status_fn(f"🌐 *Membuka {url[:50]}...*")
+                await navigate(chat_id, url, timeout=30)
+        
+        elif action == "click":
+            selector = vision_result.get("selector", "")
+            if selector:
+                await click_element(chat_id, selector)
+                await asyncio.sleep(2)
+        
+        elif action == "type":
+            selector = vision_result.get("selector", "")
+            text = vision_result.get("text", "")
+            if selector and text:
+                if status_fn:
+                    await status_fn(f"⌨️ *Mengetik \"{text[:30]}...\"*")
+                await type_text(chat_id, selector, text)
+                await asyncio.sleep(1)
+        
+        elif action == "submit":
+            # Press Enter to submit search
+            page, _ = await _get_or_create_page(chat_id)
+            try:
+                await page.keyboard.press("Enter")
+                await asyncio.sleep(2)
+            except Exception:
+                pass
+        
+        elif action == "scroll":
+            direction = vision_result.get("direction", "down")
+            await scroll_page(chat_id, direction)
+            await asyncio.sleep(1)
+        
+        elif action == "wait":
+            seconds = vision_result.get("seconds", 3)
+            await asyncio.sleep(seconds)
+        
+        else:
+            # Unknown action, skip
+            pass
+    
+    # Timeout — max steps reached
+    if status_fn:
+        await status_fn("⏰ *Waktu habis — maksimal langkah tercapai.*")
+    
+    return {
+        "success": False,
+        "error": f"Max steps ({max_steps}) reached without completing goal",
+        "history": history,
+        "last_url": ss.get("url", "") if 'ss' in locals() else "",
+    }

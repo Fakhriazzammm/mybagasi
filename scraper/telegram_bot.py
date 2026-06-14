@@ -734,7 +734,7 @@ async def scraper_scrape(url: str) -> dict:
 
 async def scraper_search(keyword: str, limit: int = 6) -> dict:
     try:
-        async with httpx.AsyncClient(timeout=25) as client:
+        async with httpx.AsyncClient(timeout=45) as client:
             r = await client.post(f"{SCRAPER_URL}/search", json={"keyword": keyword, "limit": limit})
             if r.status_code == 200:
                 return r.json()
@@ -767,9 +767,11 @@ GAYA RESPON:
 KETIKA TIDAK DITEMUKAN ATAU HASIL TIDAK SESUAI:
 - Jika search_catalog() atau search_products() mengembalikan produk, TETAP TAMPILKAN ke user
   → "Ditemukan produk terkait: [nama produk] — ¥[harga]. Mau saya cek detailnya?"
+- Jangan tolak hasil dari Rakuten hanya karena ada listing secondhand — cek title: "新品" = baru, "中古" = second
 - Jika hasil tidak sesuai keyword, COBA LAGI dengan keyword lebih sederhana:
   Contoh: "Onitsuka Tiger Mexico 66" → coba "Onitsuka Tiger" atau "Mexico 66"
   Contoh: "Nike Air Force 1" → coba "Nike Air Force"
+- JANGAN skip produk yang namanya mengandung kata Jepang/jenis kelamin/warna — tetap tampilkan
 - Hanya bilang "tidak ditemukan" jika SEMUA percobaan gagal (catalog + search x2)
 - JANGAN listing alternatif brand/rekomendasi
 
@@ -980,7 +982,7 @@ async def call_deepseek(messages: list[dict], with_tools: bool = True) -> dict:
         body["tool_choice"] = "auto"
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             r = await client.post(
                 f"{SUMOPOD_BASE_URL}/chat/completions",
                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {SUMOPOD_API_KEY}"},
@@ -1973,6 +1975,7 @@ async def handle_help(chat_id: int):
         "💬 \"simpan ke wishlist\" — simpan produk\n"
         "💬 \"buatkan price alert\" — pantau harga\n"
         "`/beli <keyword>` — Cari & beli\n"
+        "`/ai-cari <produk>` — 🤖 AI cari otomatis di browser\n"
         "`/katalog` — Jelajahi katalog produk\n"
         "`/reset` — Reset percakapan\n\n"
         "*Semua data tersimpan otomatis* ke dashboard:\n"
@@ -2422,6 +2425,283 @@ async def handle_bclose(chat_id: int):
     await tg_send(chat_id, "🚫 *Browser session ditutup*\n\nGunakan `/browse <url>` untuk mulai lagi.")
 
 
+# ═══════════════════════════════════
+# AI-Driven Browser (like Hermes)
+# ═══════════════════════════════════
+
+BROWSE_VISION_PROMPT = """You are a browser automation agent for Japanese e-commerce.
+
+GOAL: {goal}
+
+You are browsing a Japanese shopping site. You receive:
+1. A SCREENSHOT of the current page (visible to you)
+2. Page text content
+3. Interactive elements with ref IDs
+4. Browsing history
+
+Your job: Analyze what you see and decide the NEXT action.
+
+IMPORTANT RULES:
+- If you see a search/input box, TYPE the search keyword and SUBMIT
+- If you see product results matching the goal, CLICK on the most relevant product
+- If you see a product detail page with price matching the goal, say "done"
+- Handle cookie popups, language selectors, or CAPTCHAs first
+- If the page didn't load properly, try navigating again
+- Be decisive — don't waste steps
+- Prefer Japanese Rakuten/Amazon sites
+
+Return ONLY a JSON object (no markdown, no code fences):
+
+1. If goal achieved (product found with price):
+   {{"action": "done", "reason": "Brief reason", "summary": "Product description", "product_name": "Product name", "product_price": "Price info"}}
+
+2. If need to navigate to a different URL:
+   {{"action": "navigate", "reason": "Why", "url": "https://..."}}
+
+3. If need to click an element:
+   {{"action": "click", "reason": "Why", "selector": "@1" or "text to find"}}
+
+4. If need to type in search box:
+   {{"action": "type", "reason": "Why", "selector": "@2" or "search", "text": "search keywords"}}
+
+5. If need to submit a search form (press Enter):
+   {{"action": "submit", "reason": "Why"}}
+
+6. If need to scroll:
+   {{"action": "scroll", "reason": "Why", "direction": "down" or "up"}}
+
+CURRENT STEP: {step}/{max_steps}
+PREVIOUS ACTIONS: {history_str}
+PAGE TITLE: {title}
+PAGE URL: {url}"""
+
+
+async def call_ai_browse_vision(
+    screenshot_b64: str,
+    page_text: str,
+    elements: list,
+    goal: str,
+    url: str,
+    title: str,
+    history: list,
+    step: int,
+    max_steps: int,
+) -> dict | None:
+    """Call Gemini Vision (via Sumopod) to decide next browsing action."""
+    import re as _re
+    # Build history string
+    history_str = "; ".join(
+        f"step {h.get('step','?')}: {h.get('action','?')} — {h.get('reason','')[:50]}"
+        for h in history[-5:]  # Last 5 steps
+    ) or "Just started"
+    
+    prompt = BROWSE_VISION_PROMPT.format(
+        goal=goal,
+        step=step,
+        max_steps=max_steps,
+        history_str=history_str,
+        title=title[:100],
+        url=url[:150],
+    )
+    
+    # Truncate page text if too long for token budget
+    text_preview = page_text[:2000] if page_text else ""
+    
+    # Build element summary
+    elem_str = "; ".join(
+        f"@{e.get('ref','?')}={e.get('tag','')}:{e.get('text','')[:40]}"
+        for e in (elements or [])[:20]
+    )
+    
+    # Prepare messages with vision
+    messages = [
+        {
+            "role": "system",
+            "content": prompt,
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Current page content:\n\n{text_preview[:1500]}\n\nInteractive elements: {elem_str[:500]}\n\nWhat should I do next?",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{screenshot_b64}",
+                    },
+                },
+            ],
+        },
+    ]
+    
+    body = {
+        "model": SUMOPOD_MODEL,
+        "messages": messages,
+        "max_tokens": 500,
+        "temperature": 0.3,
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                f"{SUMOPOD_BASE_URL}/chat/completions",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {SUMOPOD_API_KEY}",
+                },
+                json=body,
+            )
+            if r.status_code != 200:
+                log.error(f"Vision API error {r.status_code}: {r.text[:200]}")
+                return None
+            
+            data = r.json()
+            content = data["choices"][0]["message"]["content"]
+            
+            # Extract JSON from response (handle markdown code fences)
+            json_match = _re.search(r'({[\s\S]*"action"[\s\S]*})', content)
+            if json_match:
+                return json.loads(json_match.group(1))
+            
+            # Try direct parse
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                log.error(f"Vision returned non-JSON: {content[:200]}")
+                return None
+                
+    except Exception as e:
+        log.error(f"Vision call error: {e}")
+        return None
+
+
+async def handle_ai_cari(chat_id: int, goal: str):
+    """AI-driven browser: find product via automated browsing."""
+    if not SUMOPOD_API_KEY:
+        await tg_send(chat_id, "❌ AI Browser belum dikonfigurasi.")
+        return
+    
+    if not goal:
+        await tg_send(chat_id,
+            "🤖 *AI Browser*\n\n"
+            "Gunakan: `/ai-cari <produk>`\n"
+            "Contoh: `/ai-cari Onitsuka Tiger Mexico 66`\n\n"
+            "Bot akan otomatis browsing ke marketplace Jepang, "
+            "cari produk, screenshot, analisis pakai AI, "
+            "sampai ketemu hasilnya.")
+        return
+    
+    # Send initial status
+    status_msg = await tg_send(chat_id, f"🤖 *AI Browser* — mencari \"{goal}\"\n⏳ Memulai...")
+    msg_id = status_msg["result"]["message_id"] if status_msg and status_msg.get("ok") else None
+    
+    async def update_status(text: str):
+        if msg_id:
+            await tg_edit(chat_id, msg_id, text)
+    
+    await update_status(f"🤖 *Mencari:* \"{goal}\"\n🌐 Membuka halaman...")
+    
+    # Run AI browse
+    result = await browser.ai_browse(
+        chat_id=chat_id,
+        goal=goal,
+        vision_fn=call_ai_browse_vision,
+        max_steps=10,
+        status_fn=update_status,
+    )
+    
+    if result.get("success"):
+        summary = result.get("summary", "")
+        product_name = result.get("product_name", "")
+        product_price = result.get("product_price", "")
+        product_url = result.get("product_url", "")
+        steps = result.get("steps", 0)
+        
+        # Take a final screenshot to show the user
+        ss_filepath = None
+        try:
+            ss = await browser.take_screenshot(chat_id)
+            if ss.get("success"):
+                ss_filepath = ss.get("filepath")
+        except:
+            pass
+        
+        msg = (
+            f"✅ *Produk Ditemukan!* ({steps} langkah)\n\n"
+            f"📦 *{product_name or summary[:80]}*\n"
+        )
+        if product_price:
+            msg += f"💰 {product_price}\n"
+        if product_url:
+            msg += f"🔗 {product_url}\n"
+        msg += f"\n{summary[:500]}"
+        
+        if msg_id:
+            # Send final result as new message (don't edit the status)
+            await tg_edit(chat_id, msg_id, "✅ *Selesai!*")
+        
+        # Send screenshot if available
+        if ss_filepath:
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    with open(ss_filepath, "rb") as f:
+                        await client.post(
+                            tg_url("sendPhoto"),
+                            data={"chat_id": chat_id, "caption": msg, "parse_mode": "Markdown"},
+                            files={"photo": f},
+                        )
+            except:
+                await tg_send(chat_id, msg)
+        else:
+            await tg_send(chat_id, msg)
+        
+        # Clean up browser session after done
+        await browser.close_session(chat_id)
+        
+    else:
+        error = result.get("error", "Gagal")
+        last_url = result.get("last_url", "")
+        history = result.get("history", [])
+        
+        # Get last screenshot for debugging
+        ss_filepath = None
+        try:
+            ss = await browser.take_screenshot(chat_id)
+            if ss.get("success"):
+                ss_filepath = ss.get("filepath")
+        except:
+            pass
+        
+        error_msg = (
+            f"❌ *Tidak ditemukan*\n\n"
+            f"{error}\n"
+        )
+        if last_url:
+            error_msg += f"\nHalaman terakhir: {last_url}"
+        
+        if msg_id:
+            await tg_edit(chat_id, msg_id, error_msg)
+        
+        # Send last screenshot if available
+        if ss_filepath:
+            caption = f"📸 *Screenshot terakhir* — cari \"{goal}\"\n{error}\n`{last_url}`"
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    with open(ss_filepath, "rb") as f:
+                        await client.post(
+                            tg_url("sendPhoto"),
+                            data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"},
+                            files={"photo": f},
+                        )
+            except:
+                pass
+        
+        # Clean up
+        await browser.close_session(chat_id)
+
+
 async def handle_ai(chat_id: int, text: str, user_profile: dict | None):
     if not SUMOPOD_API_KEY:
         await tg_send(chat_id, "❌ AI Personal Shopper belum dikonfigurasi.")
@@ -2603,6 +2883,12 @@ async def process_update(update: dict):
             await require_login(chat_id)
             return
         await handle_bclose(chat_id)
+    elif command == "/ai-cari":
+        if not user_profile:
+            await require_login(chat_id)
+            return
+        search_text = args if args else ""
+        await handle_ai_cari(chat_id, search_text)
     elif command == "/katalog":
         await handle_katalog(chat_id, text)
     elif command in ("/beli", "/ai", "/cari"):
@@ -2668,6 +2954,13 @@ async def process_update(update: dict):
                 "• `/login` — Login ke akun yang sudah ada\n"
                 "• `/start KODE` — Hubungkan dengan kode rahasia\n\n"
                 "Belum punya akun? Langsung daftar via `/register`!")
+            return
+        
+        # Auto-detect: "cari <produk>" → use AI browser instead of standard AI
+        cari_match = re.match(r'^(?:cari|carikan|search)\s+(.+)$', text.strip(), re.IGNORECASE)
+        if cari_match:
+            search_goal = cari_match.group(1).strip()
+            await handle_ai_cari(chat_id, search_goal)
             return
         
         await handle_ai(chat_id, text, user_profile)

@@ -234,68 +234,101 @@ async def search_products_by_keyword(
     size: str | None = None,
     limit: int = 6,
 ) -> list[ProductData]:
-    q = keyword.strip()
-    if condition and condition.strip() and condition.strip().lower() != "any":
-        q += f" {condition.strip()}"
-    if size and size.strip():
-        q += f" size {size.strip()}"
-    q += " japan buy"
+    """Search for products by keyword with automatic shortening fallback.
 
-    candidates: list[str] = []
-    # Prioritize direct marketplace search
-    candidates.extend(await _collect_candidates_from_marketplace_search(q))
-    # If marketplace search returned nothing, try Google
-    if not candidates:
-        candidates.extend(await _collect_candidates_from_google(q))
-    # Fallback: try Bing
-    if not candidates:
-        candidates.extend(await _collect_candidates_from_bing(q))
-    # de-duplicate while preserving order
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for c in candidates:
-        if c not in seen:
-            seen.add(c)
-            deduped.append(c)
-    candidates = deduped[:4]
+    Tries progressively shorter keyword variations when the full keyword
+    returns no relevant results. Total timeout is 40 seconds.
+    """
+    total_timeout = 40.0
 
-    if not candidates:
+    async def _search_with_timeout() -> list[ProductData]:
+        # Generate progressively shorter keyword variations
+        base = keyword.strip()
+        parts = base.split()
+        variations: list[str] = []
+        for i in range(len(parts), 0, -1):
+            variations.append(" ".join(parts[:i]))
+
+        for kw in variations:
+            # Build query WITHOUT "japan buy" for marketplace search
+            marketplace_q = kw
+            if condition and condition.strip() and condition.strip().lower() != "any":
+                marketplace_q += f" {condition.strip()}"
+            if size and size.strip():
+                marketplace_q += f" size {size.strip()}"
+
+            # Build query WITH "japan buy" for Google/Bing fallback
+            web_q = marketplace_q + " japan buy"
+
+            candidates: list[str] = []
+
+            # Step 1: Direct marketplace search (no "japan buy" suffix)
+            candidates.extend(await _collect_candidates_from_marketplace_search(marketplace_q))
+
+            # Step 2: Google fallback (with "japan buy")
+            if not candidates:
+                candidates.extend(await _collect_candidates_from_google(web_q))
+
+            # Step 3: Bing fallback (with "japan buy")
+            if not candidates:
+                candidates.extend(await _collect_candidates_from_bing(web_q))
+
+            # Deduplicate while preserving order
+            deduped: list[str] = []
+            seen: set[str] = set()
+            for c in candidates:
+                if c not in seen:
+                    seen.add(c)
+                    deduped.append(c)
+            candidates = deduped[:4]
+
+            if not candidates:
+                continue  # No results for this keyword variant, try shorter one
+
+            tokens = _keyword_tokens(kw)
+
+            # Parallel scraping with semaphore to limit concurrency
+            semaphore = asyncio.Semaphore(6)
+
+            async def _scrape_one(url: str, toks: list[str]) -> ProductData | None:
+                async with semaphore:
+                    return await _scrape_candidate_curl_first(url=url, tokens=toks)
+
+            results = await asyncio.gather(
+                *[_scrape_one(url, tokens) for url in candidates],
+                return_exceptions=True,
+            )
+
+            products: list[ProductData] = []
+            broad_products: list[ProductData] = []
+
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+                if not result:
+                    continue
+
+                broad_products.append(result)
+                if _relevant_to_keyword(result, tokens):
+                    products.append(result)
+
+                if len(products) >= limit:
+                    break
+
+            if products:
+                return products[:limit]
+            if broad_products:
+                return broad_products[:limit]
+
+            # No relevant products found, try shorter keyword
+            continue
+
         return []
 
-    tokens = _keyword_tokens(keyword)
-
-    # Parallel scraping with semaphore to limit concurrency
-    semaphore = asyncio.Semaphore(6)  # 6 concurrent scrapes
-
-    async def scrape_with_semaphore(url: str) -> ProductData | None:
-        async with semaphore:
-            return await _scrape_candidate_curl_first(url=url, tokens=tokens)
-
-    # Run scrapes in parallel
-    results = await asyncio.gather(
-        *[scrape_with_semaphore(url) for url in candidates],
-        return_exceptions=True,
-    )
-
-    products: list[ProductData] = []
-    broad_products: list[ProductData] = []
-
-    for result in results:
-        if isinstance(result, Exception):
-            continue
-        if not result:
-            continue
-
-        broad_products.append(result)
-        if _relevant_to_keyword(result, tokens):
-            products.append(result)
-
-        if len(products) >= limit:
-            break
-
-    if products:
-        return products[:limit]
-    return broad_products[:limit]
+    try:
+        return await asyncio.wait_for(_search_with_timeout(), timeout=total_timeout)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        return []
 
 
 async def _collect_candidates_from_google(query: str) -> list[str]:
