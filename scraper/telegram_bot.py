@@ -2204,9 +2204,12 @@ async def handle_katalog(chat_id: int, text: str):
 
             name = (item.get("name") or "")[:40]
             price = item.get("price_jpy", 0)
+            weight = item.get("weight_kg") or 0
             caption = f"*{name}*"
             if price:
                 caption += f"\n💰 JP¥{price:,}"
+            if weight > 0:
+                caption += f"\n⚖️ ~{weight:.2f} kg"
 
             if img_url and img_url.startswith(("http://", "https://", "/images/")):
                 # Make relative paths absolute for Telegram
