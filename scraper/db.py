@@ -422,31 +422,8 @@ class Database:
     def query(self, table: str, where: dict | None = None,
               order_by: str | None = None, limit: int = 100,
               offset: int = 0) -> list[dict]:
-        """Query data. SQLite first, then Supabase fallback."""
-        items = self._query_sqlite(table, where, order_by, limit, offset)
-        if items:
-            return items
-        # Fallback to Supabase
-        if self._is_supabase_ok():
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            # Build query params
-            params = {"limit": str(limit), "offset": str(offset)}
-            if where:
-                for k, v in where.items():
-                    params[k] = f"eq.{v}"
-            if order_by:
-                params["order"] = order_by
-            result = loop.run_until_complete(
-                self._supabase_request("GET", table, params=params)
-            )
-            if isinstance(result, list):
-                return result
-        return []
+        """Query data from SQLite only. Supabase fallback disabled (async-incompatible)."""
+        return self._query_sqlite(table, where, order_by, limit, offset)
 
     def get(self, table: str, where: dict) -> dict | None:
         """Get first matching row."""

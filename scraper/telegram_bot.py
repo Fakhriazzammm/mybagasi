@@ -1208,6 +1208,7 @@ async def execute_tool(tool_name: str, args: dict, user_id: str | None = None, c
             "quantity": args.get("quantity", 1),
             "notes": args.get("notes", ""),
             "source": "telegram_bot",
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
             if db.insert("cart_items", cart_item):
@@ -1670,7 +1671,8 @@ async def handle_cart(chat_id: int):
 
     uid = user["id"]
     try:
-        items = db.query("cart_items", {"user_id": uid}, order_by="created_at DESC", limit=20)
+        # Use SQLite directly to avoid Supabase fallback crash in async context
+        items = db._query_sqlite("cart_items", {"user_id": uid}, order_by="created_at DESC", limit=20)
 
         if not items:
             await tg_send(chat_id,
@@ -3214,22 +3216,22 @@ async def process_update(update: dict):
 
                 # Parse product info from message
                 msg_text = callback.get("message", {}).get("text") or callback.get("message", {}).get("caption") or ""
+                # Extract product name from *bold* text (first occurrence)
                 prod_match = re.search(r'\*(.+?)\*', msg_text)
-                product_name = prod_match.group(1).strip() if prod_match else "Produk dari bot"
-
-                # Try to parse price from message (JP¥X or JPY X)
-                price = 0
-                price_match = re.search(r'JP[¥Y]\s*([\d,.]+)', msg_text)
-                if price_match:
-                    price = int(price_match.group(1).replace(",", ""))
-                price_idr = round(price * 105) if price else 0
+                product_name = prod_match.group(1).strip() if prod_match else "Produk"
+                
+                # Extract price: JP¥X or JP¥X.XXX (with thousand separator)
+                price_match = re.search(r'JP[¥¥]?\s*([0-9]+(?:\.[0-9]{3})*)', msg_text)
+                price_str = price_match.group(1) if price_match else "0"
+                price_jpy = int(price_str.replace(".", "")) if price_str != "0" else 0
+                price_idr = round(price_jpy * 113) if price_jpy else 0
 
                 from datetime import datetime, timezone
                 cart_item = {
                     "id": uid[:8] + "_c_" + str(int(time.time())),
                     "user_id": uid,
                     "product_name": product_name[:40],
-                    "price_jpy": price, "price_idr": price_idr,
+                    "price_jpy": price_jpy, "price_idr": price_idr,
                     "url": data.replace("cart_add:", "") if data.startswith("cart_add:") else "",
                     "image_url": "", "category": "",
                     "quantity": 1, "notes": "", "source": "telegram_bot",
