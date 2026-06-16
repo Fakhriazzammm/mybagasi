@@ -243,7 +243,7 @@ export default function ScheduleCalendarView({
             {/* ── Personal Shopper ───────────────────────────── */}
             {s.shoppers && s.shoppers.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                <span className="text-[10px] text-muted-foreground mr-0.5">👤</span>
+                <span className="text-[10px] text-muted-foreground mr-0.5">🛍</span>
                 {s.shoppers.map((sh: any) => (
                   <Link
                     key={sh.slug}

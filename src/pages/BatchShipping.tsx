@@ -116,7 +116,7 @@ export default function BatchShipping() {
             {/* ── Personal Shopper ───────────────────────────── */}
             {b.shoppers && b.shoppers.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                <span className="text-[10px] text-muted-foreground mr-0.5">👤</span>
+                <span className="text-[10px] text-muted-foreground mr-0.5">🛍</span>
                 {b.shoppers.map((s: any) => (
                   <Link
                     key={s.slug}
