@@ -1,6 +1,18 @@
 import { supabase } from '@/lib/supabase'
 import type { PersonalShopper, ShopperReview, BatchShipment } from '@/types/database.types'
 
+export interface ReviewWithProfile {
+  id: string
+  shopper_id: string
+  user_id: string | null
+  rating: number
+  review: string | null
+  guest_name: string | null
+  guest_email: string | null
+  created_at: string
+  profiles: { name: string; avatar_url: string | null } | null
+}
+
 export const personalShoppersService = {
   async list(): Promise<PersonalShopper[]> {
     const { data, error } = await supabase
@@ -33,7 +45,7 @@ export const personalShoppersService = {
     return data
   },
 
-  async getReviews(shopperId: string): Promise<(ShopperReview & { profiles: { name: string; avatar_url: string | null } })[]> {
+  async getReviews(shopperId: string): Promise<ReviewWithProfile[]> {
     const { data, error } = await supabase
       .from('shopper_reviews')
       .select('*, profiles(name, avatar_url)')
@@ -43,7 +55,7 @@ export const personalShoppersService = {
     return data ?? []
   },
 
-  async getUserReview(shopperId: string): Promise<(ShopperReview & { profiles: { name: string; avatar_url: string | null } }) | null> {
+  async getUserReview(shopperId: string): Promise<ReviewWithProfile | null> {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
 
@@ -57,13 +69,44 @@ export const personalShoppersService = {
     return data
   },
 
-  async createReview(shopperId: string, rating: number, review?: string): Promise<ShopperReview> {
+  async createReview(
+    shopperId: string,
+    rating: number,
+    options?: { review?: string; guestName?: string; guestEmail?: string }
+  ): Promise<ShopperReview> {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Not authenticated')
+
+    if (user) {
+      // Authenticated user — create with user_id
+      const { data, error } = await supabase
+        .from('shopper_reviews')
+        .insert({
+          shopper_id: shopperId,
+          user_id: user.id,
+          rating,
+          review: options?.review ?? null,
+        })
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    }
+
+    // Guest user — name is required
+    if (!options?.guestName?.trim()) {
+      throw new Error('Nama wajib diisi')
+    }
 
     const { data, error } = await supabase
       .from('shopper_reviews')
-      .insert({ shopper_id: shopperId, user_id: user.id, rating, review })
+      .insert({
+        shopper_id: shopperId,
+        user_id: null,
+        guest_name: options.guestName.trim(),
+        guest_email: options.guestEmail?.trim() || null,
+        rating,
+        review: options?.review ?? null,
+      })
       .select()
       .single()
     if (error) throw error

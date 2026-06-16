@@ -1,25 +1,15 @@
 import { useState, useEffect } from "react";
-import { Star, ThumbsUp, Clock, User as UserIcon, Trash2, Pencil } from "lucide-react";
+import { Star, ThumbsUp, Clock, User as UserIcon, Trash2, Pencil, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { personalShoppersService } from "@/services/personal-shoppers.service";
+import type { ReviewWithProfile } from "@/services/personal-shoppers.service";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-type ReviewWithProfile = {
-  id: string;
-  shopper_id: string;
-  user_id: string;
-  rating: number;
-  review: string | null;
-  created_at: string;
-  profiles: { name: string; avatar_url: string | null } | null;
-};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -104,6 +94,9 @@ function ReviewCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const displayName = review.profiles?.name ?? review.guest_name ?? "Pengguna";
+  const showAvatar = review.guest_name && !review.profiles;
+
   return (
     <div className="rounded-2xl border border-border/40 bg-card p-4 shadow-soft transition-all hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
@@ -111,18 +104,29 @@ function ReviewCard({
           <Avatar className="h-10 w-10 shrink-0 ring-2 ring-border/30">
             <AvatarImage
               src={review.profiles?.avatar_url ?? undefined}
-              alt={review.profiles?.name ?? "User"}
+              alt={displayName}
             />
-            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-              {getInitials(review.profiles?.name ?? "U")}
+            <AvatarFallback
+              className={`text-xs font-semibold ${
+                showAvatar
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                  : "bg-primary/10 text-primary"
+              }`}
+            >
+              {getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm truncate">
-                {review.profiles?.name ?? "Pengguna"}
+                {displayName}
               </span>
-              {isOwn && (
+              {showAvatar && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium">
+                  Guest
+                </span>
+              )}
+              {isOwn && !showAvatar && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                   Kamu
                 </span>
@@ -167,6 +171,54 @@ function ReviewCard({
           {review.review}
         </p>
       )}
+    </div>
+  );
+}
+
+// ─── Guest Name Input ────────────────────────────────────────────────────────
+
+function GuestInfoInput({
+  name,
+  email,
+  onNameChange,
+  onEmailChange,
+}: {
+  name: string;
+  email: string;
+  onNameChange: (v: string) => void;
+  onEmailChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-xl border border-border/40 bg-muted/30 p-4">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <UserIcon className="h-3.5 w-3.5" />
+        <span>Data diri (wajib diisi untuk verifikasi)</span>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">
+          Nama Lengkap <span className="text-red-500">*</span>
+        </label>
+        <Input
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder="Masukkan nama Anda..."
+          className="text-sm"
+          maxLength={100}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">
+          Email <span className="text-muted-foreground/50">(opsional)</span>
+        </label>
+        <Input
+          value={email}
+          onChange={(e) => onEmailChange(e.target.value)}
+          placeholder="contoh@email.com"
+          className="text-sm"
+          type="email"
+          maxLength={200}
+        />
+      </div>
     </div>
   );
 }
@@ -295,6 +347,10 @@ export function ReviewSection({ shopperId }: ReviewSectionProps) {
   const [showForm, setShowForm] = useState(false);
   const [editingReview, setEditingReview] = useState<ReviewWithProfile | null>(null);
 
+  // ─── Guest form state ────────────────────────────────────────────────
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+
   // ─── Fetch reviews ────────────────────────────────────────────────────
   const fetchReviews = async () => {
     setLoading(true);
@@ -303,8 +359,8 @@ export function ReviewSection({ shopperId }: ReviewSectionProps) {
         personalShoppersService.getReviews(shopperId),
         personalShoppersService.getUserReview(shopperId),
       ]);
-      setReviews(allReviews as ReviewWithProfile[]);
-      setUserReview(myReview as ReviewWithProfile | null);
+      setReviews(allReviews);
+      setUserReview(myReview);
     } catch (err: any) {
       toast.error("Gagal memuat ulasan", { description: err.message });
     } finally {
@@ -318,15 +374,30 @@ export function ReviewSection({ shopperId }: ReviewSectionProps) {
 
   // ─── Submit review ────────────────────────────────────────────────────
   const handleSubmit = async (rating: number, review: string) => {
-    if (!profile) {
-      navigate("/auth/login");
-      return;
-    }
     setSubmitting(true);
     try {
-      await personalShoppersService.createReview(shopperId, rating, review || undefined);
+      if (profile) {
+        // Authenticated user
+        await personalShoppersService.createReview(shopperId, rating, {
+          review: review || undefined,
+        });
+      } else {
+        // Guest user — validate name
+        if (!guestName.trim()) {
+          toast.error("Nama wajib diisi");
+          setSubmitting(false);
+          return;
+        }
+        await personalShoppersService.createReview(shopperId, rating, {
+          review: review || undefined,
+          guestName: guestName.trim(),
+          guestEmail: guestEmail.trim() || undefined,
+        });
+      }
       toast.success("Ulasan berhasil dikirim!");
       setShowForm(false);
+      setGuestName("");
+      setGuestEmail("");
       await fetchReviews();
     } catch (err: any) {
       if (err.message?.includes("duplicate") || err.code === "23505") {
@@ -433,13 +504,7 @@ export function ReviewSection({ shopperId }: ReviewSectionProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              if (!profile) {
-                navigate("/auth/login");
-                return;
-              }
-              setShowForm(true);
-            }}
+            onClick={() => setShowForm(true)}
           >
             <Star className="h-3.5 w-3.5 mr-1.5" />
             Beri Ulasan
@@ -474,12 +539,26 @@ export function ReviewSection({ shopperId }: ReviewSectionProps) {
 
       {/* Review Form (create) */}
       {showForm && !userReview && (
-        <ReviewForm
-          onSubmit={handleSubmit}
-          onCancel={() => setShowForm(false)}
-          loading={submitting}
-          mode="create"
-        />
+        <div className="space-y-4">
+          {!profile && (
+            <GuestInfoInput
+              name={guestName}
+              email={guestEmail}
+              onNameChange={setGuestName}
+              onEmailChange={setGuestEmail}
+            />
+          )}
+          <ReviewForm
+            onSubmit={handleSubmit}
+            onCancel={() => {
+              setShowForm(false);
+              setGuestName("");
+              setGuestEmail("");
+            }}
+            loading={submitting}
+            mode="create"
+          />
+        </div>
       )}
 
       {/* Review Form (edit) */}

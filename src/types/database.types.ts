@@ -500,9 +500,11 @@ export interface PersonalShopper {
 export interface ShopperReview {
   id: string
   shopper_id: string
-  user_id: string
+  user_id: string | null
   rating: number
   review: string | null
+  guest_name: string | null
+  guest_email: string | null
   created_at: string
 }
 
