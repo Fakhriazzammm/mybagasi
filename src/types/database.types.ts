@@ -505,3 +505,24 @@ export interface ShopperReview {
   review: string | null
   created_at: string
 }
+
+export interface BatchShopperSchedule {
+  id: string
+  batch_id: string
+  shopper_id: string
+  is_primary: boolean
+  created_at: string
+}
+
+export type ShopperVerification = 'none' | 'gold' | 'blue'
+
+export interface BatchShipmentWithShoppers extends BatchShipment {
+  shoppers?: Array<{
+    id: string
+    name: string
+    slug: string
+    avatar_url: string | null
+    tagline: string | null
+    verification: ShopperVerification
+  }>
+}

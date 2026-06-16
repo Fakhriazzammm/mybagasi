@@ -228,6 +228,54 @@ async def _scrape_via_jina(url: str) -> ProductData | None:
         return None
 
 
+def _translate_indonesian_to_japanese(keyword: str) -> str:
+    """Translate common Indonesian shopping terms to Japanese to make search highly effective on JP marketplaces."""
+    low = keyword.lower().strip()
+    
+    # Mapping of common Indonesian shopping terms to Japanese/English equivalents understood by JP e-commerce
+    replacements = {
+        "bekas": "中古",
+        "second": "中古",
+        "sec": "中古",
+        "preloved": "中古",
+        "baru": "新品",
+        "grosir": "卸売",
+        "murah": "格安",
+        "asli": "正規品",
+        "ori": "正規品",
+        "original": "正規品",
+        "lucu": "かわいい",
+        "pria": "メンズ",
+        "cowok": "メンズ",
+        "wanita": "レディース",
+        "cewek": "レディース",
+        "anak": "キッズ",
+        "sepatu": "靴",
+        "tas": "バッグ",
+        "baju": "服",
+        "pakaian": "服",
+        "jaket": "ジャケット",
+        "kaos": "Tシャツ",
+        "topi": "帽子",
+        "jam tangan": "時計",
+        "mainan": "おもちゃ",
+        "boneka": "ぬいぐるみ",
+        "makanan": "食品",
+        "camilan": "お菓子",
+        "snack": "お菓子",
+    }
+    
+    words = low.split()
+    translated_words = []
+    for w in words:
+        if w in replacements:
+            translated_words.append(replacements[w])
+        else:
+            translated_words.append(w)
+                
+    return " ".join(translated_words)
+
+
 async def search_products_by_keyword(
     keyword: str,
     condition: str | None = None,
@@ -250,15 +298,18 @@ async def search_products_by_keyword(
             variations.append(" ".join(parts[:i]))
 
         for kw in variations:
+            # Translate keyword from Indonesian to Japanese for JP marketplaces
+            translated_kw = _translate_indonesian_to_japanese(kw)
+
             # Build query WITHOUT "japan buy" for marketplace search
-            marketplace_q = kw
+            marketplace_q = translated_kw
             if condition and condition.strip() and condition.strip().lower() != "any":
                 marketplace_q += f" {condition.strip()}"
             if size and size.strip():
                 marketplace_q += f" size {size.strip()}"
 
             # Build query WITH "japan buy" for Google/Bing fallback
-            web_q = marketplace_q + " japan buy"
+            web_q = translated_kw + " japan buy"
 
             candidates: list[str] = []
 
@@ -303,9 +354,13 @@ async def search_products_by_keyword(
             broad_products: list[ProductData] = []
 
             for result in results:
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     continue
                 if not result:
+                    continue
+
+                # Skip hard exclusions (e.g. accessories when the user did not search for them)
+                if _is_hard_exclusion(result, tokens):
                     continue
 
                 broad_products.append(result)
@@ -553,6 +608,29 @@ def _keyword_tokens(keyword: str) -> list[str]:
         "marketplace",
     }
     return [t for t in raw if len(t) >= 3 and t not in stop]
+
+
+def _is_hard_exclusion(product: ProductData, tokens: list[str]) -> bool:
+    title = (product.title or "").lower()
+    
+    # Heuristic to filter out accessory false positives (e.g. cases, films, covers)
+    # when searching for electronic devices (like iPad, iPhone, camera, console, etc.)
+    accessory_keywords_jp = ["ケース", "カバー", "フィルム", "ガラス", "ストラップ", "スタンド", "保護", "充電器", "ケーブル"]
+    accessory_keywords_en = ["case", "cover", "film", "glass", "strap", "stand", "protector", "charger", "cable", "sleeve", "bag", "pouch"]
+    accessory_keywords_id = ["casing", "pelindung", "tempered", "charger", "kabel", "tas", "dompet"]
+    
+    all_acc = accessory_keywords_jp + accessory_keywords_en + accessory_keywords_id
+    
+    # Check if any token represents an accessory (e.g., if the user explicitly searched for "case ipad")
+    has_accessory_token = any(any(acc in t for acc in all_acc) for t in tokens)
+    
+    if not has_accessory_token:
+        # If user did NOT search for an accessory, but the product title contains an accessory keyword
+        # we treat it as a hard exclusion
+        if any(acc in title for acc in all_acc):
+            return True
+            
+    return False
 
 
 def _relevant_to_keyword(product: ProductData, tokens: list[str]) -> bool:

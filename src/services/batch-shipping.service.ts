@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { BatchShipment, BatchParticipant, BatchStatus } from '@/types/database.types'
+import type { BatchShipment, BatchParticipant, BatchStatus, BatchShipmentWithShoppers } from '@/types/database.types'
 
 export const batchShippingService = {
   async list(status?: BatchStatus) {
@@ -68,6 +68,50 @@ export const batchShippingService = {
       .eq('batch_id', batchId)
       .eq('user_id', user.id)
     if (error) throw error
+  },
+
+  async listWithShoppers(): Promise<BatchShipmentWithShoppers[]> {
+    const { data, error } = await supabase
+      .from('batch_shipments')
+      .select(`
+        *,
+        participants:batch_participants(count),
+        shopper_schedules:batch_shopper_schedules(
+          shopper_id,
+          is_primary,
+          personal_shoppers(id, name, slug, avatar_url, tagline, verification)
+        )
+      `)
+      .order('departure_date', { ascending: true })
+    if (error) throw error
+    return (data ?? []).map((b: any) => ({
+      ...b,
+      shoppers: (b.shopper_schedules ?? [])
+        .map((s: any) => s.personal_shoppers)
+        .filter(Boolean)
+    }))
+  },
+
+  async listByShopper(shopperSlug: string): Promise<BatchShipmentWithShoppers[]> {
+    const { data, error } = await supabase
+      .from('batch_shopper_schedules')
+      .select(`
+        batch_id,
+        is_primary,
+        batch_shipments!inner(
+          *,
+          participants:batch_participants(count)
+        ),
+        personal_shoppers!inner(id, name, slug, avatar_url, tagline, verification)
+      `)
+      .eq('personal_shoppers.slug', shopperSlug)
+      .order('batch_shipments.departure_date', { ascending: true, nullsFirst: false })
+    if (error) throw error
+    return (data ?? []).map((s: any) => ({
+      ...s.batch_shipments,
+      is_primary: s.is_primary,
+      shoppers: [s.personal_shoppers]
+    }))
   },
 
   async getUserBatches(): Promise<BatchParticipant[]> {

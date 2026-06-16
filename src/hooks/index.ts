@@ -198,6 +198,35 @@ export function useJoinBatch() {
   })
 }
 
+export const useShopperSchedules = (shopperSlug?: string) => {
+  const qc = useQueryClient()
+  useRealtimeInvalidation({ channel: 'shopper-schedules-live', tables: ['batch_shopper_schedules', 'batch_shipments', 'personal_shoppers'], queryKeys: [['batch-shipments', 'shopper']], queryClient: qc })
+  return useQuery({ 
+    queryKey: ['batch-shipments', 'shopper', shopperSlug], 
+    queryFn: () => batchShippingService.listByShopper(shopperSlug!),
+    enabled: !!shopperSlug,
+  })
+}
+
+export const useAllSchedulesWithShoppers = () => {
+  const qc = useQueryClient()
+  useRealtimeInvalidation({ channel: 'all-schedules-live', tables: ['batch_shopper_schedules', 'batch_shipments', 'personal_shoppers'], queryKeys: [['batch-shipments', 'with-shoppers']], queryClient: qc })
+  return useQuery({ 
+    queryKey: ['batch-shipments', 'with-shoppers'], 
+    queryFn: () => batchShippingService.listWithShoppers(),
+  })
+}
+
+export const useShopperDetailSchedules = (shopperId: string) => {
+  const qc = useQueryClient()
+  useRealtimeInvalidation({ channel: 'shopper-detail-schedules', tables: ['batch_shopper_schedules', 'batch_shipments'], queryKeys: [['shopper-schedules']], queryClient: qc })
+  return useQuery({ 
+    queryKey: ['shopper-schedules', shopperId], 
+    queryFn: () => personalShoppersService.getSchedules(shopperId),
+    enabled: !!shopperId,
+  })
+}
+
 export function useCreateBatch() {
   const qc = useQueryClient()
   return useMutation({

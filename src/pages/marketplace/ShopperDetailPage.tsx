@@ -17,10 +17,13 @@ import {
   ShoppingBag,
   ChevronRight,
   ShieldCheck,
+  Calendar,
 } from "lucide-react";
 import { personalShoppersService } from "@/services/personal-shoppers.service";
 import type { PersonalShopper } from "@/types/database.types";
 import { ReviewSection } from "./ReviewSection";
+import { useShopperDetailSchedules } from "@/hooks";
+import ScheduleCalendarView from "@/components/marketplace/ScheduleCalendarView";
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -170,6 +173,8 @@ export default function ShopperDetailPage() {
       cancelled = true;
     };
   }, [slug]);
+
+  const { data: schedules = [], isLoading: schedulesLoading } = useShopperDetailSchedules(shopper?.id ?? "");
 
   // ─── Loading ──────────────────────────────────────────────────────────
   if (loading) return <DetailSkeleton />;
@@ -403,6 +408,32 @@ export default function ShopperDetailPage() {
               >
                 <ReviewSection shopperId={shopper.id} />
               </motion.div>
+
+              {/* ── Schedule ──────────────────────────────────────── */}
+              <motion.section
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.38 }}
+              >
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-primary" />
+                  Jadwal Pengiriman
+                </h2>
+                {schedulesLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-48 w-full rounded-2xl" />
+                  </div>
+                ) : schedules.length > 0 ? (
+                  <ScheduleCalendarView schedules={schedules} />
+                ) : (
+                  <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
+                    <Calendar className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                    <p className="text-sm text-muted-foreground">
+                      Belum ada jadwal pengiriman tersedia
+                    </p>
+                  </div>
+                )}
+              </motion.section>
             </div>
 
             {/* Right Column: Sidebar */}

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { PersonalShopper, ShopperReview } from '@/types/database.types'
+import type { PersonalShopper, ShopperReview, BatchShipment } from '@/types/database.types'
 
 export const personalShoppersService = {
   async list(): Promise<PersonalShopper[]> {
@@ -87,5 +87,18 @@ export const personalShoppersService = {
       .delete()
       .eq('id', reviewId)
     if (error) throw error
+  },
+
+  async getSchedules(shopperId: string): Promise<BatchShipment[]> {
+    const { data, error } = await supabase
+      .from('batch_shopper_schedules')
+      .select(`
+        is_primary,
+        batch_shipments!inner(*)
+      `)
+      .eq('shopper_id', shopperId)
+      .order('batch_shipments.departure_date', { ascending: true })
+    if (error) throw error
+    return (data ?? []).map((s: any) => s.batch_shipments)
   },
 }

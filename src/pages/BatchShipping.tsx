@@ -1,12 +1,18 @@
-import { useBatchShipments, useJoinBatch } from "@/hooks";
+import { useEffect, useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
+import { useAllSchedulesWithShoppers, useJoinBatch, useShopperSchedules } from "@/hooks";
+import { personalShoppersService } from '@/services/personal-shoppers.service'
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
-import { Calendar, Plane, Users, Clock } from "lucide-react";
+import { Calendar, Clock, LayoutGrid, List, Plane, ShieldCheck, Store, UserCheck, Users } from "lucide-react";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from 'framer-motion'
+import ScheduleCalendarView from '@/components/marketplace/ScheduleCalendarView'
+import type { BatchShipmentWithShoppers } from '@/types/database.types'
 
 const statusTone: Record<string, string> = {
   open: "bg-success/15 text-success",
@@ -33,7 +39,27 @@ const dirTitle: Record<string, string> = {
 };
 
 export default function BatchShipping() {
-  const { data: batches = [], isLoading, error } = useBatchShipments();
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
+  const [selectedShopper, setSelectedShopper] = useState<string | null>(null)
+  const [shoppers, setShoppers] = useState<any[]>([])
+  const [shoppersLoading, setShoppersLoading] = useState(true)
+
+  // Ambil daftar personal shopper untuk filter
+  useEffect(() => {
+    personalShoppersService.list().then(data => {
+      setShoppers(data)
+      setShoppersLoading(false)
+    }).catch(() => setShoppersLoading(false))
+  }, [])
+
+  // Query berdasarkan filter
+  const { data: allSchedules = [], isLoading: allLoading, error: allError } = useAllSchedulesWithShoppers()
+  const { data: shopperSchedules = [], isLoading: shopperLoading, error: shopperError } = useShopperSchedules(selectedShopper ?? undefined)
+
+  const isLoading = selectedShopper ? shopperLoading : allLoading
+  const error = selectedShopper ? shopperError : allError
+  const batches = selectedShopper ? shopperSchedules : allSchedules
+  
   const joinBatch = useJoinBatch();
 
   const jpToId = batches.filter((b: any) => b.direction === "japan_to_indonesia");
@@ -190,27 +216,88 @@ export default function BatchShipping() {
             <p className="text-xs text-muted-foreground mt-1">
               Kirim & terima barang Indonesia ↔ Jepang
             </p>
+
+            {/* ── Filter Shopper ───────────────────────────────── */}
+            <div className="flex items-center gap-2 flex-wrap mt-3">
+              <button
+                onClick={() => setSelectedShopper(null)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  !selectedShopper
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Semua
+              </button>
+              {shoppers.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedShopper(s.slug)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    selectedShopper === s.slug
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
+                  }`}
+                >
+                  {s.verification === 'gold' ? (
+                    <ShieldCheck className="h-3.5 w-3.5 text-amber-400" />
+                  ) : s.verification === 'blue' ? (
+                    <UserCheck className="h-3.5 w-3.5 text-blue-400" />
+                  ) : (
+                    <Store className="h-3.5 w-3.5" />
+                  )}
+                  {s.name}
+                </button>
+              ))}
+            </div>
+
+            {/* ── View Toggle ───────────────────────────────────── */}
+            <div className="flex items-center gap-1 bg-secondary/50 rounded-lg p-0.5 w-fit mt-3">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-md text-xs transition-colors ${
+                  viewMode === 'list' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('calendar')}
+                className={`p-1.5 rounded-md text-xs transition-colors ${
+                  viewMode === 'calendar' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Calendar className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Cards */}
-        <div className="container mx-auto px-4 py-5 space-y-6 max-w-3xl">
-          {[jpToId, idToJp].map((items, idx) => {
-            if (!items.length) return null;
-            return (
-              <section key={idx}>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-sm font-display font-bold">
-                    {idx === 0 ? dirTitle.japan_to_indonesia : dirTitle.indonesia_to_japan}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">({items.length})</span>
-                </div>
-                <div className="space-y-3">
-                  {items.map(renderCard)}
-                </div>
-              </section>
-            );
-          })}
+        {/* ── Content ──────────────────────────────────────── */}
+        <div className="container mx-auto px-4 py-5 max-w-3xl">
+          {viewMode === 'calendar' ? (
+            <ScheduleCalendarView schedules={batches} />
+          ) : (
+            <div className="space-y-6">
+              {[jpToId, idToJp].map((items, idx) => {
+                if (!items.length) return null
+                return (
+                  <section key={idx}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm font-display font-bold">
+                        {idx === 0 ? dirTitle.japan_to_indonesia : dirTitle.indonesia_to_japan}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">({items.length})</span>
+                    </div>
+                    <div className="space-y-3">
+                      {items.map(renderCard)}
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
+          )}
         </div>
       </main>
       <Footer />
