@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, MessageCircle, Sparkles, ShieldCheck, Plane } from "lucide-react";
+import { ArrowRight, MessageCircle, Sparkles, ShieldCheck, Plane, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const PlanHero = () => (
@@ -40,6 +40,12 @@ export const PlanHero = () => (
           <Link to="/aipersonalshopper">
             <Sparkles className="h-5 w-5" />
             Coba AI Shopper
+          </Link>
+        </Button>
+        <Button variant="hero-secondary" size="xl" asChild>
+          <Link to="/marketplace">
+            <Store className="h-5 w-5" />
+            Marketplace Personal Shopper
           </Link>
         </Button>
         <Button variant="outline" size="xl" asChild>

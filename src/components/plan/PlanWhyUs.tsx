@@ -1,4 +1,4 @@
-import { Bot, TrendingDown, ShieldCheck, Sparkles, Bell, Calendar } from "lucide-react";
+import { Bot, TrendingDown, ShieldCheck, Sparkles, Bell, Calendar, Store, Star } from "lucide-react";
 
 const mainBenefits = [
   {
@@ -26,6 +26,7 @@ const mainBenefits = [
 
 const extraPerks = [
   { icon: Sparkles, label: "Poin & Membership — makin sering belanja, makin hemat" },
+  { icon: Store, label: "Marketplace Personal Shopper — bandingkan layanan & reputasi mereka" },
   { icon: Bell, label: "Price Alert — pantau harga, kabarin pas turun" },
   { icon: Calendar, label: "Pre-order — booking limited release Jepang sebelum sold-out" },
 ];
