@@ -465,3 +465,43 @@ export interface FAQ {
   created_at: string
   updated_at: string
 }
+
+export type ShopperVerification = 'none' | 'gold' | 'blue'
+
+export interface ShopperStats {
+  orders_completed: number
+  rating: number
+  reviews_count: number
+}
+
+export interface PersonalShopper {
+  id: string
+  name: string
+  slug: string
+  avatar_url: string | null
+  cover_url: string | null
+  tagline: string | null
+  description: string | null
+  verification: ShopperVerification
+  services: string[]
+  pricing_description: string | null
+  starting_price: number | null
+  location: string | null
+  website: string | null
+  social_links: Record<string, string>
+  stats: ShopperStats
+  is_active: boolean
+  featured: boolean
+  display_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ShopperReview {
+  id: string
+  shopper_id: string
+  user_id: string
+  rating: number
+  review: string | null
+  created_at: string
+}

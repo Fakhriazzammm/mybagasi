@@ -24,6 +24,10 @@ import PaymentStatusPage from "./pages/PaymentStatusPage";
 import BatchShipping from "./pages/BatchShipping";
 import Preorder from "./pages/Preorder";
 
+// Marketplace
+import MarketplacePage from "./pages/marketplace/MarketplacePage";
+import ShopperDetailPage from "./pages/marketplace/ShopperDetailPage";
+
 // Catalog
 import CategoryPage from "./pages/katalog/CategoryPage";
 
@@ -83,6 +87,8 @@ const App = () => (
           {/* Public routes */}
           <Route path="/" element={<Index />} />
           <Route path="/aipersonalshopper" element={<PersonalShopper />} />
+          <Route path="/marketplace" element={<MarketplacePage />} />
+          <Route path="/marketplace/:slug" element={<ShopperDetailPage />} />
           <Route path="/jadwal" element={<BatchShipping />} />
           <Route path="/preorder" element={<Preorder />} />
           <Route path="/katalog/:category" element={<CategoryPage />} />

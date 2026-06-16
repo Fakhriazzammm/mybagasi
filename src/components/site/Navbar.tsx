@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, MessageCircle, User, LogOut, LayoutDashboard, ShoppingCart } from "lucide-react";
+import { Menu, X, MessageCircle, User, LogOut, LayoutDashboard, ShoppingCart, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "./Logo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,6 +9,7 @@ import { useCartCount } from "@/hooks/useCart";
 const links = [
   { to: "/", label: "Beranda" },
   { to: "/katalog", label: "Katalog" },
+  { to: "/marketplace", label: "Marketplace" },
   { to: "/aipersonalshopper", label: "AI Shopper" },
   { to: "/jadwal", label: "Jadwal" },
   { to: "/#faq", label: "FAQ" },
