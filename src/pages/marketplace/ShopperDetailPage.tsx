@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { personalShoppersService } from "@/services/personal-shoppers.service";
 import type { PersonalShopper } from "@/types/database.types";
+import { fmtJpy } from "@/lib/format";
 import { ReviewSection } from "./ReviewSection";
 import { useShopperDetailSchedules } from "@/hooks";
 import ScheduleCalendarView from "@/components/marketplace/ScheduleCalendarView";
@@ -451,9 +452,12 @@ export default function ShopperDetailPage() {
                     Informasi Harga
                   </h3>
                   {starting_price && (
-                    <p className="text-2xl font-bold text-primary mb-2">
-                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(starting_price)}
-                    </p>
+                    <div className="flex items-baseline gap-1 mb-2">
+                      <p className="text-2xl font-bold text-primary">
+                        ¥{starting_price.toLocaleString("ja-JP")}
+                      </p>
+                      <p className="text-sm text-muted-foreground">/kg</p>
+                    </div>
                   )}
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {pricing_description}

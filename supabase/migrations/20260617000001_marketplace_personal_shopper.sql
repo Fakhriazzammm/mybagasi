@@ -24,7 +24,7 @@ CREATE TABLE personal_shoppers (
   verification shopper_verification_type NOT NULL DEFAULT 'none',
   services TEXT[] DEFAULT '{}',
   pricing_description TEXT,
-  starting_price INTEGER, -- IDR
+  starting_price INTEGER, -- JPY per kg
   location TEXT,
   website TEXT,
   social_links JSONB DEFAULT '{}',

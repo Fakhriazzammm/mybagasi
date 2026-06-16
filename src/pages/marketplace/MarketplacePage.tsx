@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Star, ShoppingBag, MapPin, ArrowRight } from "lucide-react";
 import { personalShoppersService } from "@/services/personal-shoppers.service";
 import type { PersonalShopper } from "@/types/database.types";
+import { fmtJpy } from "@/lib/format";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,12 +24,7 @@ function getInitials(name: string): string {
 }
 
 function formatPrice(amount: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return `¥${amount.toLocaleString("ja-JP")}/kg`;
 }
 
 function formatRating(rating: number): string {
