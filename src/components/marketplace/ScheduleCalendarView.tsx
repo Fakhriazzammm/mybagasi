@@ -27,6 +27,7 @@ export interface ScheduleItem {
     slug: string;
     avatar_url: string | null;
     verification: string;
+    is_primary?: boolean;
   }[];
   participants?: { count: number }[];
 }
@@ -252,7 +253,10 @@ export default function ScheduleCalendarView({
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary/50 text-xs hover:bg-primary/10 hover:text-primary transition-colors"
                   >
                     {sh.verification === 'gold' ? '⭐' : sh.verification === 'blue' ? '✅' : ''}
-                    {sh.name}
+                    <span className={sh.is_primary ? 'font-semibold' : ''}>{sh.name}</span>
+                    {sh.is_primary && (
+                      <span className="text-[8px] px-1 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Host</span>
+                    )}
                   </Link>
                 ))}
               </div>

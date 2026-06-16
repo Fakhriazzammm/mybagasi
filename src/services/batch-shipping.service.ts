@@ -87,7 +87,10 @@ export const batchShippingService = {
     return (data ?? []).map((b: any) => ({
       ...b,
       shoppers: (b.shopper_schedules ?? [])
-        .map((s: any) => s.personal_shoppers)
+        .map((s: any) => s.personal_shoppers ? {
+          ...s.personal_shoppers,
+          is_primary: s.is_primary ?? false,
+        } : null)
         .filter(Boolean)
     }))
   },

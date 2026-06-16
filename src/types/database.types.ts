@@ -526,5 +526,6 @@ export interface BatchShipmentWithShoppers extends BatchShipment {
     avatar_url: string | null
     tagline: string | null
     verification: ShopperVerification
+    is_primary: boolean
   }>
 }

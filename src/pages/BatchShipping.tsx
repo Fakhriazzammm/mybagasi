@@ -125,7 +125,10 @@ export default function BatchShipping() {
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary/50 text-xs hover:bg-primary/10 hover:text-primary transition-colors"
                   >
                     {s.verification === 'gold' ? '⭐' : s.verification === 'blue' ? '✅' : ''}
-                    {s.name}
+                    <span className={s.is_primary ? 'font-semibold' : ''}>{s.name}</span>
+                    {s.is_primary && (
+                      <span className="text-[8px] px-1 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Host</span>
+                    )}
                   </Link>
                 ))}
               </div>
