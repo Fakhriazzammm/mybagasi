@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Calendar, ChevronLeft, ChevronRight, Plane, Users, Clock, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -238,6 +239,24 @@ export default function ScheduleCalendarView({
                 </span>
               )}
             </div>
+
+            {/* ── Personal Shopper ───────────────────────────── */}
+            {s.shoppers && s.shoppers.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                <span className="text-[10px] text-muted-foreground mr-0.5">👤</span>
+                {s.shoppers.map((sh: any) => (
+                  <Link
+                    key={sh.slug}
+                    to={`/marketplace/${sh.slug}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary/50 text-xs hover:bg-primary/10 hover:text-primary transition-colors"
+                  >
+                    {sh.verification === 'gold' ? '⭐' : sh.verification === 'blue' ? '✅' : ''}
+                    {sh.name}
+                  </Link>
+                ))}
+              </div>
+            )}
 
             {/* Row 4: Stats */}
             <div className="flex items-center gap-3 mb-3 flex-wrap">

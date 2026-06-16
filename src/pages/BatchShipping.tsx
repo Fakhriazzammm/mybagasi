@@ -113,6 +113,24 @@ export default function BatchShipping() {
               )}
             </div>
 
+            {/* ── Personal Shopper ───────────────────────────── */}
+            {b.shoppers && b.shoppers.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                <span className="text-[10px] text-muted-foreground mr-0.5">👤</span>
+                {b.shoppers.map((s: any) => (
+                  <Link
+                    key={s.slug}
+                    to={`/marketplace/${s.slug}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary/50 text-xs hover:bg-primary/10 hover:text-primary transition-colors"
+                  >
+                    {s.verification === 'gold' ? '⭐' : s.verification === 'blue' ? '✅' : ''}
+                    {s.name}
+                  </Link>
+                ))}
+              </div>
+            )}
+
             {/* Row 4: Stats mini */}
             <div className="flex items-center gap-3 mb-3">
               <div className="flex items-center gap-1.5 bg-secondary/60 rounded-lg px-2.5 py-1.5">
