@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { personalShoppersService } from "@/services/personal-shoppers.service";
 import type { PersonalShopper } from "@/types/database.types";
+import { ReviewSection } from "./ReviewSection";
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -393,6 +394,15 @@ export default function ShopperDetailPage() {
                   </div>
                 </motion.section>
               )}
+
+              {/* ── Reviews ─────────────────────────────────────────── */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.35 }}
+              >
+                <ReviewSection shopperId={shopper.id} />
+              </motion.div>
             </div>
 
             {/* Right Column: Sidebar */}
