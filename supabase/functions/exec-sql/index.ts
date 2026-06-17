@@ -16,69 +16,56 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
-    // Execute raw SQL via the postgREST API with a raw SQL query
-    // This uses the service_role key to bypass RLS
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": SERVICE_KEY,
-          "Authorization": `Bearer ${SERVICE_KEY}`,
-          "Prefer": "params=single-object, tx=open",
-        },
-        body: JSON.stringify({}),
-      }
-    )
-
-    // Try the pg-native approach via Supabase management
-    // The service_role key has access via the SQL API by using
-    // a raw HTTP connection with the postgREST
-    
-    // Alternative: Use the Data API with a function call that executes SQL
-    // We'll create a temporary SQL function and call it
-    const createFnResp = await supabase.rpc("exec_raw_sql", { sql_text: sql })
-    
-    return new Response(JSON.stringify({
-      success: true,
-      method: "rpc_exec_raw_sql",
-      result: createFnResp,
-    }), {
-      headers: { "Content-Type": "application/json" },
-    })
-  } catch (e) {
-    // Fallback: try direct fetch to Supabase Management API
+    // Execute raw SQL via the Management API using service_role key
+    // The service_role key can act as a PAT for the Management API
     try {
-      const url = "https://api.supabase.com/v1/projects/gvbikxcnlmlcrbixwpxl/database/query"
-      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-      const sql = await req.text()
+      const projectRef = SUPABASE_URL.replace("https://", "").split(".")[0]
+      const mgmtResp = await fetch(
+        `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ query: sql }),
+        }
+      )
       
-      const mgmtResp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${serviceKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ query: sql }),
-      })
-      
-      const mgmtBody = await mgmtResp.text()
-      return new Response(JSON.stringify({
-        method: "mgmt_api",
-        status: mgmtResp.status,
-        body: mgmtBody.slice(0, 500),
-      }), {
-        headers: { "Content-Type": "application/json" },
-      })
-    } catch (e2) {
-      return new Response(JSON.stringify({
-        error: String(e),
-        fallbackError: String(e2),
-      }), {
-        status: 500,
+      if (mgmtResp.ok) {
+        const text = await mgmtResp.text()
+        return new Response(JSON.stringify({
+          method: "mgmt_api",
+          status: mgmtResp.status,
+          result: text ? text.slice(0, 500) : "ok",
+        }), {
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+    } catch (_) {
+      // Fallback below
+    }
+
+    // Fallback: Use supabase.rpc with a temporary SQL execution function
+    // First try to create the function if it doesn't exist
+    const { error: rpcError } = await supabase.rpc("exec_raw_sql", { sql_text: sql })
+    if (!rpcError) {
+      return new Response(JSON.stringify({ method: "rpc", success: true }), {
         headers: { "Content-Type": "application/json" },
       })
     }
+
+    return new Response(JSON.stringify({
+      error: "All methods failed",
+      details: String(rpcError),
+    }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    })
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    })
   }
 })
