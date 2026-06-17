@@ -16,50 +16,48 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
-    // Execute raw SQL via the Management API using service_role key
-    // The service_role key can act as a PAT for the Management API
-    try {
-      const projectRef = SUPABASE_URL.replace("https://", "").split(".")[0]
-      const mgmtResp = await fetch(
-        `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${SERVICE_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ query: sql }),
+    // Split SQL into individual statements by semicolon
+    const statements = sql
+      .split(";")
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith("--"))
+
+    const results: any[] = []
+
+    for (const stmt of statements) {
+      try {
+        // Try calling via rpc if it exists
+        const { error } = await supabase.rpc("exec_raw_sql", { sql_text: stmt + ";" })
+        if (!error) {
+          results.push({ statement: stmt.slice(0, 80), method: "rpc", success: true })
+          continue
         }
-      )
-      
-      if (mgmtResp.ok) {
-        const text = await mgmtResp.text()
-        return new Response(JSON.stringify({
-          method: "mgmt_api",
-          status: mgmtResp.status,
-          result: text ? text.slice(0, 500) : "ok",
-        }), {
-          headers: { "Content-Type": "application/json" },
-        })
+      } catch {
+        // rpc not available, fall through
       }
-    } catch (_) {
-      // Fallback below
-    }
 
-    // Fallback: Use supabase.rpc with a temporary SQL execution function
-    // First try to create the function if it doesn't exist
-    const { error: rpcError } = await supabase.rpc("exec_raw_sql", { sql_text: sql })
-    if (!rpcError) {
-      return new Response(JSON.stringify({ method: "rpc", success: true }), {
-        headers: { "Content-Type": "application/json" },
+      // Direct PostgreSQL execution via raw query
+      // Use the service_role key to call the query endpoint
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SERVICE_KEY,
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Prefer": "params=single-object, tx=open",
+        },
+        body: JSON.stringify({ query: stmt }),
       })
+
+      if (response.ok) {
+        results.push({ statement: stmt.slice(0, 80), method: "postgrest", success: true })
+      } else {
+        const text = await response.text()
+        results.push({ statement: stmt.slice(0, 80), method: "postgrest", success: false, error: text.slice(0, 200) })
+      }
     }
 
-    return new Response(JSON.stringify({
-      error: "All methods failed",
-      details: String(rpcError),
-    }), {
-      status: 500,
+    return new Response(JSON.stringify({ results }), {
       headers: { "Content-Type": "application/json" },
     })
   } catch (e) {
