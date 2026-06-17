@@ -21,6 +21,7 @@ const ROLE_LABELS: Record<string, string> = {
   support: 'Support',
   finance: 'Keuangan',
   affiliate: 'Afiliasi',
+  personal_shopper: 'Personal Shopper',
   super_admin: 'Super Admin',
 }
 

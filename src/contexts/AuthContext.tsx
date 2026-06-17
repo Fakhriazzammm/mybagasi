@@ -171,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       case 'ops_admin': case 'support': return '/admin'
       case 'finance': return '/finance'
       case 'affiliate': return `/${profile.username}`
+      case 'personal_shopper': return '/shopper'
       default: return `/${profile.username}`
     }
   }

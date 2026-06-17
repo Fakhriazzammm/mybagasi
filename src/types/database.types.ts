@@ -1,4 +1,4 @@
-export type UserRole = 'customer' | 'ops_admin' | 'support' | 'finance' | 'affiliate' | 'super_admin'
+export type UserRole = 'customer' | 'ops_admin' | 'support' | 'finance' | 'affiliate' | 'personal_shopper' | 'super_admin'
 export type MembershipTier = 'Free' | 'Plus' | 'Pro' | 'Seller'
 export type UserStatus = 'active' | 'suspended'
 export type OrderStatus =

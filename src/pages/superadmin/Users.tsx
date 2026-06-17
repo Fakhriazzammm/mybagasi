@@ -14,6 +14,7 @@ const roleTone: Record<string, string> = {
   support: "bg-accent/15 text-accent",
   finance: "bg-warning/15 text-warning",
   affiliate: "bg-success/15 text-success",
+  personal_shopper: "bg-info/15 text-info",
   super_admin: "bg-foreground text-background",
 };
 

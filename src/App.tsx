@@ -63,6 +63,15 @@ import PointsLedger from "./pages/finance/Points";
 import AffiliatePayoutPage from "./pages/finance/Affiliate";
 import MembershipRevenuePage from "./pages/finance/Membership";
 
+// Shopper
+import { ShopperLayout } from "./components/shopper/ShopperLayout";
+import ShopperOverview from "./pages/shopper/Overview";
+import SchedulesPage from "./pages/shopper/Schedules";
+import RateServicePage from "./pages/shopper/RateService";
+import UlasanPage from "./pages/shopper/Ulasan";
+import ProfileShopperPage from "./pages/shopper/Profile";
+import KeuanganPage from "./pages/shopper/Keuangan";
+
 // Super Admin
 import { SuperAdminLayout } from "./components/superadmin/SuperAdminLayout";
 import SuperAdminOverview from "./pages/superadmin/Overview";
@@ -159,6 +168,20 @@ const App = () => (
             <Route path="points" element={<PointsLedger />} />
             <Route path="affiliate" element={<AffiliatePayoutPage />} />
             <Route path="membership" element={<MembershipRevenuePage />} />
+          </Route>
+
+          {/* Personal Shopper */}
+          <Route path="/shopper" element={
+            <ProtectedRoute roles={['personal_shopper', 'ops_admin', 'support', 'finance', 'super_admin']}>
+              <ShopperLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<ShopperOverview />} />
+            <Route path="jadwal" element={<SchedulesPage />} />
+            <Route path="rate" element={<RateServicePage />} />
+            <Route path="ulasan" element={<UlasanPage />} />
+            <Route path="profil" element={<ProfileShopperPage />} />
+            <Route path="keuangan" element={<KeuanganPage />} />
           </Route>
 
           {/* Super Admin (requires super_admin) */}
